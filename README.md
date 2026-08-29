@@ -1,5 +1,9 @@
 # otata
 
+[![ci](https://github.com/jonathan-lor/otata/actions/workflows/ci.yml/badge.svg)](https://github.com/jonathan-lor/otata/actions/workflows/ci.yml)
+[![release](https://img.shields.io/github/v/release/jonathan-lor/otata)](https://github.com/jonathan-lor/otata/releases/latest)
+[![license](https://img.shields.io/github/license/jonathan-lor/otata)](LICENSE)
+
 otata is a tool for quickly installing iOS builds over your own network. It's a CLI designed for your agent to use during remote control sessions to get the latest build to your phone, wherever you are. Simply ask your agent to publish with otata after making some changes, and then install from the provided URL!
 
 otata currently supports building SwiftUI, React Native, Flutter, and Kotlin Multiplatform projects on macOS and installing on iOS.

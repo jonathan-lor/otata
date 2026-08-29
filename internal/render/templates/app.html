@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>otata | {{.Title}}</title>
+{{if .Building}}<meta http-equiv="refresh" content="5">{{end}}
+{{template "style"}}
+</head>
+<body>
+  <div class="wrap">
+    <a class="back" href="{{.IndexURL}}">&larr; All apps</a>
+    <div class="card">
+      <div class="head">
+        {{if .HasIcon}}<img class="icon" src="{{.IconURL}}" alt="">{{else}}<div class="icon"></div>{{end}}
+        <div>
+          <h2>{{.Title}}</h2>
+          <div class="sub">{{.Version}} ({{.Build}}) &middot; {{.Config}}</div>
+        </div>
+      </div>
+      {{if .Building}}
+      <div class="pending">Building {{template "since" .Since}}. This is the previous build.</div>
+      {{else}}
+      <a class="install" href="{{.InstallURL}}">Install</a>
+      {{end}}
+      <dl style="margin:1.25rem 0 0">
+        <dt>Built</dt><dd>{{template "built" .Built}}</dd>
+        <dt>Bundle</dt><dd>{{.BundleID}}</dd>
+        <dt>Commit</dt><dd>{{.Commit}}{{if .Dirty}} <span class="dirty">+dirty</span>{{end}}</dd>
+        <dt>Branch</dt><dd>{{.Branch}}</dd>
+        <dt>Size</dt><dd>{{.Size}}</dd>
+      </dl>
+    </div>
+    <div class="note">
+      <p><strong>Developer Mode must be on</strong>: Settings &rsaquo; Privacy &amp; Security &rsaquo; Developer Mode.</p>
+      <p>If install fails, delete any existing copy of {{.Title}} first.</p>
+    </div>
+  </div>
+{{template "agescript" .}}
+{{if not .Building}}{{template "installscript" .}}{{end}}
+</body>
+</html>

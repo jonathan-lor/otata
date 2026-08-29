@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>otata</title>
+{{if .AnyBuilding}}<meta http-equiv="refresh" content="5">{{end}}
+{{template "style"}}
+</head>
+<body>
+  <div class="wrap">
+    <div class="masthead">
+      <div class="brand">
+        <h1>otata</h1>
+        <a class="github" href="https://github.com/jonathan-lor/otata" aria-label="otata on GitHub">
+          <!-- mark-github from Primer Octicons (MIT), inlined to not arrive by a failable request. -->
+          <svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M6.766 11.328c-2.063-.25-3.516-1.734-3.516-3.656 0-.781.281-1.625.75-2.188-.203-.515-.172-1.609.063-2.062.625-.078 1.468.25 1.968.703.594-.187 1.219-.281 1.985-.281.765 0 1.39.094 1.953.265.484-.437 1.344-.765 1.969-.687.218.422.25 1.515.046 2.047.5.593.766 1.39.766 2.203 0 1.922-1.453 3.375-3.547 3.64.531.344.89 1.094.89 1.954v1.625c0 .468.391.734.86.547C13.781 14.359 16 11.53 16 8.03 16 3.61 12.406 0 7.984 0 3.563 0 0 3.61 0 8.031a7.88 7.88 0 0 0 5.172 7.422c.422.156.828-.125.828-.547v-1.25c-.219.094-.5.156-.75.156-1.031 0-1.64-.562-2.078-1.609-.172-.422-.36-.672-.719-.719-.187-.015-.25-.093-.25-.187 0-.188.313-.328.625-.328.453 0 .844.281 1.25.86.313.452.64.655 1.031.655s.641-.14 1-.5c.266-.265.47-.5.657-.656"/></svg>
+        </a>
+      </div>
+      <div class="host">{{.Host}}</div>
+    </div>
+{{range .Apps}}
+    <div class="card">
+      <a class="head" href="{{.PageURL}}">
+        {{if .HasIcon}}<img class="icon" src="{{.IconURL}}" alt="">{{else}}<div class="icon"></div>{{end}}
+        <div>
+          <h2>{{.Title}}</h2>
+          <div class="sub">{{.Version}} ({{.Build}}) &middot; {{.Config}}</div>
+        </div>
+        <span class="chevron">&rsaquo;</span>
+      </a>
+      <dl>
+        <dt>Built</dt><dd>{{template "built" .Built}}</dd>
+        <dt>Commit</dt><dd>{{.Commit}}{{if .Dirty}} <span class="dirty">+dirty</span>{{end}}</dd>
+        <dt>Size</dt><dd>{{.Size}}</dd>
+      </dl>
+      {{if .Building}}
+      <div class="pending">Building {{template "since" .Since}}. This is the previous build.</div>
+      {{else}}
+      <a class="install" href="{{.InstallURL}}">Install</a>
+      {{end}}
+    </div>
+{{end}}
+{{range .BuildingOnly}}
+    <div class="card">
+      <div class="head">
+        <div class="icon"></div>
+        <div>
+          <h2>{{.Slug}}</h2>
+          <div class="sub">first build &middot; {{.Config}}</div>
+        </div>
+      </div>
+      <div class="pending">Building {{template "since" .Since}}. Nothing to install yet.</div>
+    </div>
+{{end}}
+{{if .Empty}}
+    <div class="card"><p class="empty">Nothing published yet. Run <code>otata publish</code> inside a project.</p></div>
+{{end}}
+    <div class="note">
+      <p><strong>Developer Mode must be on</strong> for development-signed builds: Settings &rsaquo; Privacy &amp; Security &rsaquo; Developer Mode. Turning it on reboots the phone.</p>
+      <p>If an install fails, delete any existing copy of that app first: a differently-signed build cannot replace it.</p>
+    </div>
+  </div>
+{{if not .Empty}}{{template "agescript" .}}{{end}}
+{{if .AnyInstallable}}{{template "installscript" .}}{{end}}
+</body>
+</html>

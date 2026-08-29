@@ -1,0 +1,79 @@
+// Package artifact defines the one thing that moves through the system: a
+// built app plus what is needed to install and describe it.
+package artifact
+
+import (
+	"fmt"
+	"time"
+)
+
+// Platform exists as a field so Android support can be added later
+type Platform string
+
+/*
+const (
+
+	IOS Platform = "ios"
+	Android Platform = "android"
+
+)
+*/
+const IOS Platform = "ios"
+
+// Record is everything known about one published build. It is the unit stored
+// on disk and the unit rendered on the browser install surface.
+type Record struct {
+	Slug     string   `json:"slug"`
+	Platform Platform `json:"platform"`
+
+	Title    string `json:"title"`
+	BundleID string `json:"bundle_id"`
+	// Team is who signed it, copied off the payload's profile at publish. It is
+	// identity, not provenance: iOS installs TEAM.bundle-id, so two teams signing
+	// one bundle identifier are two different apps on the phone. Empty on a
+	// payload with no readable profile.
+	Team    string `json:"team,omitempty"`
+	Version string `json:"version"`
+	Build   string `json:"build"`
+
+	Config string `json:"config"`
+
+	Commit string `json:"commit,omitempty"`
+	Branch string `json:"branch,omitempty"`
+	Dirty  bool   `json:"dirty"`
+
+	BuiltAt     time.Time `json:"built_at"`
+	PayloadName string    `json:"payload_name"`
+	SizeBytes   int64     `json:"size_bytes"`
+	HasIcon     bool      `json:"has_icon"`
+
+	// Recorded so a second project cannot silently claim an existing slug.
+	ProjectPath string `json:"project_path,omitempty"`
+}
+
+// CacheKey defeats caching of a URL that is otherwise stable across builds.
+func (r Record) CacheKey() string {
+	commit := r.Commit
+	if commit == "" {
+		commit = "nocommit"
+	}
+	return fmt.Sprintf("%s-%s", commit, r.Build)
+}
+
+// SizeMB is what humans and pages want; disk reports bytes.
+func (r Record) SizeMB() float64 {
+	return float64(r.SizeBytes) / (1024 * 1024)
+}
+
+// Building marks a build in flight. It's what lets the install
+// surface refuse to misrepresent freshness.
+type Building struct {
+	Slug    string    `json:"slug"`
+	Started time.Time `json:"started"`
+	// PID of the publishing process. A marker whose process is gone is
+	// unambiguously stale, which is what lets doctor --fix clear one left
+	// behind by an interrupted build.
+	PID    int    `json:"pid,omitempty"`
+	Config string `json:"config,omitempty"`
+	Commit string `json:"commit,omitempty"`
+}

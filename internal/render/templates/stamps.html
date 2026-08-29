@@ -1,0 +1,7 @@
+{{/*
+  A build's instant, in both forms: datetime for the age script, the absolute
+  time as the text it rewrites. With no ISO value the instant is unknown and
+  there is nothing for script to compute, so no attribute invites it to try.
+*/}}
+{{define "built"}}{{if .ISO}}<time datetime="{{.ISO}}" data-age>{{.Text}}</time>{{else}}{{.Text}}{{end}}{{end}}
+{{define "since"}}{{if .ISO}}<time datetime="{{.ISO}}" data-since>since {{.Text}}</time>{{else}}for a while{{end}}{{end}}

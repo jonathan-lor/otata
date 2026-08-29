@@ -1,0 +1,65 @@
+# Release pipeline: darwin-only tar.gz archives, signed and notarized by the
+# embedded quill (which is what lets the release job run on a Linux runner),
+# published as a GitHub Release and a cask in jonathan-lor/homebrew-tap.
+#
+# Validate with `goreleaser check`; dry-run with
+# `goreleaser release --snapshot --clean` (signing stays off without the
+# MACOS_* environment variables).
+version: 2
+
+project_name: otata
+
+builds:
+  - env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+    goarch:
+      - arm64
+      - amd64
+    flags:
+      - -trimpath
+    # version.String reads the VCS-stamped module version, so goreleaser's
+    # default -X injections would be dead weight; keep -buildvcs at its
+    # default or released binaries report "dev".
+    ldflags:
+      - -s -w
+
+notarize:
+  macos:
+    - enabled: '{{ isEnvSet "MACOS_SIGN_P12" }}'
+      sign:
+        certificate: "{{ .Env.MACOS_SIGN_P12 }}"
+        password: "{{ .Env.MACOS_SIGN_PASSWORD }}"
+      notarize:
+        issuer_id: "{{ .Env.MACOS_NOTARY_ISSUER_ID }}"
+        key_id: "{{ .Env.MACOS_NOTARY_KEY_ID }}"
+        key: "{{ .Env.MACOS_NOTARY_KEY }}"
+        wait: true
+        timeout: 20m
+
+changelog:
+  use: github-native
+
+release:
+  github:
+    owner: jonathan-lor
+    name: otata
+
+homebrew_casks:
+  - repository:
+      owner: jonathan-lor
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    homepage: https://github.com/jonathan-lor/otata
+    description: Over-the-air installer for iOS builds on your own network
+    skip_upload: auto
+    # brew upgrade runs the old cask's uninstall stanzas, so the launch agent
+    # is booted out on upgrade and returns at next login or `otata start`.
+    uninstall:
+      launchctl:
+        - com.anakepha.otata
+    zap:
+      trash:
+        - "~/Library/LaunchAgents/com.anakepha.otata.plist"
+        - "~/.otata"

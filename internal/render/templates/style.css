@@ -1,0 +1,76 @@
+:root {
+  color-scheme: light dark;
+  --bg: #f4f4f5; --card: #ffffff; --ink: #18181b; --dim: #71717a;
+  --line: #e4e4e7; --accent: #2563eb; --accent-ink: #ffffff;
+  --warn-bg: #fef9c3; --warn-ink: #713f12;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #09090b; --card: #18181b; --ink: #fafafa; --dim: #a1a1aa;
+    --line: #27272a; --accent: #3b82f6; --accent-ink: #ffffff;
+    --warn-bg: #292524; --warn-ink: #fde68a;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; padding: 2rem 1.25rem 4rem; background: var(--bg); color: var(--ink);
+  font: 16px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  display: flex; justify-content: center;
+}
+.wrap { width: 100%; max-width: 27rem; }
+.masthead { margin-bottom: 1.25rem; }
+.brand { display: flex; align-items: center; gap: 0.6rem; }
+.masthead h1 { margin: 0; font-size: 1.5rem; letter-spacing: -0.02em; }
+.masthead .host {
+  color: var(--dim); font-size: 0.8rem; margin-top: 0.2rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere;
+}
+/* The padding over negative margin grows the tap target without moving the
+   layout; currentColor keeps the mark on the palette in both schemes. */
+.github { color: var(--ink); display: flex; padding: 0.5rem; margin: -0.5rem; }
+.github:active { opacity: 0.7; }
+.card {
+  background: var(--card); border: 1px solid var(--line); border-radius: 20px;
+  padding: 1.5rem; margin-bottom: 1rem;
+}
+.head { display: flex; align-items: center; gap: 1rem; margin-bottom: 1.25rem; }
+.icon { width: 60px; height: 60px; border-radius: 13px; border: 1px solid var(--line); flex: none; }
+.head h2 { margin: 0; font-size: 1.2rem; letter-spacing: -0.01em; }
+/* On the index the whole head is the link to the app's page; the chevron is
+   what says so. The app page and a first build render the same head as a
+   plain div: one has nowhere to go, the other no page yet. */
+a.head { color: inherit; text-decoration: none; }
+a.head:active { opacity: 0.7; }
+.chevron { margin-left: auto; flex: none; color: var(--dim); font-size: 1.7rem; line-height: 1; }
+.sub { color: var(--dim); font-size: 0.875rem; margin-top: 0.15rem; }
+a.install {
+  display: block; text-align: center; background: var(--accent); color: var(--accent-ink);
+  text-decoration: none; font-weight: 600; font-size: 1rem;
+  padding: 0.85rem; border-radius: 12px;
+}
+a.install:active { opacity: 0.75; }
+/* Latched after a tap: iOS restarts an in-flight download if the link is
+   tapped again, and the page has no way to know the install has finished. */
+a.install.waiting { pointer-events: none; opacity: 0.25; }
+dl {
+  margin: 0 0 1.25rem; display: grid; grid-template-columns: auto 1fr;
+  gap: 0.45rem 1rem; font-size: 0.82rem;
+}
+dt { color: var(--dim); }
+dd {
+  margin: 0; text-align: right; font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.note {
+  background: var(--warn-bg); color: var(--warn-ink);
+  border-radius: 12px; padding: 0.85rem 1rem; font-size: 0.8rem;
+}
+.note p { margin: 0 0 0.5rem; }
+.note p:last-child { margin-bottom: 0; }
+.dirty { color: #f59e0b; }
+.back { display: inline-block; margin-bottom: 1rem; color: var(--dim); text-decoration: none; font-size: 0.875rem; }
+.empty { color: var(--dim); font-size: 0.9rem; }
+.pending {
+  background: var(--warn-bg); color: var(--warn-ink);
+  border-radius: 12px; padding: 0.85rem 1rem; font-size: 0.9rem; text-align: center;
+}

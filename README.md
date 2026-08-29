@@ -1,9 +1,10 @@
 # otata
 
-otata is a tool for quickly installing iOS builds over your own network. It's a CLI designed for your agent to use during remote control sessions to get the latest build to your phone, wherever you are. Just ask your agent to publish with otata after making some changes, and then install from the provided URL!
+otata is a tool for quickly installing iOS builds over your own network. It's a CLI designed for your agent to use during remote control sessions to get the latest build to your phone, wherever you are. Simply ask your agent to publish with otata after making some changes, and then install from the provided URL!
 
 otata currently supports building SwiftUI, React Native, Flutter, and Kotlin Multiplatform projects on macOS and installing on iOS.
 Android build support on Linux/Windows/WSL and installation on Android devices is not yet supported, but is a work in progress.
+
 Tailscale is the recommended method for serving, but serving through your own HTTPS proxy is also supported.
 
 ```sh
@@ -20,18 +21,20 @@ brew install --cask jonathan-lor/tap/otata
 ```
 
 Or `go install github.com/jonathan-lor/otata@latest`, or clone and `make
-install`. Then, once:
+install`.
+
+Then, once:
 
 ```sh
 otata transport use tailscale   # how your phone reaches this machine
-otata autostart on              # the server runs under launchd from then on
+otata autostart on              # optional; the server runs under launchd from then on
 ```
 
 otata requires `tailscale serve` and Tailscale to have HTTPS certificates enabled to work with it out of the box. See [Transports](#transports) for more details.
 For some examples of serving through your own HTTPS proxy, see [docs/manual-transports.md](docs/manual-transports.md) 
 
 otata also requires macOS with Xcode and a **paid** Apple developer team with the target device registered.
-Trying to install a free personal team's builds OTA is outright refused by iOS at the system level, so `otata publish` will follow suit and error as well if you try this.
+Trying to install a free personal team's builds OTA is outright refused by iOS, so `otata publish` will follow suit and error as well if you try this.
 This is Apple's unavoidable restriction on the free developer profile and is completely out of otata's hands.
 
 The assumption is that if you're committed enough to need otata for remote work with agents, you probably plan to actually ship to the App Store (in which case you'd own or be a part of a paid Apple developer team anyways).
@@ -53,7 +56,7 @@ The assumption is that if you're committed enough to need otata for remote work 
 
 `otata publish` discovers the workspace or project, a scheme that archives an app, the
 signing team, and the slug from the directory name. `--scheme` and `--slug` are for when it asks.
-`--config` defaults to `Release`, and a publish that falls back to it will say so before the build starts.
+`--config` defaults to `Release`, and a publish that falls back to it will tell you before the build starts.
 
 Publishes will build incrementally by default. `--builder archive` will use `xcodebuild archive` + export instead, which rebuilds
 everything every time and will be noticeably slower.
@@ -72,7 +75,7 @@ $ otata status --json | jq .data.transport.base_url
 "https://your-mac.your-tailnet.ts.net/otata"
 ```
 
-otata errors carry stable machine codes so agents can branch on them instead of having to pattern-match a sentence.
+otata errors carry stable machine codes so agents can branch on them.
 The exit code is 2 when the command was called wrongly and 1 when it ran and failed:
 
 | Code | Means | What to do |
@@ -120,8 +123,6 @@ Verified walkthroughs for a Cloudflare quick tunnel, Caddy on your own domain, a
 ## Current Limitations
 
 **iOS and macOS only (for now).** Android builds and support for Linux/Windows/WSL are planned but not yet implemented.
-iOS builds require macOS and Xcode, and React Native, Flutter and Kotlin Multiplatform all route through `xcodebuild` too, which is why `otata publish` builds them directly instead of just accepting their output.
-Use `--artifact` for anything else that emits an `.ipa`.
 If you're only using a Mac to build, otata can be used from a non-Mac host via SSH.
 
 **Private transports only (for now).** A public transport would need an access guard

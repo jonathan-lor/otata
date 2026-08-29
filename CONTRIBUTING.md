@@ -50,15 +50,7 @@ OTATA_TEST_PROJECT=~/path/to/MyApp OTATA_TEST_SCHEME=MyApp go test ./internal/bu
 OTATA_TEST_IPA=~/.otata/public/myapp/MyApp.ipa go test ./internal/appmeta/ -run Real -v
 ```
 
-A skip there is not a failure.
-
-Check that a new test fails without the mechanism it claims to test.
-`TestRefusesTraversal` looked like it proved `os.Root` confined requests; it did
-not, because `path.Clean` collapses `..` before the root sees it, and the suite
-stayed green with `os.Root` removed. `TestRefusesSymlinkEscape` is the one that
-bites. Verify by breaking the mechanism on purpose and watching the test fail.
-
-## Important Things to Keep in Mind
+## Some important things to keep in mind
 
 - **`storage` validates every slug it turns into a path.** A slug becomes a
   path component and a URL segment, and the validator accepts exactly what
@@ -83,7 +75,7 @@ bites. Verify by breaking the mechanism on purpose and watching the test fail.
   cleans every string argument, and the format string (ours) keeps its color.
 - **Derived data is rebuilt where derived data is rebuilt.** Manifests embed the
   base URL, so `Reindex` regenerates them alongside the pages.
-- **The pages are server-rendered truth.** The install latch is one allowed
+- **The pages are server-rendered truth.** The install latchin the web UI has one allowed
   shape: the `href` is rendered, and script can only take the link away after a
   tap. The age is the other: the HTML carries the build's timestamp as an
   absolute time, and script rewrites it to "40 seconds ago" on the phone.
@@ -95,8 +87,8 @@ bites. Verify by breaking the mechanism on purpose and watching the test fail.
   and `doctor` all ask `markerStale`.
 - **The launch agent belongs to the root and port it embeds.** `stop`, `status`
   and `start` consult it only when those match the current invocation. Matched
-  by label alone, `otata stop` under a scratch `OTATA_ROOT` booted the real
-  agent out as collateral.
+  by label alone, `otata stop` under a scratch `OTATA_ROOT` boots the real
+  agent out.
 - **A background server exists only under launchd.** `StartServer` reloads the
   installed launch agent or refuses with the command to run.
   `otata serve` in a foreground terminal or tmux are the exceptions.

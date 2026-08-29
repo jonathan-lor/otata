@@ -7,7 +7,7 @@ This is a practical setup guide for three verified setups for the `manual` trans
   where the phone can reach the Mac's network.
 - **ngrok** — works from anywhere; free-tier URLs change per start.
 
-**TODO: your own domain, from anywhere.** There's no route for this yet. The Caddy
+**TODO: your own domain from anywhere.** There's no route for this yet. The Caddy
 section's Tailscale-IP variant is unverified, and a named
 Cloudflare tunnel walkthrough is pending.
 
@@ -32,7 +32,7 @@ hostname used bare) sidesteps the question.
 
 `--visibility public` is refused: no access guard ships. What
 `--visibility private` means depends on the route. On the Caddy route it is a
-fact (the name resolves to a private address), while a tunnel URL is genuinely
+fact (the name resolves to a private address), while a tunnel URL is 
 reachable from the whole internet. On any publicly reachable route, the
 unguessable URL is all that stands between your builds and the internet, and
 the index enumerates every published app under it. A random tunnel hostname

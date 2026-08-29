@@ -5,7 +5,7 @@ Some common gotchas outside of otata's scope:
 - **Developer Mode must be on**: Settings -> Privacy & Security -> Developer Mode.
 - **A differently-signed build cannot replace an installed one.** Delete the
   existing copy first.
-- **A React Native `--config Debug` build carries this Mac's LAN address**,
+- **A React Native `--config Debug` build carries the Mac's LAN address**,
   written beside the bundle so the app can find Metro. The JS is bundled in,
   so the app runs, but the reload loop only works on that network and the
   build is nearly three times the size.
@@ -13,10 +13,6 @@ Some common gotchas outside of otata's scope:
   packages the signed build products directly, so the binary keeps its symbol
   table — around 40% on a Swift-heavy app. `--builder archive` produces the
   stripped payload, at the cost of a full rebuild on every publish.
-- **`--builder archive` alternating configs costs a full rebuild**: archives
-  share one `ArchiveIntermediates` tree per scheme, and rebuild it every run
-  regardless. The default builder keeps separate incremental state per
-  configuration.
 - **`tailscale` is usually just a shell alias** to the binary inside the app
   bundle, so it vanishes inside scripts. otata resolves it explicitly.
 - **The signing team comes from the project, and a template may already have
@@ -54,7 +50,7 @@ other handlers on `:443` are left alone.
 
 ### Proving an install actually happened
 
-A `200` in `server.log` proves bytes were sent, not that iOS installed them.
+A `200` in `server.log` proves bytes were sent, not necessarily that iOS installed them.
 The bundle container changes on every reinstall, so compare it before and
 after:
 
@@ -66,5 +62,5 @@ xcrun devicectl device info apps --device <id> --json-output after.json
 ```
 
 A changed container UUID in the `url` field for your bundle id means it
-genuinely reinstalled. The device must be on the same local network;
+genuinely reinstalled. The device must be on the same local network.
 `devicectl` does not work over the tailnet.

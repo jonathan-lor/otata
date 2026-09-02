@@ -7,10 +7,6 @@ This is a practical setup guide for three verified setups for the `manual` trans
   where the phone can reach the Mac's network.
 - **ngrok** — works from anywhere; free-tier URLs change per start.
 
-**TODO: your own domain from anywhere.** There's no route for this yet. The Caddy
-section's Tailscale-IP variant is unverified, and a named
-Cloudflare tunnel walkthrough is pending.
-
 Every method ends with a URL served over HTTPS with a publicly trusted
 certificate, forwarding to otata's server on `127.0.0.1:8787`. iOS refuses
 anything less for an `itms-services://` install.
@@ -64,9 +60,9 @@ otata doctor
 ## Your own domain and Caddy (same network)
 
 The A record points at a private address, so the URL works only where the
-phone can reach the Mac's network: the same Wi-Fi — or from anywhere, if you
-point the record at the Mac's Tailscale IP (`tailscale ip -4`) instead and
-the phone runs Tailscale.
+phone can reach the Mac's network: the same Wi-Fi. Pointing the record at the
+Mac's Tailscale IP (`tailscale ip -4`) instead, with Tailscale running on the
+phone, should extend that to anywhere (unverified).
 
 1. **DNS.** Add an A record for a subdomain — `otata.example.com` — pointing
    at the Mac's LAN address (`ipconfig getifaddr en0`). Issuing a certificate

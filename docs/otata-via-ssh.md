@@ -13,7 +13,7 @@ agent's machine      edits source; runs no otata
                     └── phone taps Install
 ```
 
-The phone should talk directly to the mac in this setup, so the machine with your agent needs no otata install. The Mac keeps the same transport as when publishing locally.
+The phone should talk directly to the mac in this setup, so the machine running the agent needs no otata install. The Mac keeps the same transport as when publishing locally.
 
 Serving a .ipa from a non-macOS machine is technically possible today by building otata from source on your desired machine and using `--artifact`, but official support will arrive when Linux/Windows/WSL support does.
 
@@ -28,8 +28,7 @@ Non-interactive zsh reads only `~/.zshenv`, not the `~/.zprofile` or
 `~/.zshrc` where installers put PATH edits. `command not found` over SSH
 while `otata` works in a terminal on the Mac is this, not a broken install.
 
-An SSH connection that dies mid-build kills the publish, which cleans up as
-a Ctrl-C does. On an unstable connection, run it under `tmux` or `nohup`.
+An SSH connection that dies mid-build will kill the publish. On an unstable connection, run otata under `tmux` or `nohup`.
 
 Each publish records the commit, branch and dirty flag of the working tree
 *on the Mac*, however the source got there. Keep the project at one path on
@@ -72,17 +71,4 @@ A Mac being used only over SSH needs four substitutions:
 
 A project under `~/Documents`, `~/Desktop` or `~/Downloads` is unreadable
 over SSH until remote users are allowed full disk access (System Settings >
-General > Sharing > Remote Login), the remote-process face of the TCC rule
-in [gotchas](gotchas.md).
-
-## When it breaks
-
-```sh
-ssh mac '~/.local/bin/otata doctor --fix --json'
-```
-
-It reloads the launch agent, wires the transport, clears stale build markers,
-regenerates the pages, then verifies every URL and exits non-zero with each
-failing check naming its remedy. For anything doctor can't fix, the logs are on
-the Mac at `~/.otata/server.log`, and
-`~/.otata/build/<slug>/xcodebuild.log` for the build that failed.
+General > Sharing > Remote Login).

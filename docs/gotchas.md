@@ -1,6 +1,8 @@
 # Gotchas and troubleshooting
 
-Some common gotchas outside of otata's scope:
+## Gotchas
+
+These are some surprises you might hit.
 
 - **Developer Mode must be on**: Settings -> Privacy & Security -> Developer Mode.
 - **A differently-signed build cannot replace an installed one.** Delete the
@@ -22,6 +24,11 @@ Some common gotchas outside of otata's scope:
   team. Settle it once with `flutter config --select-ios-signing-settings`,
   per project in Xcode's Signing & Capabilities, or `TEAM_ID` for a KMP
   template.
+- **Publishing is refused while Tailscale Funnel is on for `:443`.** Funnel is
+  granted per listener instead of per path, so anything funnelled there makes
+  every handler on that port reachable from the whole internet.
+  No access guard ships yet, so otata refuses instead of serving your
+  builds publicly. Turn Funnel off for that listener, or serve through your own proxy.
 - **`brew upgrade` stops the launch agent.** Homebrew runs the old cask's
   uninstall stanzas during an upgrade, which boots the agent out. It returns
   at next login, or immediately with `otata start`.
@@ -62,5 +69,5 @@ xcrun devicectl device info apps --device <id> --json-output after.json
 ```
 
 A changed container UUID in the `url` field for your bundle id means it
-genuinely reinstalled. The device must be on the same local network.
+actually reinstalled. The device must be on the same local network.
 `devicectl` does not work over the tailnet.

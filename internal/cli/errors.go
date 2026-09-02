@@ -23,7 +23,7 @@ func (f *Failure) Error() string {
 	return f.Message
 }
 
-// The closed set. Keep in sync with the table of codes in the README.
+// The closed set of error codes. Keep in sync with the table of codes in docs/cli-reference.md.
 const (
 	CodeNoProject       = "no_project"        // nothing buildable here
 	CodeAmbiguousScheme = "ambiguous_scheme"  // several candidates, none obvious

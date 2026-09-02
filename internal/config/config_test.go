@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// These are documented in the README and in an error hint that tells the user to set OTATA_PORT.
+// These are documented in docs/cli-reference.md and in an error hint that tells the user to set OTATA_PORT.
 func TestEnvironmentOverridesFile(t *testing.T) {
 	root := t.TempDir()
 	if err := Save(root, Config{Port: 8787, ServePath: "/otata", Transport: "tailscale"}); err != nil {

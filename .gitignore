@@ -1,2 +1,5 @@
 bin/
 dist/
+*.sw[a-p]
+*~
+.DS_Store

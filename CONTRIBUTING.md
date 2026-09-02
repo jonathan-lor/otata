@@ -3,9 +3,11 @@
 otata is a relatively small Go project with no dependencies outside the standard library.
 This doc should give you everything you need to get started with contributing.
 
-Until otherwise noted, **the steps below are for macOS only.**
+Until otherwise noted, **the steps below are intended for macOS only.**
 
 ## Building
+
+`git clone`, then:
 
 ```sh
 make build     # bin/otata
@@ -15,7 +17,7 @@ make vet
 ```
 
 `make install` copies instead of symlinking on purpose. A symlink into a
-TCC-protected checkout results in the launchd hang described in
+TCC-protected checkout will hit the launchd hang described in
 [docs/gotchas.md](docs/gotchas.md). It writes beside the target and renames,
 because overwriting a running binary corrupts its mapped image and macOS kills
 the process.
@@ -75,10 +77,11 @@ OTATA_TEST_IPA=~/.otata/public/myapp/MyApp.ipa go test ./internal/appmeta/ -run 
   cleans every string argument, and the format string (ours) keeps its color.
 - **Derived data is rebuilt where derived data is rebuilt.** Manifests embed the
   base URL, so `Reindex` regenerates them alongside the pages.
-- **The pages are server-rendered truth.** The install latchin the web UI has one allowed
-  shape: the `href` is rendered, and script can only take the link away after a
-  tap. The age is the other: the HTML carries the build's timestamp as an
-  absolute time, and script rewrites it to "40 seconds ago" on the phone.
+- **The pages are server-rendered truth.** Script in the web UI has two allowed
+  shapes. The install latch is one: the `href` is rendered, and script can only
+  take the link away after a tap. The age is the other: the HTML carries the
+  build's timestamp as an absolute time, and script rewrites it to "40 seconds
+  ago" on the phone.
 - **Visibility is decided for the listener, before wiring.** Funnel is per
   `host:port`, so the check cannot wait for our handler to exist. It did once,
   and the first publish onto an already-funnelled `:443` was public until the

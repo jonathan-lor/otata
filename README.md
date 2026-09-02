@@ -4,10 +4,12 @@
 [![release](https://img.shields.io/github/v/release/jonathan-lor/otata)](https://github.com/jonathan-lor/otata/releases/latest)
 [![license](https://img.shields.io/github/license/jonathan-lor/otata)](LICENSE)
 
-otata is a tool for quickly installing iOS builds over your own network. It's a CLI designed for your agent to use during remote control sessions to get the latest build to your phone, wherever you are. Simply ask your agent to publish with otata after making some changes, and then install from the provided URL!
+otata is a tool for quickly installing iOS builds over your own network. It's a CLI designed for a coding agent to use during remote control sessions to get the latest build from your computer to your phone, wherever you are.
+
+Simply ask your favorite agent to publish with otata after making some changes, and then install from the provided URL!
 
 otata currently supports building SwiftUI, React Native, Flutter, and Kotlin Multiplatform projects on macOS and installing on iOS.
-Android build support on Linux/Windows/WSL and installation on Android devices is not yet supported, but is a work in progress.
+Android and Linux/Windows/WSL support is a work in progress.
 
 Tailscale is the recommended method for serving, but serving through your own HTTPS proxy is also supported.
 
@@ -16,58 +18,68 @@ cd ~/path/to/MyApp
 otata publish                # builds, signs, publishes, prints the URL
 ```
 
-A shared server publishes every app you build, so every app you publish will be listed at that URL.
+## Requirements
+
+Building for iOS has the following requirements:
+
+- **A Mac with Xcode.** Apple doesn't allow iOS builds anywhere else (without breaking TOS). If you use a different host machine and only use the Mac to build, otata can be used [over SSH](docs/otata-via-ssh.md).
+- **A paid Apple Developer account** ($99/year), with your iOS device registered to
+  the team. **iOS outright refuses to install a free personal team's build over
+  the air,** so `otata publish` will follow suit and refuse as well.
+- **Developer Mode on the phone**: Settings -> Privacy & Security -> Developer Mode.
+- **A way for your phone to reach the Mac.** iOS will only install from a URL
+  served over HTTPS with a publicly trusted certificate. [Tailscale](https://tailscale.com)
+  is the recommended solution and is free for personal use.
+  Bringing [your own HTTPS proxy](docs/manual-transports.md) works too.
+
+The assumption is that if you're committed enough to need otata for remote work with agents, you probably plan to actually ship to the App Store, in which case you'd own or be a part of a paid Apple developer team anyways. ;)
 
 ## Install
+
+**You can just give your agent the link to this repo to run the install and setup if you'd like. You'll still have to do the Tailscale steps yourself though.** 
+
+This install will assume that you've chosen to use Tailscale. You should also reference the more detailed step-by-step guide in [Getting started](docs/getting-started.md). 
+
+Install Tailscale on both [your Mac](https://tailscale.com/docs/install/mac) and [your phone](https://tailscale.com/docs/install/ios), sign into the same account on both,
+and turn on HTTPS certificates and MagicDNS in the [admin console](https://login.tailscale.com/admin/dns) under DNS. 
+
+Then, install otata on the Mac:
 
 ```sh
 brew install --cask jonathan-lor/tap/otata
 ```
 
-Or `go install github.com/jonathan-lor/otata@latest`, or clone and `make
-install`.
+Or
+
+```sh
+go install github.com/jonathan-lor/otata@latest
+```
 
 Then, once:
 
 ```sh
-otata transport use tailscale   # how your phone reaches this machine
-otata autostart on              # optional; the server runs under launchd from then on
+otata transport use tailscale
+otata autostart on
 ```
 
-otata requires `tailscale serve` and Tailscale to have HTTPS certificates enabled to work with it out of the box. See [Transports](#transports) for more details.
-For some examples of serving through your own HTTPS proxy, see [docs/manual-transports.md](docs/manual-transports.md) 
+otata also includes an [agent skill](skills/otata/SKILL.md).
 
-otata also requires macOS with Xcode and a **paid** Apple developer team with the target device registered.
-Trying to install a free personal team's builds OTA is outright refused by iOS, so `otata publish` will follow suit and error as well if you try this.
-This is Apple's unavoidable restriction on the free developer profile and is completely out of otata's hands.
+## Usage 
 
-The assumption is that if you're committed enough to need otata for remote work with agents, you probably plan to actually ship to the App Store (in which case you'd own or be a part of a paid Apple developer team anyways).
+Three commands cover nearly everything:
 
-## Commands
+```sh
+otata publish     # build and publish the project in the current directory
+otata list        # what is published
+otata doctor      # verify the server, transport and every URL; --fix repairs first
+```
 
-| Command | Does |
-| --- | --- |
-| `otata publish [--config Debug] [--scheme S] [--slug NAME] [--builder archive]` | Build and publish the project in the current directory |
-| `otata publish --artifact <path>` | Publish an already-built `.ipa` from any toolchain |
-| `otata list` | What is published |
-| `otata status` | Everything in one call |
-| `otata doctor [--fix]` | Verify the server, transport and every URL, report a signing deadline; `--fix` repairs first |
-| `otata forget <slug>` | Drop one app and its payload |
-| `otata serve` | Run the file server in the foreground |
-| `otata start` / `stop` / `restart` | Server lifecycle |
-| `otata autostart on\|off` | Run the server under launchd: at login, restarted if it exits |
-| `otata transport use <name>` | `tailscale` or `manual` |
-
-`otata publish` discovers the workspace or project, a scheme that archives an app, the
+`otata publish` discovers the workspace or project, an archiving scheme, the
 signing team, and the slug from the directory name. `--scheme` and `--slug` are for when it asks.
 `--config` defaults to `Release`, and a publish that falls back to it will tell you before the build starts.
+Publishing an already-built `.ipa` from any toolchain is `otata publish --artifact <path>`.
 
-Publishes will build incrementally by default. `--builder archive` will use `xcodebuild archive` + export instead, which rebuilds
-everything every time and will be noticeably slower.
-
-Environment: `OTATA_ROOT` (default `~/.otata`), `OTATA_PORT`, `OTATA_PATH`, and
-`NO_COLOR`. `OTATA_PORT` and `OTATA_PATH` override the stored config for one
-invocation without persisting.
+A more detailed reference can be found in the [CLI reference](docs/cli-reference.md).
 
 ## Built For Agents
 
@@ -79,50 +91,9 @@ $ otata status --json | jq .data.transport.base_url
 "https://your-mac.your-tailnet.ts.net/otata"
 ```
 
-otata errors carry stable machine codes so agents can branch on them.
-The exit code is 2 when the command was called wrongly and 1 when it ran and failed:
-
-| Code | Means | What to do |
-| --- | --- | --- |
-| `no_project` | Nothing buildable here | Check the directory, or pass `--artifact` |
-| `ambiguous_scheme` | Several candidates | Re-run with `--scheme`; the candidates are in `details` |
-| `needs_setup` | A step the project's own toolchain owns has not been run | Run `details.command` in `details.dir`, then retry |
-| `build_failed` | The toolchain returned non-zero | Read the log path in `details` |
-| `signing_failed` | Certificate, profile or device registration | Needs a human with Apple portal access |
-| `free_profile` | Signed by a free personal team, which iOS will not install over the air | Sign with a paid team; nothing else fixes it |
-| `server_down` | Local server not running, or the port is held by something else | `otata autostart on` once; after that, `otata doctor --fix` and retry |
-| `transport_down` | Transport present but unusable | Needs the machine, e.g. Tailscale logged out |
-| `no_transport` | No transport selected, or `manual` has no base URL | Run the `otata transport use` command the hint names |
-| `slug_conflict` | Another project owns this name, or its record is unreadable | Pass `--slug`, or `otata forget` it |
-| `build_in_progress` | A live publish already holds this slug | Wait; `otata doctor --fix` clears a marker whose process is gone |
-| `not_found` | No app published under that slug | Check `otata list` |
-| `unhealthy` | `doctor` found something wrong | Read `data.checks`; each failing one says what to do, often `--fix` |
-| `invalid_args` | The command was called wrongly | Fix the arguments |
-| `internal` | Anything unclassified | Read the message; it is not expected |
-
-otata also includes an [agent skill](skills/otata/SKILL.md).
-
-## Transports
-
-iOS requires a URL the phone can reach over HTTPS with a **publicly trusted
-certificate**.
-
-| Transport | Reachable by | Visibility | Setup |
-| --- | --- | --- | --- |
-| `tailscale` | Devices on your tailnet | Private | `otata transport use tailscale`, once |
-| `manual` | Whatever your proxy serves | You declare it | `--base-url`, optionally `--keep-prefix` |
-
-```sh
-otata transport use manual --base-url https://builds.example.com/otata
-```
-
-The transport is selected once and validated then. `tailscale`
-refuses unless the CLI answers and the tailnet has HTTPS certificates enabled
-(admin console -> DNS. A new tailnet has them off, and `tailscale serve` needs them).
-Funnel makes a listener public per listener, not per path, so publishing is
-also refused while anything on `:443` is funnelled.
-
-Verified walkthroughs for a Cloudflare quick tunnel, Caddy on your own domain, and ngrok are in [docs/manual-transports.md](docs/manual-transports.md).
+otata errors carry stable machine codes to make it easier for agents to branch off them.
+The exit code is 2 when the command was called wrongly and 1 when it ran and failed.
+The [CLI reference](docs/cli-reference.md#error-codes) also lists every code and what to do about it.
 
 ## Current Limitations
 
@@ -130,10 +101,12 @@ Verified walkthroughs for a Cloudflare quick tunnel, Caddy on your own domain, a
 If you're only using a Mac to build, otata can be used from a non-Mac host via SSH.
 
 **Private transports only (for now).** A public transport would need an access guard
-before it is safe, and none is implemented yet.
+before it's safe, and none is implemented yet.
 
 ## Documentation
 
+- [Getting started](docs/getting-started.md)
+- [CLI reference](docs/cli-reference.md)
 - [FAQ](docs/FAQ.md)
 - [Serving over your own proxy](docs/manual-transports.md)
 - [otata via SSH](docs/otata-via-ssh.md)

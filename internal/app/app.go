@@ -81,10 +81,6 @@ func (a *App) selectTransport() transport.Transport {
 	return nil
 }
 
-// SelectedTransport is selectTransport for callers outside this package that
-// need the current transport without the guard.
-func (a *App) SelectedTransport() transport.Transport { return a.selectTransport() }
-
 // Transport resolves the selected transport and enforces the visibility guard.
 func (a *App) Transport() (transport.Transport, error) {
 	t := a.selectTransport()

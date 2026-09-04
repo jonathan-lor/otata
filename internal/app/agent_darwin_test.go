@@ -41,3 +41,45 @@ func TestLaunchPlistEmbedsRootPortAndPath(t *testing.T) {
 		t.Error("KeepAlive.SuccessfulExit is not false")
 	}
 }
+
+// disabledIn parses `launchctl print-disabled` output, whose lines this is
+// copied from a real machine: `=> disabled`/`=> enabled` on current macOS,
+// with `=> true` the older spelling of disabled. Reading it wrong either
+// hides a Login Items toggle-off or reports every agent as disabled.
+func TestDisabledIn(t *testing.T) {
+	const current = `	disabled services = {
+		"com.apple.Siri.agent" => disabled
+		"com.ollama.ollama" => enabled
+		"com.anakepha.otata" => disabled
+	}`
+	const enabled = `	disabled services = {
+		"com.anakepha.otata" => enabled
+		"com.anakepha.otata2" => disabled
+	}`
+	const legacy = `	disabled services = {
+		"com.anakepha.otata" => true
+		"com.example.other" => false
+	}`
+	cases := []struct {
+		name string
+		out  string
+		want bool
+	}{
+		{"disabled", current, true},
+		{"enabled entry is not disabled", enabled, false},
+		{"legacy true means disabled", legacy, true},
+		{"absent means enabled", `	disabled services = {
+		"com.example.other" => disabled
+	}`, false},
+		{"empty output", "", false},
+	}
+	for _, c := range cases {
+		if got := disabledIn(c.out, "com.anakepha.otata"); got != c.want {
+			t.Errorf("%s: disabledIn = %v, want %v", c.name, got, c.want)
+		}
+	}
+	// A label that merely prefixes another must not borrow its state.
+	if disabledIn(enabled, "com.anakepha.otata2") != true {
+		t.Error("the longer label's own state was not read")
+	}
+}

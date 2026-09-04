@@ -90,6 +90,27 @@ func (l *launchd) Disabled() bool {
 	return disabledIn(string(out), launchLabel)
 }
 
+/*
+disabledIn reads `launchctl print-disabled` output and reports whether
+label is disabled there. It's the state the System Settings Login Items toggle
+and `launchctl disable` record.
+
+It's split from the fetching just so the parse is testable.
+Lines read `"label" => disabled` on current macOS and `"label" => true` on older ones.
+Both mean disabled, and a label absent from the list is enabled.
+*/
+func disabledIn(out, label string) bool {
+	for line := range strings.SplitSeq(out, "\n") {
+		line = strings.TrimSpace(line)
+		rest, found := strings.CutPrefix(line, `"`+label+`"`)
+		if !found {
+			continue
+		}
+		return strings.Contains(rest, "disabled") || strings.Contains(rest, "true")
+	}
+	return false
+}
+
 func (l *launchd) Enable() {
 	_ = exec.Command("launchctl", "enable", launchTarget()).Run()
 }

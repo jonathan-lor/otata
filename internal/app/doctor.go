@@ -141,8 +141,8 @@ func (a *App) Doctor(fix bool) (*DoctorResult, error) {
 	if !a.ServerRunning() {
 		// Another store's server on the port is refused here exactly as
 		// publish refuses it. `otata restart` is the explicit way to replace it.
-		// except when that root's own launch agent would respawn whatever restart stops.
-		// In that case, the remedy is the agent's removal, and the check says so directly.
+		// except when that root's own unit would respawn whatever restart stops.
+		// In that case, the remedy is the unit's removal, and the check says so directly.
 		if p, ok := a.otherRootServer(); ok {
 			detail := fmt.Sprintf("port %d is held by %s; 'otata restart' replaces it with one for %s, or set OTATA_PORT to a free port",
 				a.Config.Port, p.describe(), a.Root)

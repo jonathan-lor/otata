@@ -13,15 +13,24 @@ import (
 
 // fakeSupervisor is a service manager that does what it is told and remembers
 // what it was told, so the orchestration above it can be proven without
-// launchd: what is installed, in what order things happen, and what is left
-// behind when a unit never binds.
+// launchd or systemd: what is installed, in what order things happen, and
+// what is left behind when a unit never binds or a program is refused.
 type fakeSupervisor struct {
 	available bool
 	installed *agentSpec
 	loaded    bool
 	disabled  bool
 	loadErr   error
-	calls     []string
+	// installErr is a failure after the definition was written, as a
+	// daemon-reload or enable the manager refused: the fake keeps the unit
+	// installed, as the file stays on disk.
+	installErr error
+	// unusable is a program the fake refuses to run from where it is, as
+	// systemd refuses a path holding a quote. installs records every
+	// program Install was asked for, refused or not.
+	unusable string
+	installs []string
+	calls    []string
 }
 
 func (f *fakeSupervisor) Available() bool { return f.available }
@@ -37,8 +46,12 @@ func (f *fakeSupervisor) Disabled() bool { return f.disabled }
 func (f *fakeSupervisor) Enable()        { f.calls = append(f.calls, "enable") }
 func (f *fakeSupervisor) Install(spec agentSpec) error {
 	f.calls = append(f.calls, "install")
+	f.installs = append(f.installs, spec.Program)
+	if spec.Program == f.unusable {
+		return &errAgentProgram{Program: spec.Program, Reason: "the fake refuses it"}
+	}
 	f.installed = &spec
-	return nil
+	return f.installErr
 }
 func (f *fakeSupervisor) Load() error {
 	f.calls = append(f.calls, "load")
@@ -202,5 +215,89 @@ func TestStopServerUnloadsOurUnit(t *testing.T) {
 	}
 	if f.loaded || !slices.Contains(f.calls, "unload") {
 		t.Errorf("our loaded unit was not unloaded: loaded=%v calls=%v", f.loaded, f.calls)
+	}
+}
+
+// A manager that refuses the program from where it sits says so before
+// anything is loaded, and that is the second road to the staged copy: the
+// copy is tried, and when it does not bind either, the failure names both
+// attempts as it does when the first attempt loaded and never bound.
+func TestEnableAutostartStagesACopyWhenTheManagerRefusesTheProgram(t *testing.T) {
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := &fakeSupervisor{available: true, unusable: exe}
+	a := supervised(t, f)
+
+	err = a.EnableAutostart()
+	fail := cli.AsFailure(err)
+	if err == nil || fail.Code != cli.CodeServerDown || !strings.Contains(fail.Message, "from a copy") {
+		t.Fatalf("got %v, want a server_down naming both attempts", err)
+	}
+	if want := []string{exe, a.Store.StagedBinary()}; !slices.Equal(f.installs, want) {
+		t.Errorf("installed programs = %v, want %v", f.installs, want)
+	}
+	// The refusal came before anything was enabled or loaded; the copy went the whole way.
+	want := []string{"unload", "install", "unload", "install", "enable", "load", "remove", "remove"}
+	if !slices.Equal(f.calls, want) {
+		t.Errorf("calls = %v\nwant    %v", f.calls, want)
+	}
+	if f.installed != nil || f.loaded {
+		t.Errorf("a unit was left behind: %+v loaded=%v", f.installed, f.loaded)
+	}
+}
+
+// The copy can be refused too, when the root itself sits at a path the
+// manager will not run from. Then the failure carries the manager's reason
+// and names the root as the thing to move.
+func TestEnableAutostartReportsAProgramRefusedFromTheCopyToo(t *testing.T) {
+	f := &fakeSupervisor{available: true}
+	a := supervised(t, f)
+	f.unusable = a.Store.StagedBinary()
+
+	err := a.EnableAutostart()
+	fail := cli.AsFailure(err)
+	if err == nil || fail.Code != cli.CodeServerDown {
+		t.Fatalf("got %v, want server_down", err)
+	}
+	for _, want := range []string{"nor from a copy", "the fake refuses it", a.Root} {
+		if !strings.Contains(fail.Message, want) {
+			t.Errorf("message lacks %q: %s", want, fail.Message)
+		}
+	}
+	if !strings.Contains(fail.Hint, "OTATA_ROOT") {
+		t.Errorf("hint does not name the root as movable: %q", fail.Hint)
+	}
+	if f.installed != nil {
+		t.Errorf("a unit was left behind: %+v", f.installed)
+	}
+}
+
+// An Install that fails after writing the definition (systemd's daemon-reload
+// or enable refused) leaves nothing behind: a file with no login link would
+// read as autostart on for a unit that never returns. The failure is not the
+// program's, so no copy is staged either.
+func TestEnableAutostartRemovesAUnitItCouldNotFinishInstalling(t *testing.T) {
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := &fakeSupervisor{available: true, installErr: errors.New("Failed to connect to bus")}
+	a := supervised(t, f)
+
+	err = a.EnableAutostart()
+	fail := cli.AsFailure(err)
+	if err == nil || fail.Code != cli.CodeInternal || !strings.Contains(fail.Message, "Failed to connect to bus") {
+		t.Fatalf("got %v, want the manager's words as an internal error", err)
+	}
+	if f.installed != nil {
+		t.Error("the half-installed unit was left behind")
+	}
+	if want := []string{"unload", "install", "remove"}; !slices.Equal(f.calls, want) {
+		t.Errorf("calls = %v, want %v", f.calls, want)
+	}
+	if want := []string{exe}; !slices.Equal(f.installs, want) {
+		t.Errorf("a copy was staged for a failure that was not the program's: %v", f.installs)
 	}
 }

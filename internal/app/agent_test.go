@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// One launch agent exists per user. Whether it belongs to this root is decided by what it embeds.
+// One unit exists per user. Whether it belongs to this root is decided by what it embeds.
 func TestAgentMatches(t *testing.T) {
 	home, _ := os.UserHomeDir()
 	defaultRoot := filepath.Join(home, ".otata")
@@ -23,7 +23,7 @@ func TestAgentMatches(t *testing.T) {
 		{"same root and port", agentSpec{Root: other, Port: 8787}, other, 8787, true},
 		{"same root, other port", agentSpec{Root: other, Port: 8787}, other, 9000, false},
 		{"other root", agentSpec{Root: other, Port: 8787}, defaultRoot, 8787, false},
-		// Every plist this binary writes embeds the port, so one without is hand-made and claims nothing.
+		// Every unit this binary writes embeds the port, so one without is hand-made and claims nothing.
 		{"no embedded port never matches", agentSpec{Root: other}, other, 9000, false},
 		{"no embedded root means the default root", agentSpec{Port: 8787}, defaultRoot, 8787, true},
 		{"no embedded root is not a scratch root", agentSpec{Port: 8787}, other, 8787, false},
@@ -51,48 +51,6 @@ func TestDescribeAgent(t *testing.T) {
 	}
 	if got := describeAgent(agentSpec{}); got != "the default root" {
 		t.Errorf("got %q", got)
-	}
-}
-
-// disabledIn parses `launchctl print-disabled` output, whose lines this is
-// copied from a real machine: `=> disabled`/`=> enabled` on current macOS,
-// with `=> true` the older spelling of disabled. Reading it wrong either
-// hides a Login Items toggle-off or reports every agent as disabled.
-func TestDisabledIn(t *testing.T) {
-	const current = `	disabled services = {
-		"com.apple.Siri.agent" => disabled
-		"com.ollama.ollama" => enabled
-		"com.anakepha.otata" => disabled
-	}`
-	const enabled = `	disabled services = {
-		"com.anakepha.otata" => enabled
-		"com.anakepha.otata2" => disabled
-	}`
-	const legacy = `	disabled services = {
-		"com.anakepha.otata" => true
-		"com.example.other" => false
-	}`
-	cases := []struct {
-		name string
-		out  string
-		want bool
-	}{
-		{"disabled", current, true},
-		{"enabled entry is not disabled", enabled, false},
-		{"legacy true means disabled", legacy, true},
-		{"absent means enabled", `	disabled services = {
-		"com.example.other" => disabled
-	}`, false},
-		{"empty output", "", false},
-	}
-	for _, c := range cases {
-		if got := disabledIn(c.out, "com.anakepha.otata"); got != c.want {
-			t.Errorf("%s: disabledIn = %v, want %v", c.name, got, c.want)
-		}
-	}
-	// A label that merely prefixes another must not borrow its state.
-	if disabledIn(enabled, "com.anakepha.otata2") != true {
-		t.Error("the longer label's own state was not read")
 	}
 }
 

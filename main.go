@@ -22,7 +22,7 @@ const usage = `otata installs iOS builds on your phone over your own network
   otata forget <slug>           drop one app
   otata serve                   run the file server in the foreground
   otata start | stop | restart  server lifecycle
-  otata autostart on|off        run the server under launchd
+  otata autostart on|off        run the server at login (launchd or systemd --user)
   otata transport use <name>    tailscale | manual (--base-url, --keep-prefix)
   otata version                 print the version
   otata help                    this summary

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"html/template"
 	"math"
+	"net/url"
 	"strings"
 	"time"
 
@@ -195,18 +196,11 @@ func execute(name string, data any) ([]byte, error) {
 
 // escape percent-encodes everything outside the RFC 3986 unreserved set. The
 // manifest URL rides as a query-parameter value inside the href, so '/', ':',
-// '?' and '&' must all be encoded or iOS cannot follow the link.
+// '?' and '&' must all be encoded or iOS cannot follow the link. QueryEscape
+// does exactly that except for a space, which it writes as '+', a form the
+// receiving side would read back as a plus.
 func escape(s string) string {
-	const unreserved = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"
-	var b strings.Builder
-	for i := range len(s) {
-		if strings.IndexByte(unreserved, s[i]) >= 0 {
-			b.WriteByte(s[i])
-			continue
-		}
-		fmt.Fprintf(&b, "%%%02X", s[i])
-	}
-	return b.String()
+	return strings.ReplaceAll(url.QueryEscape(s), "+", "%20")
 }
 
 // Size states a payload size in units that keep it visible.

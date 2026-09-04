@@ -1,7 +1,7 @@
 package app
 
 import (
-	"strings"
+	"net/url"
 
 	"github.com/jonathan-lor/otata/internal/artifact"
 	"github.com/jonathan-lor/otata/internal/render"
@@ -18,12 +18,15 @@ func (a *App) IncomingPrefix() string {
 	return ""
 }
 
+// hostOf is the host the index page names in its masthead, port included.
+// A base URL was validated when it was set, so an unparseable one is an
+// empty masthead, not a failed reindex.
 func hostOf(baseURL string) string {
-	s := strings.TrimPrefix(strings.TrimPrefix(baseURL, "https://"), "http://")
-	if i := strings.Index(s, "/"); i >= 0 {
-		s = s[:i]
+	u, err := url.Parse(baseURL)
+	if err != nil {
+		return ""
 	}
-	return s
+	return u.Host
 }
 
 // Reindex regenerates the install surface from what is on disk. Records and

@@ -10,6 +10,21 @@ import (
 	"github.com/jonathan-lor/otata/internal/storage"
 )
 
+// The masthead names the host the phone reached, port and all.
+func TestHostOf(t *testing.T) {
+	cases := map[string]string{
+		"https://host.tailnet.ts.net/otata": "host.tailnet.ts.net",
+		"https://box.example.com:8443/a/b/": "box.example.com:8443",
+		"https://host":                      "host",
+		"://bad":                            "",
+	}
+	for in, want := range cases {
+		if got := hostOf(in); got != want {
+			t.Errorf("hostOf(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 // A manifest is written only for the platform that installs from one. An
 // Android app's page links its payload, and a manifest beside it would be a
 // file nothing fetches that doctor would then go on to probe.

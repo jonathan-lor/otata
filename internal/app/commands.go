@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -132,15 +133,27 @@ func (r PublishResult) Human(w io.Writer) {
 }
 
 /*
-onInterrupt clears the build marker if this process is signaled.
+onInterrupt turns a signal into the cancellation of the build.
 
 Go runs no deferred functions on a fatal signal, so without this a Ctrl-C
 during a multi-minute archive strands a marker, and the app renders as
 BUILDING with no install link until doctor --fix or the next publish
 notices its process is gone.
+
+The first signal cancels ctx, which kills the build's process group, and
+Publish unwinds through its ordinary failure path: the marker is cleared,
+the pages regenerated, and the caller gets an interrupted failure carrying
+the shell's exit status for that signal. It used to exit on the spot, which
+cleared the marker but left xcodebuild running into the work directory the
+next publish would claim. A second signal is the caller insisting: the
+marker is cleared and the process exits at once.
+
+A signal that lands after the build, during the seconds it takes to stage
+the payload, lets the publish complete rather than stop it half-staged.
 */
-func (a *App) onInterrupt(slug, baseURL string) func() {
-	ch := make(chan os.Signal, 1)
+func (a *App) onInterrupt(slug, baseURL string) (ctx context.Context, interrupted func() os.Signal, stop func()) {
+	ctx, cancel := context.WithCancel(context.Background())
+	ch := make(chan os.Signal, 2)
 	// SIGHUP is what a publish driven over SSH receives when the connection
 	// drops. An inherited ignore (nohup) is the caller saying
 	// "survive the hangup", and Notify would override it, so it is honored.
@@ -151,19 +164,60 @@ func (a *App) onInterrupt(slug, baseURL string) func() {
 	}
 	signal.Notify(ch, signals...)
 	done := make(chan struct{})
+	var mu sync.Mutex
+	var got os.Signal
 	go func() {
 		select {
-		case <-ch:
+		case s := <-ch:
+			mu.Lock()
+			got = s
+			mu.Unlock()
+			cancel()
+		case <-done:
+			return
+		}
+		select {
+		case s := <-ch:
 			_ = a.Store.ClearBuilding(slug)
 			_ = a.Reindex(baseURL)
-			os.Exit(130)
+			os.Exit(signalExit(s))
 		case <-done:
 		}
 	}()
-	return func() {
+	interrupted = func() os.Signal {
+		mu.Lock()
+		defer mu.Unlock()
+		return got
+	}
+	stop = func() {
 		signal.Stop(ch)
 		close(done)
+		cancel()
 	}
+	return ctx, interrupted, stop
+}
+
+// signalExit is the status a shell reports for a process a signal killed:
+// 128 plus the signal's number, so 130 for Ctrl-C and 143 for SIGTERM.
+func signalExit(s os.Signal) int {
+	if n, ok := s.(syscall.Signal); ok {
+		return 128 + int(n)
+	}
+	return 130
+}
+
+// signalName is the conventional spelling; syscall.Signal's own String is
+// "interrupt" and "terminated", which read as prose rather than as a name.
+func signalName(s os.Signal) string {
+	switch s {
+	case syscall.SIGINT:
+		return "SIGINT"
+	case syscall.SIGTERM:
+		return "SIGTERM"
+	case syscall.SIGHUP:
+		return "SIGHUP"
+	}
+	return s.String()
 }
 
 // claimBuild takes the build marker for a slug, or refuses because a live
@@ -310,7 +364,7 @@ func (a *App) Publish(opts PublishOptions, progress func(string)) (*PublishResul
 	}); err != nil {
 		return nil, err
 	}
-	stopSignals := a.onInterrupt(slug, baseURL)
+	ctx, interrupted, stopSignals := a.onInterrupt(slug, baseURL)
 	defer stopSignals()
 	_ = a.Reindex(baseURL)
 
@@ -325,11 +379,19 @@ func (a *App) Publish(opts PublishOptions, progress func(string)) (*PublishResul
 		_ = a.Reindex(baseURL)
 	}()
 
-	built, err := b.Build(builder.Options{
+	built, err := b.Build(ctx, builder.Options{
 		Dir: abs, Config: config, Scheme: opts.Scheme,
 		Work: filepath.Join(a.Root, "build", slug),
 		Log:  progress,
 	})
+	// Asked before the build's own error is read: a build the caller stopped
+	// reports the stop, not whatever a killed xcodebuild left in its log.
+	// The deferred cleanup above clears the marker on the way out.
+	if sig := interrupted(); sig != nil {
+		return nil, cli.Failf(cli.CodeInterrupted,
+			"stopped by %s; the build was killed and its marker cleared", signalName(sig)).
+			WithExit(signalExit(sig))
+	}
 	if err != nil {
 		if amb, ok := errors.AsType[*builder.AmbiguousScheme](err); ok {
 			return nil, cli.Failf(cli.CodeAmbiguousScheme, "%v", amb).
@@ -635,8 +697,10 @@ func (r StatusResult) Human(w io.Writer) {
 	if r.AutostartStale {
 		cli.Line(w, "           \033[1;33mthe launch agent runs a stale copy\033[0m; re-run 'otata autostart on'")
 	}
+	// "not ready", not "not wired": the detail line below says which, and a
+	// logged-out tailscale is not a wiring problem.
 	cli.Line(w, "transport: %s (%s) %s", r.Transport.Name, r.Transport.Visibility,
-		boolWord(r.Transport.Ready, "ready", "not wired"))
+		boolWord(r.Transport.Ready, "ready", "not ready"))
 	if r.Transport.BaseURL != "" {
 		cli.Line(w, "url:       %s/", strings.TrimSuffix(r.Transport.BaseURL, "/"))
 	}
@@ -860,7 +924,15 @@ func (a *App) Doctor(fix bool) (*DoctorResult, error) {
 	// asking afterwards always says "ready" and the repair goes unreported.
 	status := tr.Status(a.Config.Port)
 	if !status.Ready && !fix {
-		needsFix("transport", tr.Name()+" is not wired to port "+strconv.Itoa(a.Config.Port), "'otata doctor --fix' wires it")
+		// Only a usable-but-unwired transport is --fix's to mend. Any other
+		// obstacle (logged out, certificates off, a bad base URL) is on the
+		// machine, and promising that --fix wires it sent the caller to a
+		// repair that then failed with the real reason.
+		if status.Repairable {
+			needsFix("transport", tr.Name()+" is not wired to port "+strconv.Itoa(a.Config.Port), "'otata doctor --fix' wires it")
+		} else {
+			fail("transport", status.Detail)
+		}
 		return res, nil
 	}
 	baseURL := status.BaseURL

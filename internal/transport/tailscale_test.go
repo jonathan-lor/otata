@@ -151,6 +151,23 @@ func TestManualRequiresHTTPS(t *testing.T) {
 	}
 }
 
+// The config file is editable, so a base URL the command would have refused
+// can still be what is on disk. Status must then name it as the obstacle, and
+// never as repairable: nothing but the config can change it.
+func TestManualStatusNamesABadBaseURL(t *testing.T) {
+	bad := NewManual("http://box.local/otata", false, Private).Status(0)
+	if bad.Ready || bad.Repairable {
+		t.Errorf("http base URL: ready=%v repairable=%v, want neither", bad.Ready, bad.Repairable)
+	}
+	if !strings.Contains(bad.Detail, "https") {
+		t.Errorf("the obstacle is not named: %q", bad.Detail)
+	}
+	good := NewManual("https://box.local/otata", false, Private).Status(0)
+	if !good.Ready || good.Detail == "" {
+		t.Errorf("valid base URL: ready=%v detail=%q", good.Ready, good.Detail)
+	}
+}
+
 func TestValidateBaseURL(t *testing.T) {
 	for _, ok := range []string{"https://builds.example.com", "https://builds.example.com/otata", "https://box.local:8443/a/b/"} {
 		if err := ValidateBaseURL(ok); err != nil {

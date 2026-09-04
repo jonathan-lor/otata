@@ -21,8 +21,13 @@ const (
 )
 
 type Status struct {
-	Name       string     `json:"name"`
-	Ready      bool       `json:"ready"`
+	Name  string `json:"name"`
+	Ready bool   `json:"ready"`
+	// Repairable is set when Ready is false and Ensure would make it true:
+	// the transport is usable and only its wiring is missing. Unset, the
+	// obstacle is on the machine (logged out, certificates off, a bad base
+	// URL) and Detail names it; nothing otata does will clear it.
+	Repairable bool       `json:"repairable,omitempty"`
 	BaseURL    string     `json:"base_url,omitempty"`
 	Visibility Visibility `json:"visibility"`
 	Detail     string     `json:"detail,omitempty"`

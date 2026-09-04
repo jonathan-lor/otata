@@ -1,6 +1,7 @@
 package builder
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -21,7 +22,7 @@ type XcodeBuild struct{ Xcode }
 
 func (x *XcodeBuild) Name() string { return "xcode-build" }
 
-func (x *XcodeBuild) Build(opts Options) (Result, error) {
+func (x *XcodeBuild) Build(ctx context.Context, opts Options) (Result, error) {
 	ok, container := x.Detect(opts.Dir)
 	if !ok {
 		return Result{}, fmt.Errorf("no .xcworkspace or .xcodeproj found")
@@ -58,11 +59,11 @@ func (x *XcodeBuild) Build(opts Options) (Result, error) {
 		"-skipMacroValidation",
 		"ONLY_ACTIVE_ARCH=NO",
 	)
-	if err := runLogged(logFile, "xcodebuild", args...); err != nil {
-		return Result{LogPath: logPath}, classifyBuildFailure(logPath, "build failed")
+	if err := runLogged(ctx, logFile, "xcodebuild", args...); err != nil {
+		return Result{LogPath: logPath}, classifyBuildFailure(ctx, logPath, "build failed")
 	}
 
-	app, err := builtApp(container, scheme, config)
+	app, err := builtApp(ctx, container, scheme, config)
 	if err != nil {
 		return Result{LogPath: logPath}, err
 	}
@@ -78,11 +79,14 @@ func (x *XcodeBuild) Build(opts Options) (Result, error) {
 // builtApp asks xcodebuild where the scheme's app product landed. The answer
 // depends on settings this package must not guess (a project can relocate
 // TARGET_BUILD_DIR), so it's read back rather than derived.
-func builtApp(container, scheme, config string) (string, error) {
+func builtApp(ctx context.Context, container, scheme, config string) (string, error) {
 	args := append([]string{"-showBuildSettings", "-json"}, projectArgs(container)...)
 	args = append(args, "-scheme", scheme, "-configuration", config, "-destination", "generic/platform=iOS")
-	out, err := exec.Command("xcodebuild", args...).Output()
+	out, err := exec.CommandContext(ctx, "xcodebuild", args...).Output()
 	if err != nil {
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
 		return "", fmt.Errorf("could not read build settings for %s", scheme)
 	}
 	app, err := appFromSettings(out)

@@ -109,6 +109,26 @@ func TestEnsureDropsTheServeMemo(t *testing.T) {
 	}
 }
 
+// Status has to say whether Ensure would mend an unready transport, because
+// doctor prescribes --fix on that answer. Verified but unwired is the one
+// repairable state; a node that fails Verify is an obstacle on the machine.
+func TestStatusSaysWhetherEnsureWouldRepair(t *testing.T) {
+	bin, _ := stubTailscale(t, `{"Web": {}}`, statusReadyJSON)
+	unwired := (&Tailscale{bin: bin, servePath: "/otata"}).Status(8787)
+	if unwired.Ready || !unwired.Repairable {
+		t.Errorf("verified but unwired: ready=%v repairable=%v, want unready and repairable", unwired.Ready, unwired.Repairable)
+	}
+
+	bin, _ = stubTailscale(t, serveJSON, `{"Self": {"DNSName": ""}, "CertDomains": []}`)
+	noDNS := (&Tailscale{bin: bin, servePath: "/otata"}).Status(8787)
+	if noDNS.Ready || noDNS.Repairable {
+		t.Errorf("no MagicDNS: ready=%v repairable=%v, want neither", noDNS.Ready, noDNS.Repairable)
+	}
+	if !strings.Contains(noDNS.Detail, "MagicDNS") {
+		t.Errorf("the obstacle is not named: %q", noDNS.Detail)
+	}
+}
+
 // Teardown also changes the serve config, whoever reads next.
 func TestTeardownDropsTheServeMemo(t *testing.T) {
 	bin, calls := stubTailscale(t, serveJSON, statusReadyJSON)

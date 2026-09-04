@@ -34,7 +34,8 @@ otata publish --json
 Every command prints `{ok, command, data, error}`. On failure, `error` carries
 a stable `code`, a `message`, and often a `hint` and `details`. Branch on the
 code, never on message text. Exit 2 means the command was called wrongly;
-exit 1 means it ran and failed.
+exit 1 means it ran and failed; 128 plus a signal number means a signal
+stopped it.
 
 | `error.code` | What to do |
 | --- | --- |
@@ -51,6 +52,7 @@ exit 1 means it ran and failed.
 | `build_in_progress` | Another publish holds the slug: wait; `doctor --fix` clears a marker whose process is gone |
 | `not_found` | Check `otata list` |
 | `unhealthy` | Read `data.checks`; each failing check names its remedy |
+| `interrupted` | A signal stopped the publish (your timeout, a dropped connection); the build was killed and nothing is half-done. Retry when ready |
 | `invalid_args` | Fix the arguments |
 | `internal` | Unclassified; read the message |
 

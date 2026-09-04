@@ -93,8 +93,9 @@ often a `hint` and structured `details`. Build progress goes to stderr.
 
 ## Error codes
 
-The exit code is 0 on success, 2 when the command was called wrongly, and 1 when
-it ran and failed.
+The exit code is 0 on success, 2 when the command was called wrongly, 1 when
+it ran and failed, and 128 plus the signal number when a signal stopped it
+(130 for Ctrl-C, 143 for SIGTERM).
 
 | Code | Means | What to do |
 | --- | --- | --- |
@@ -111,5 +112,6 @@ it ran and failed.
 | `build_in_progress` | A live publish already holds this slug | Wait; `otata doctor --fix` clears a marker whose process is gone |
 | `not_found` | No app published under that slug | Check `otata list` |
 | `unhealthy` | `doctor` found something wrong | Read `data.checks`; each failing one says what to do, often `--fix` |
+| `interrupted` | A signal stopped the publish (Ctrl-C, a timeout, a dropped SSH session); the build was killed and its marker cleared | Retry when ready |
 | `invalid_args` | The command was called wrongly | Fix the arguments |
 | `internal` | Anything unclassified | Read the message; it is not expected |

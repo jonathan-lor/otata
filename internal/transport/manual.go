@@ -60,13 +60,17 @@ func (m *Manual) Ensure(int) (string, error) {
 }
 
 func (m *Manual) Status(int) Status {
-	return Status{
-		Name:       m.Name(),
-		Ready:      m.baseURL != "" && ValidateBaseURL(m.baseURL) == nil,
-		BaseURL:    m.baseURL,
-		Visibility: m.visibility,
-		Detail:     "reachability is whatever your proxy provides; not verified here",
+	s := Status{Name: m.Name(), BaseURL: m.baseURL, Visibility: m.visibility}
+	// Ensure changes nothing for this transport, so it is the readiness
+	// question itself: a base URL it would refuse is the obstacle, and never
+	// repairable, because the config is what has to change.
+	if _, err := m.Ensure(0); err != nil {
+		s.Detail = err.Error()
+		return s
 	}
+	s.Ready = true
+	s.Detail = "reachability is whatever your proxy provides; not verified here"
+	return s
 }
 
 // Teardown is a no-op. otata did not create the route and must not remove

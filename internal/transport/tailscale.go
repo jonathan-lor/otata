@@ -299,7 +299,9 @@ func (t *Tailscale) Status(port int) Status {
 	s.BaseURL = t.baseURL(t.hostname())
 	s.Ready = t.wired(port)
 	if !s.Ready {
+		// Verified but unwired is the one state Ensure mends.
 		s.Detail = "serve path not wired"
+		s.Repairable = true
 	}
 	return s
 }

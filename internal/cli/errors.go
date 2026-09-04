@@ -12,6 +12,12 @@ type Failure struct {
 	Message string `json:"message"`
 	Hint    string `json:"hint,omitempty"`
 	Details any    `json:"details,omitempty"`
+
+	// Exit overrides the status the process exits with, for a failure whose
+	// convention predates otata's: a command a signal stopped exits 128 plus
+	// the signal's number, which is what a shell reports for one it killed.
+	// Zero means the code decides.
+	Exit int `json:"-"`
 }
 
 func (f *Failure) Error() string {
@@ -38,6 +44,7 @@ const (
 	CodeBuildInProgress = "build_in_progress" // a live publish already holds this slug
 	CodeNotFound        = "not_found"         // no such published app
 	CodeUnhealthy       = "unhealthy"         // doctor found something wrong
+	CodeInterrupted     = "interrupted"       // a signal stopped the command; nothing is left half-done
 	CodeInvalidArgs     = "invalid_args"      // caller's mistake
 	CodeInternal        = "internal"          // ours
 )
@@ -55,6 +62,21 @@ func (f *Failure) WithHint(hint string) *Failure { f.Hint = hint; return f }
 
 // WithDetails attaches structured context: a scheme list, a log path.
 func (f *Failure) WithDetails(d any) *Failure { f.Details = d; return f }
+
+// WithExit sets the exit status, for the failures that carry their own.
+func (f *Failure) WithExit(status int) *Failure { f.Exit = status; return f }
+
+// exitStatus is what the process exits with for this failure: an explicit
+// status if one was set, else 2 for a usage error and 1 for everything else.
+func (f *Failure) exitStatus() int {
+	switch {
+	case f.Exit != 0:
+		return f.Exit
+	case f.Code == CodeInvalidArgs:
+		return 2
+	}
+	return 1
+}
 
 // AsFailure coerces any error into one, so an unclassified error still reaches
 // the caller as valid JSON rather than as a panic or bare text.

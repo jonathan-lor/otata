@@ -1,6 +1,7 @@
 package builder
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -21,7 +22,7 @@ func (p *Passthrough) Name() string { return "artifact" }
 
 func (p *Passthrough) Detect(string) (bool, string) { return p.Path != "", p.Path }
 
-func (p *Passthrough) Build(Options) (Result, error) {
+func (p *Passthrough) Build(context.Context, Options) (Result, error) {
 	info, err := os.Stat(p.Path)
 	if err != nil {
 		return Result{}, fmt.Errorf("no artifact at %s", p.Path)

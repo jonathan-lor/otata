@@ -2,6 +2,7 @@ package builder
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/jonathan-lor/otata/internal/artifact"
 )
@@ -170,7 +172,12 @@ var diagnoses = []diagnosis{
 }
 
 // classifyBuildFailure reads the tail of the build log and names what failed.
-func classifyBuildFailure(logPath, fallback string) error {
+// A build that was cancelled failed because it was told to, and its log says
+// nothing about the code, so the cancellation is reported instead.
+func classifyBuildFailure(ctx context.Context, logPath, fallback string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	raw, err := os.ReadFile(logPath)
 	if err != nil {
 		return fmt.Errorf("%s", fallback)
@@ -368,7 +375,7 @@ func exists(path string) bool {
 	return err == nil
 }
 
-func (x *Xcode) Build(opts Options) (Result, error) {
+func (x *Xcode) Build(ctx context.Context, opts Options) (Result, error) {
 	ok, container := x.Detect(opts.Dir)
 	if !ok {
 		return Result{}, fmt.Errorf("no .xcworkspace or .xcodeproj found")
@@ -411,8 +418,8 @@ func (x *Xcode) Build(opts Options) (Result, error) {
 		"-skipMacroValidation",
 		"ONLY_ACTIVE_ARCH=NO",
 	)
-	if err := runLogged(logFile, "xcodebuild", args...); err != nil {
-		return Result{LogPath: logPath}, classifyBuildFailure(logPath, "archive failed")
+	if err := runLogged(ctx, logFile, "xcodebuild", args...); err != nil {
+		return Result{LogPath: logPath}, classifyBuildFailure(ctx, logPath, "archive failed")
 	}
 
 	team, err := archiveTeam(archive)
@@ -425,13 +432,13 @@ func (x *Xcode) Build(opts Options) (Result, error) {
 	}
 
 	opts.logf("exporting (team %s)", team)
-	if err := runLogged(logFile, "xcodebuild", "-exportArchive",
+	if err := runLogged(ctx, logFile, "xcodebuild", "-exportArchive",
 		"-archivePath", archive,
 		"-exportOptionsPlist", optionsPath,
 		"-exportPath", export,
 		"-allowProvisioningUpdates",
 	); err != nil {
-		return Result{LogPath: logPath}, classifyBuildFailure(logPath, "export failed")
+		return Result{LogPath: logPath}, classifyBuildFailure(ctx, logPath, "export failed")
 	}
 
 	ipa := firstMatch(export, ".ipa")
@@ -441,11 +448,25 @@ func (x *Xcode) Build(opts Options) (Result, error) {
 	return Result{PayloadPath: ipa, Platform: artifact.IOS, Config: config, LogPath: logPath}, nil
 }
 
-func runLogged(log *os.File, name string, args ...string) error {
-	cmd := exec.Command(name, args...)
+// runLogged runs a toolchain command with its output in log. The command gets
+// a process group of its own, and cancelling ctx signals that whole group:
+// xcodebuild fans out into clang, swift-frontend and script phases, and
+// killing only the parent left those writing into the work directory after
+// the publish that started them was gone. Cancellation is reported as
+// ctx.Err(), whatever the killed process's exit looked like.
+func runLogged(ctx context.Context, log *os.File, name string, args ...string) error {
+	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Stdout = log
 	cmd.Stderr = log
-	return cmd.Run()
+	ownProcessGroup(cmd)
+	// After the group is signalled, a parent that has not exited by then is
+	// killed outright rather than waited on forever.
+	cmd.WaitDelay = 10 * time.Second
+	err := cmd.Run()
+	if err != nil && ctx.Err() != nil {
+		return ctx.Err()
+	}
+	return err
 }
 
 // archiveTeam reads the signing team out of the archive, so nothing is

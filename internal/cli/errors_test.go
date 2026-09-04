@@ -51,6 +51,26 @@ func TestAsFailurePreservesCode(t *testing.T) {
 	}
 }
 
+// The exit status is 2 for a usage error, 1 otherwise, and a failure may
+// carry its own: a signal's, which a shell expects as 128 plus its number.
+func TestExitStatus(t *testing.T) {
+	cases := []struct {
+		name string
+		f    *Failure
+		want int
+	}{
+		{"usage error", Fail(CodeInvalidArgs, "x"), 2},
+		{"ordinary failure", Fail(CodeBuildFailed, "x"), 1},
+		{"a signal's own status", Fail(CodeInterrupted, "x").WithExit(143), 143},
+		{"an explicit status wins over the code", Fail(CodeInvalidArgs, "x").WithExit(130), 130},
+	}
+	for _, c := range cases {
+		if got := c.f.exitStatus(); got != c.want {
+			t.Errorf("%s: exit %d, want %d", c.name, got, c.want)
+		}
+	}
+}
+
 func TestUnclassifiedErrorBecomesInternal(t *testing.T) {
 	got := AsFailure(errors.New("something went wrong"))
 	if got.Code != CodeInternal || got.Message != "something went wrong" {

@@ -14,8 +14,9 @@ import (
 const ConfigPrebuilt = "prebuilt"
 
 // Prebuilt accepts an already-built payload, which is what lets every
-// framework through: Flutter, React Native and KMP all emit an .ipa, and this
-// consumes one without knowing which produced it. It is not a Builder: there
+// framework through: Flutter, React Native and KMP all emit an .ipa or an
+// .apk, and this consumes one without knowing which produced it. The
+// extension is what says which platform it is. It is not a Builder: there
 // is nothing to detect and nothing to build, only a file to check.
 func Prebuilt(path string) (Result, error) {
 	info, err := os.Stat(path)
@@ -29,8 +30,8 @@ func Prebuilt(path string) (Result, error) {
 	case strings.HasSuffix(strings.ToLower(path), ".ipa"):
 		return Result{PayloadPath: path, Platform: artifact.IOS, Config: ConfigPrebuilt}, nil
 	case strings.HasSuffix(strings.ToLower(path), ".apk"):
-		return Result{}, fmt.Errorf("Android payloads are not served yet")
+		return Result{PayloadPath: path, Platform: artifact.Android, Config: ConfigPrebuilt}, nil
 	default:
-		return Result{}, fmt.Errorf("unrecognized payload %s, expected .ipa", path)
+		return Result{}, fmt.Errorf("unrecognized payload %s, expected .ipa or .apk", path)
 	}
 }

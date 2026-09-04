@@ -120,13 +120,16 @@ func TestOpenReadsAnIPA(t *testing.T) {
 }
 
 // A platform with no reader is refused as unsupported, so doctor and publish
-// say nothing about it rather than something wrong.
+// say nothing about it rather than something wrong, and a payload that is
+// not there does not open for any platform.
 func TestOpenRefusesAPlatformWithoutAReader(t *testing.T) {
-	_, err := Open(artifact.Android, "whatever.apk")
+	_, err := Open(artifact.Platform("windows"), "whatever.exe")
 	if !errors.Is(err, ErrUnsupported) {
 		t.Errorf("got %v, want ErrUnsupported", err)
 	}
-	if _, err := Open(artifact.IOS, filepath.Join(t.TempDir(), "missing.ipa")); err == nil {
-		t.Error("a missing payload opened")
+	for _, p := range []artifact.Platform{artifact.IOS, artifact.Android} {
+		if _, err := Open(p, filepath.Join(t.TempDir(), "missing"+p.PayloadExt())); err == nil {
+			t.Errorf("a missing %s payload opened", p)
+		}
 	}
 }

@@ -393,6 +393,10 @@ func (a *App) checkSigning(r artifact.Record, held map[string]bool, heldErr erro
 	// that only serves has no business auditing what another machine signed.
 	case errors.Is(err, appmeta.ErrNoProfile), errors.Is(err, appmeta.ErrUnsupported):
 		return Check{}, false
+	// An APK that does not verify is served and cannot be installed, which
+	// is as broken as an expired profile. Publishing refuses these.
+	case errors.Is(err, appmeta.ErrUnsigned):
+		return Check{Name: name, Detail: err.Error() + "; Android refuses to install it"}, true
 	case err != nil:
 		// Present but unreadable is worth saying quietly. nothing published is broken by it, just unverifiable.
 		return Check{Name: name, OK: true, Warn: true, Detail: err.Error()}, true

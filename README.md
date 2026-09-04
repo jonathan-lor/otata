@@ -77,7 +77,7 @@ otata doctor                   # verify the server, transport and every URL; --f
 `--platform` is the one thing you must pass. `otata publish` discovers the rest: the workspace or project, an archiving scheme, the
 signing team, and the slug from the directory name. `--scheme` and `--slug` are for when it asks.
 `--config` defaults to `Release`, and a publish that falls back to it will tell you before the build starts.
-Publishing an already-built `.ipa` from any toolchain is `otata publish --artifact <path>`.
+Publishing an already-built `.ipa` or `.apk` from any toolchain is `otata publish --artifact <path>`.
 
 A more detailed reference can be found in the [CLI reference](docs/cli-reference.md).
 

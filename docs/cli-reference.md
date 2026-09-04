@@ -38,11 +38,11 @@ archives an app, the signing team, and the slug from the directory name.
 
 | Flag | Does |
 | --- | --- |
-| `--platform` | What to build for: `ios` or `android`. Required for a build; `--artifact` reads it off the file. Android has no builder yet, so it is refused |
+| `--platform` | What to build for: `ios` or `android`. Required for a build; `--artifact` reads it off the file. Android has no builder yet, so a build for it is refused; an `.apk` is published with `--artifact` |
 | `--config` | Build configuration. Defaults to `Release`, and a publish that falls back to it says so before the build starts |
 | `--scheme` | The scheme to build, when discovery finds several candidates |
 | `--slug` | Publish under this name instead of the directory's |
-| `--artifact` | Publish an already-built `.ipa` from any toolchain, skipping the build entirely |
+| `--artifact` | Publish an already-built `.ipa` or `.apk` from any toolchain, skipping the build entirely. Reading it needs the platform's tools: plutil on macOS for an `.ipa`, the SDK's build-tools (`ANDROID_HOME`) for an `.apk`, which must also verify, since Android will not install one that does not |
 | `--builder` | `build` (the default, incremental) or `archive` |
 
 Publishes build incrementally by default. `--builder archive` uses `xcodebuild
@@ -112,7 +112,7 @@ it ran and failed, and 128 plus the signal number when a signal stopped it
 | `ambiguous_scheme` | Several candidates | Re-run with `--scheme`; the candidates are in `details` |
 | `needs_setup` | A step the project's own toolchain owns has not been run | Run `details.command` in `details.dir`, then retry |
 | `build_failed` | The toolchain returned non-zero | Read the log path in `details` |
-| `signing_failed` | Certificate, profile or device registration | Needs a human with Apple portal access |
+| `signing_failed` | Certificate, profile or device registration on iOS; an APK that is unsigned or does not verify on Android | Needs a human with Apple portal access, or a signed APK: a debug build, or a release signingConfig |
 | `free_profile` | Signed by a free personal team, which iOS will not install over the air | Sign with a paid team; nothing else fixes it |
 | `server_down` | Local server not running, or the port is held by something else | `otata autostart on` once; after that, `otata doctor --fix` and retry |
 | `transport_down` | Transport present but unusable: Tailscale logged out or without HTTPS certificates, or the route is publicly reachable (Funnel on, or a proxy declared public) | Needs the machine; `otata doctor` names it |

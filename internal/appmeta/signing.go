@@ -71,6 +71,11 @@ const (
 // Nothing is wrong in that case, so callers say nothing.
 var ErrNoProfile = errors.New("no embedded provisioning profile")
 
+// ErrUnsigned reports an APK whose signature does not verify, or that has
+// none: what a release build with no signing config produces. Android will
+// not install it, so a caller refuses to serve it.
+var ErrUnsigned = errors.New("the APK is unsigned, or its signature does not verify")
+
 // readSigning reports when the build in app stops being installable. held is
 // this machine's code-signing identities from HeldIdentities, handed in
 // rather than enumerated here: the keychain answer is a fact about the

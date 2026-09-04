@@ -1,12 +1,17 @@
 package app
 
 import (
+	"archive/zip"
 	"bytes"
+	"errors"
 	"io"
 	"log"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -111,6 +116,64 @@ func TestFreeProfileFailsTheCheck(t *testing.T) {
 	}
 	if !strings.Contains(got.Detail, "free provisioning profile") {
 		t.Errorf("detail does not say why: %q", got.Detail)
+	}
+}
+
+// stagedAPK writes a minimal APK as record slug's payload, and puts fake
+// build-tools first on PATH that answer aapt2 with badging and apksigner
+// with certs, exiting with status, so the Android signing check runs with
+// no SDK on the machine.
+func stagedAPK(t *testing.T, a *App, slug, certs string, status int) artifact.Record {
+	t.Helper()
+	rec := artifact.Record{Slug: slug, Platform: artifact.Android, PayloadName: "App.apk", BuiltAt: time.Now()}
+	apkPath := a.Store.PayloadPath(slug, rec.PayloadName)
+	if err := os.MkdirAll(filepath.Dir(apkPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.Create(apkPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	zw := zip.NewWriter(f)
+	if _, err := zw.Create("AndroidManifest.xml"); err != nil {
+		t.Fatal(err)
+	}
+	zw.Close()
+	f.Close()
+
+	tools := t.TempDir()
+	for name, out := range map[string]string{"aapt2": "package: name='com.x.app'\n", "apksigner": certs} {
+		outFile := filepath.Join(tools, name+".out")
+		if err := os.WriteFile(outFile, []byte(out), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		script := "#!/bin/sh\nwhile IFS= read -r line || [ -n \"$line\" ]; do printf '%s\\n' \"$line\"; done < '" + outFile + "'\nexit " + strconv.Itoa(status) + "\n"
+		if err := os.WriteFile(filepath.Join(tools, name), []byte(script), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("ANDROID_HOME", "")
+	t.Setenv("ANDROID_SDK_ROOT", "")
+	t.Setenv("PATH", tools)
+	return rec
+}
+
+// An Android build's signing check names the signer and passes, whatever
+// the keychain said, since no keychain was asked; and an APK that does not
+// verify fails the check outright, as an expired profile does.
+func TestAndroidSigningCheckIsIdentityAlone(t *testing.T) {
+	a := freshApp(t)
+	now := time.Now()
+	rec := stagedAPK(t, a, "droid", "Signer #1 certificate DN: CN=Android Debug, O=Android, C=US\nSigner #1 certificate SHA-256 digest: 4f9c\n", 0)
+	c, ok := a.checkSigning(rec, nil, errors.New("the keychain cannot be listed"), now)
+	if !ok || !c.OK || c.Warn || !strings.Contains(c.Detail, "Android Debug") {
+		t.Errorf("signed APK with an unlistable keychain: %+v ok=%v", c, ok)
+	}
+
+	rec = stagedAPK(t, a, "unsigned", "DOES NOT VERIFY\nERROR: Missing META-INF/MANIFEST.MF\n", 1)
+	c, ok = a.checkSigning(rec, nil, nil, now)
+	if !ok || c.OK || !strings.Contains(c.Detail, "refuses to install") {
+		t.Errorf("unsigned APK: %+v ok=%v", c, ok)
 	}
 }
 

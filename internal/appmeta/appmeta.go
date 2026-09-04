@@ -35,8 +35,9 @@ const (
 
 // Info is an app's identity, as the pages and the manifest state it.
 type Info struct {
-	// Name is the product's name on disk (MyApp, for Payload/MyApp.app), and
-	// is what the served payload is named after.
+	// Name is what the served payload is named after: the product's name on
+	// disk for an iOS app (MyApp, for Payload/MyApp.app), the label for an
+	// Android one, whose package name is a namespace rather than a name.
 	Name     string
 	BundleID string
 	Title    string
@@ -56,6 +57,12 @@ func infoFrom(name string, plist map[string]any) Info {
 	if info.Title = str(plist, "CFBundleDisplayName"); info.Title == "" {
 		info.Title = str(plist, "CFBundleName")
 	}
+	return withDefaults(info)
+}
+
+// withDefaults fills what the pages and the manifest cannot do without,
+// for a payload whose metadata lacks it.
+func withDefaults(info Info) Info {
 	if info.Title == "" {
 		info.Title = "App"
 	}

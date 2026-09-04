@@ -444,7 +444,16 @@ func (a *App) Publish(opts PublishOptions, progress func(string)) (*PublishResul
 	// stay empty when the payload carries nothing readable, as an --artifact
 	// publish of something stripped.
 	team, signer := "", ""
-	if s, err := payload.Signing(held); err == nil {
+	s, err := payload.Signing(held)
+	// An APK that does not verify will not install, so it is refused before
+	// staging, as a free profile is below: what a release build with no
+	// signing config produces, which the debug keystore or a signingConfig
+	// mends. Nothing else about how it was built is wrong.
+	if errors.Is(err, appmeta.ErrUnsigned) {
+		return nil, cli.Failf(cli.CodeSigningFailed, "%v; Android refuses to install it", err).
+			WithHint("build with --config Debug, which signs with the debug keystore, or add a release signingConfig to the module's build script")
+	}
+	if err == nil {
 		now := time.Now()
 		team, signer = s.Team, s.SignerName()
 		// Refuse before staging anything. The build is fine and signs fine, but what

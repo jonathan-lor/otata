@@ -187,7 +187,7 @@ func TestArtifactPublishReadsThePlatformOffTheFile(t *testing.T) {
 	dir := t.TempDir()
 	ipa := filepath.Join(dir, "Demo.ipa")
 	apk := filepath.Join(dir, "Demo.apk")
-	for _, p := range []string{ipa, apk} {
+	for _, p := range []string{ipa, apk, filepath.Join(dir, "Demo.aab")} {
 		if err := os.WriteFile(p, []byte("zip"), 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -199,11 +199,13 @@ func TestArtifactPublishReadsThePlatformOffTheFile(t *testing.T) {
 		wantCode string
 		want     string // in the message or the hint
 	}{
-		{"inferred", ipa, "", cli.CodeNoTransport, ""},
+		{"inferred ios", ipa, "", cli.CodeNoTransport, ""},
+		{"inferred android", apk, "", cli.CodeNoTransport, ""},
 		{"agreeing", ipa, artifact.IOS, cli.CodeNoTransport, ""},
 		{"disagreeing", ipa, artifact.Android, cli.CodeInvalidArgs, "ios payload"},
+		{"disagreeing the other way", apk, artifact.IOS, cli.CodeInvalidArgs, "android payload"},
 		{"unknown platform", ipa, "windows", cli.CodeInvalidArgs, `"windows"`},
-		{"no reader yet", apk, "", cli.CodeInvalidArgs, "not served yet"},
+		{"unrecognized", filepath.Join(dir, "Demo.aab"), "", cli.CodeInvalidArgs, "unrecognized"},
 		{"missing", filepath.Join(dir, "nope.ipa"), "", cli.CodeInvalidArgs, "no artifact"},
 	}
 	for _, c := range cases {

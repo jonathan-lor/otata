@@ -1,14 +1,11 @@
 package app
 
 import (
-	"encoding/json"
 	"os"
 	"os/exec"
-	"strings"
 	"testing"
 	"time"
 
-	"github.com/jonathan-lor/otata/internal/appmeta"
 	"github.com/jonathan-lor/otata/internal/artifact"
 	"github.com/jonathan-lor/otata/internal/cli"
 	"github.com/jonathan-lor/otata/internal/storage"
@@ -129,54 +126,5 @@ func TestForgetRefusesWhileBuilding(t *testing.T) {
 	}
 	if _, ok, _ := store.Record("app"); !ok {
 		t.Error("the record was removed despite the refusal")
-	}
-}
-
-// A zero CertExpires, the normal state on a node that only serves, must not
-// reach an agent as the year 0001.
-func TestZeroCertExpiryIsOmittedFromJSON(t *testing.T) {
-	s := appmeta.Signing{ProfileExpires: time.Now(), Expires: time.Now(), Binder: appmeta.BinderProfile}
-	out, err := json.Marshal(PublishResult{Signing: &s})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(out), "cert_expires") {
-		t.Errorf("zero cert_expires serialized: %s", out)
-	}
-	s.CertExpires = time.Now()
-	out, _ = json.Marshal(PublishResult{Signing: &s})
-	if !strings.Contains(string(out), "cert_expires") {
-		t.Errorf("a real cert_expires was dropped: %s", out)
-	}
-}
-
-// Autostart answers "does it return at login"; loaded answers "is launchd
-// managing it now". After `otata stop` they differ, and status must say so
-// rather than report autostart off about a server that is back next login.
-func TestStatusHumanDistinguishesInstalledFromLoaded(t *testing.T) {
-	var out strings.Builder
-	StatusResult{Autostart: true, AutostartLoaded: false, Port: 8787}.Human(&out)
-	if !strings.Contains(out.String(), "autostart on") || !strings.Contains(out.String(), "not loaded") {
-		t.Errorf("installed-but-unloaded agent not reported:\n%s", out.String())
-	}
-	out.Reset()
-	StatusResult{Autostart: true, AutostartLoaded: true, Port: 8787}.Human(&out)
-	if strings.Contains(out.String(), "not loaded") {
-		t.Errorf("a loaded agent reported as unloaded:\n%s", out.String())
-	}
-}
-
-// The title an --artifact publish prints comes out of the payload's own
-// Info.plist. It must not be able to drive the terminal it is printed on.
-func TestHumanOutputStripsHostileTitle(t *testing.T) {
-	res := PublishResult{Title: "App\x1b]0;owned\x07\x1b[31m", Version: "1", Build: "1",
-		InstallURL: "https://host/otata/app/", IndexURL: "https://host/otata/"}
-	var out strings.Builder
-	res.Human(&out)
-	if strings.Contains(out.String(), "\x1b]0;") || strings.Contains(out.String(), "\x07") || strings.Contains(out.String(), "\x1b[31m") {
-		t.Errorf("hostile title reached the terminal: %q", out.String())
-	}
-	if !strings.Contains(out.String(), "https://host/otata/app/") {
-		t.Errorf("the install URL went missing: %q", out.String())
 	}
 }

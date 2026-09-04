@@ -24,19 +24,20 @@ type StatusResult struct {
 	// ServerOtherRoot is set when an otata server holds the port but serves a
 	// different store, so "down" isn't read as "nothing there".
 	ServerOtherRoot bool `json:"server_other_root,omitempty"`
-	// Autostart is whether the server returns at login: the agent is installed.
-	// AutostartLoaded is whether launchd currently manages it: false after
-	// `otata stop`, which boots the job out but leaves it installed. One field
+	// Autostart is whether the server returns at login: the unit is installed.
+	// AutostartLoaded is whether the manager currently runs it: false after
+	// `otata stop`, which stops the unit but leaves it installed. One field
 	// answering the second question while labeled as the first made status say
 	// "off" about a server that would come back at next login.
 	Autostart       bool `json:"autostart"`
 	AutostartLoaded bool `json:"autostart_loaded"`
-	// AutostartDisabled is set when the user has switched the agent off at the
-	// launchd level: the System Settings Login Items toggle, or `launchctl
-	// disable`. The plist alone says autostart is on, while macOS will load
-	// nothing until it is re-enabled, so the two cannot be conflated.
+	// AutostartDisabled is set when the user has switched the unit off at the
+	// manager's own level: the Login Items toggle or `launchctl disable` on
+	// macOS, `systemctl --user disable` or `mask` on Linux. The definition
+	// alone says autostart is on, while nothing will run it at login until it
+	// is re-enabled, so the two cannot be conflated.
 	AutostartDisabled bool `json:"autostart_disabled,omitempty"`
-	// AutostartOtherRoot is set when the user's one launch agent serves a
+	// AutostartOtherRoot is set when the user's one unit serves a
 	// different root or port than this invocation, so "off" is not read as
 	// "nothing installed", and so it is clear why `autostart on` refuses.
 	AutostartOtherRoot string                       `json:"autostart_other_root,omitempty"`
@@ -73,7 +74,7 @@ func (r StatusResult) Human(w io.Writer) {
 	if r.AutostartOtherRoot != "" {
 		cli.Line(w, "           the %s serves %s, not this root", kind, r.AutostartOtherRoot)
 	}
-	// Disabled trumps not-loaded. Reloading a disabled unit cannot work, so
+	// Disabled trumps not-loaded. otata will not reload a disabled unit, so
 	// the not-loaded line's advice would prescribe a dead end.
 	switch {
 	case r.Autostart && r.AutostartDisabled:

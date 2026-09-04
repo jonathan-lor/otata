@@ -26,9 +26,9 @@ func (a *App) Serve() error {
 	return http.Serve(ln, srv)
 }
 
-// StartServer brings the server up through the launch agent, which is the only way a
+// StartServer brings the server up through the service manager's unit, which is the only way a
 // background server exists. Everything that needs the server comes through
-// here. With no agent installed, it refuses and tells you the command to run.
+// here. With no unit installed, it refuses and tells you the command to run.
 func (a *App) StartServer() error {
 	// One probe answers both "is ours up" and "is another root's there".
 	if p, ok := a.probeServer("/"); ok {
@@ -55,16 +55,16 @@ func (a *App) StartServer() error {
 // It identifies the process over HTTP instead of something like lsof,
 // since a process holding a port doesn't necessarily mean it's otata.
 func (a *App) StopServer() error {
-	// launchd's KeepAlive respawns anything we signal, so while the agent is
-	// loaded, stopping means booting the job out, not sending a signal.
+	// The manager respawns anything we signal while it runs the unit, so
+	// while the unit is loaded, stopping goes through the manager, not a signal.
 	// The waits below ask whether ANY otata server still holds the port, not
 	// whether ours does. A server for another root never counts as running,
 	// and waiting on that would declare it stopped while it was still alive.
 	gone := func() bool { _, ours := a.serverPID(); return !ours }
 
-	// A server another root's launch agent keeps alive cannot be stopped from
-	// here. Signaling it only makes launchd respawn it, and booting the job
-	// out is that root's `autostart off`.
+	// A server another root's unit keeps alive cannot be stopped from here.
+	// Signaling it only makes the manager respawn it, and removing the unit
+	// is that root's `autostart off`.
 	if spec, loaded := a.foreignAgentLoaded(); loaded {
 		if p, held := a.otherRootServer(); held && agentRootDigest(spec) == p.Root {
 			return cli.Failf(cli.CodeServerDown,

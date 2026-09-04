@@ -14,9 +14,13 @@ import (
 // decodeManifest parses the generated plist the way iOS would, via plutil.
 // Parsing rather than substring-matching is the point because escaped hostile text
 // legitimately appears inside a title node, and only the parsed structure shows
-// whether it stayed there.
+// whether it stayed there. plutil is macOS's, so a machine without it skips
+// rather than fails; the suite stays hermetic.
 func decodeManifest(t *testing.T, raw []byte) map[string]any {
 	t.Helper()
+	if _, err := exec.LookPath("plutil"); err != nil {
+		t.Skip("plutil is not installed")
+	}
 	cmd := exec.Command("plutil", "-convert", "json", "-o", "-", "-")
 	cmd.Stdin = bytes.NewReader(raw)
 	var out, errBuf bytes.Buffer

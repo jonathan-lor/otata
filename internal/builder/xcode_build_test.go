@@ -3,9 +3,21 @@ package builder
 import (
 	"archive/zip"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 )
+
+// requireTools skips the test when a tool it shells out to is absent, so the
+// suite stays hermetic on a machine that cannot run it: ditto is macOS's.
+func requireTools(t *testing.T, names ...string) {
+	t.Helper()
+	for _, name := range names {
+		if _, err := exec.LookPath(name); err != nil {
+			t.Skipf("%s is not installed", name)
+		}
+	}
+}
 
 func TestAppFromSettingsPicksAppProduct(t *testing.T) {
 	out := []byte(`[
@@ -36,6 +48,7 @@ func TestAppFromSettingsBadJSON(t *testing.T) {
 }
 
 func TestPackageIPA(t *testing.T) {
+	requireTools(t, "ditto", "zip")
 	work := t.TempDir()
 	app := filepath.Join(t.TempDir(), "Dummy.app")
 	if err := os.MkdirAll(filepath.Join(app, "Frameworks"), 0o755); err != nil {

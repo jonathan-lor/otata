@@ -493,8 +493,11 @@ func (a *App) Publish(opts PublishOptions, progress func(string)) (*PublishResul
 	// decodes; no icon is a clean placeholder on the page where a broken image
 	// is not. The reader says which format it wrote, and the file is served
 	// under a name that says so, because nothing here converts.
+	// The scratch file keeps a .png name whatever the reader writes into it:
+	// nothing serves it by name, and the iOS reader hands the path to
+	// pngcrush, which has only ever been given one that ends in .png.
 	iconName := ""
-	tmpIcon := a.Store.TmpFile("icon-" + slug)
+	tmpIcon := a.Store.TmpFile("icon-" + slug + ".png")
 	if ext, err := payload.Icon(tmpIcon); err == nil {
 		if a.Store.CopyInto(a.Store.IconPath(slug, "icon"+ext), tmpIcon) == nil {
 			iconName = "icon" + ext

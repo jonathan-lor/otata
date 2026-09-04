@@ -35,6 +35,14 @@ type App struct {
 	// thing that changes Config after Open.
 	transport    transport.Transport
 	transportSet bool
+
+	// agent is the installed launch agent's plist, read once per process:
+	// parsing it is a subprocess, and status asked four times. Only this
+	// process installing or removing the agent changes it, and both forget
+	// the answer.
+	agent     agentSpec
+	agentOK   bool
+	agentRead bool
 }
 
 func DefaultRoot() string {

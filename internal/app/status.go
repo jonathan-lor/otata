@@ -113,7 +113,7 @@ func (a *App) Status() (*StatusResult, error) {
 		res.AutostartLoaded = a.agentLoaded()
 		res.AutostartProgram, res.AutostartStale = a.AutostartProgram()
 		res.AutostartDisabled = agentDisabled()
-	} else if spec, ok := readAgentPlist(); ok {
+	} else if spec, ok := a.readAgentPlist(); ok {
 		res.AutostartOtherRoot = describeAgent(spec)
 	}
 	if tr, err := a.Transport(); err == nil {

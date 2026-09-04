@@ -9,7 +9,7 @@ func (a *App) AutostartEnabled() bool { return false }
 func (a *App) agentLoaded() bool { return false }
 
 // readAgentPlist has nothing to read where no agent can be installed.
-func readAgentPlist() (agentSpec, bool) { return agentSpec{}, false }
+func (a *App) readAgentPlist() (agentSpec, bool) { return agentSpec{}, false }
 
 func (a *App) AutostartProgram() (string, bool) { return "", false }
 

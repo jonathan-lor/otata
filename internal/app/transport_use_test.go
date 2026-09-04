@@ -48,7 +48,7 @@ func TestUseTransportPersistsAndReindexes(t *testing.T) {
 	if onDisk.Port != config.DefaultPort {
 		t.Errorf("port %d was persisted; the file should keep its own", onDisk.Port)
 	}
-	index, err := os.ReadFile(filepath.Join(a.Store.Public(), "index.html"))
+	index, err := os.ReadFile(a.Store.IndexPath())
 	if err != nil {
 		t.Fatalf("no index was generated: %v", err)
 	}
@@ -82,7 +82,7 @@ func TestUseTransportRefusesBadSelectionsBeforeChangingAnything(t *testing.T) {
 		if _, err := os.Stat(config.Path(a.Root)); err == nil {
 			t.Errorf("%s: a refused selection wrote the config", c.name)
 		}
-		if _, err := os.Stat(filepath.Join(a.Store.Public(), "index.html")); err == nil {
+		if _, err := os.Stat(a.Store.IndexPath()); err == nil {
 			t.Errorf("%s: a refused selection generated pages", c.name)
 		}
 	}
@@ -133,7 +133,7 @@ func TestUseTransportRefusesAFunnelledTailnetBeforeChangingAnything(t *testing.T
 	if !bytes.Equal(before, after) {
 		t.Errorf("the config changed under a refused selection:\n%s", after)
 	}
-	if _, err := os.Stat(filepath.Join(a.Store.Public(), "index.html")); err == nil {
+	if _, err := os.Stat(a.Store.IndexPath()); err == nil {
 		t.Error("a refused selection generated pages")
 	}
 }
@@ -156,7 +156,7 @@ func TestUseTransportSelectsATailnetThatCanServe(t *testing.T) {
 	if n := transporttest.Calls(t, calls, "serve --bg --https=443 --set-path=/otata http://127.0.0.1:1"); n != 1 {
 		t.Errorf("the serve path was wired %d times, want once", n)
 	}
-	index, err := os.ReadFile(filepath.Join(a.Store.Public(), "index.html"))
+	index, err := os.ReadFile(a.Store.IndexPath())
 	if err != nil {
 		t.Fatalf("no index was generated: %v", err)
 	}

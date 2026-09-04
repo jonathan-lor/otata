@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -214,7 +213,7 @@ func (a *App) Doctor(fix bool) (*DoctorResult, error) {
 		if err := a.Reindex(baseURL); err != nil {
 			fail("reindex", err.Error())
 		}
-	} else if _, err := os.Stat(filepath.Join(a.Store.Public(), "index.html")); err != nil {
+	} else if _, err := os.Stat(a.Store.IndexPath()); err != nil {
 		// Nothing has generated the pages yet. The probes below would report the same absence per URL.
 		needsFix("index", "the index page has not been generated", "'otata doctor --fix' writes it")
 		return res, nil
@@ -377,7 +376,7 @@ Ok is false when there is nothing to say about this payload.
 */
 func (a *App) checkSigning(r artifact.Record, held map[string]bool, heldErr error, now time.Time) (c Check, ok bool) {
 	name := r.Slug + " signing"
-	payload, err := appmeta.Open(r.Platform, filepath.Join(a.Store.AppDir(r.Slug), r.PayloadName))
+	payload, err := appmeta.Open(r.Platform, a.Store.PayloadPath(r.Slug, r.PayloadName))
 	if err != nil {
 		// The payload probe already reports a payload that cannot be read, and
 		// saying it twice would imply two problems. A platform with no reader

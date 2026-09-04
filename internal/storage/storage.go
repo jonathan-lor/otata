@@ -41,8 +41,11 @@ func ValidateSlug(slug string) error {
 	return nil
 }
 
-// Layout. Only Public is ever served; state names local paths and build
-// artifacts never enter the tree at all.
+// ---------- layout ----------
+
+// Every path under the root is spelled here and nowhere else. Only Public is
+// ever served; State names local paths; Tmp stages what becomes served; the
+// rest never enters the served tree at all.
 func (s *Store) Public() string { return filepath.Join(s.root, "public") }
 func (s *Store) State() string  { return filepath.Join(s.root, "state") }
 func (s *Store) Tmp() string    { return filepath.Join(s.root, "tmp") }
@@ -54,6 +57,45 @@ func (s *Store) AppDir(slug string) string {
 		return ""
 	}
 	return filepath.Join(s.Public(), slug)
+}
+
+// BuildDir is a slug's scratch space for archives, exports and the build
+// log. "" for an invalid slug, as AppDir.
+func (s *Store) BuildDir(slug string) string {
+	if ValidateSlug(slug) != nil {
+		return ""
+	}
+	return filepath.Join(s.root, "build", slug)
+}
+
+// ServerLog is where the background server writes, its own log and the
+// access log in one file.
+func (s *Store) ServerLog() string { return filepath.Join(s.root, "server.log") }
+
+// StagedBinary is where a copy of the otata binary goes when the installed
+// one sits where launchd cannot read it. Under the root, which is never
+// inside a protected directory.
+func (s *Store) StagedBinary() string { return filepath.Join(s.root, "bin", "otata") }
+
+// TmpFile is a scratch path under Tmp. name should carry the slug, so two
+// publishes never share one.
+func (s *Store) TmpFile(name string) string { return filepath.Join(s.Tmp(), name) }
+
+// The served files. IndexPath is the one index; the rest live in an app's
+// directory and are "" for an invalid slug, or for a payload name that is not
+// a bare file name, so a hand-edited record cannot name a file elsewhere.
+func (s *Store) IndexPath() string                    { return filepath.Join(s.Public(), "index.html") }
+func (s *Store) AppIndexPath(slug string) string      { return s.appFile(slug, "index.html") }
+func (s *Store) ManifestPath(slug string) string      { return s.appFile(slug, "manifest.plist") }
+func (s *Store) IconPath(slug string) string          { return s.appFile(slug, "icon.png") }
+func (s *Store) PayloadPath(slug, name string) string { return s.appFile(slug, name) }
+
+func (s *Store) appFile(slug, name string) string {
+	dir := s.AppDir(slug)
+	if dir == "" || name == "" || filepath.Base(name) != name {
+		return ""
+	}
+	return filepath.Join(dir, name)
 }
 
 func Open(root string) (*Store, error) {
@@ -185,7 +227,7 @@ func (s *Store) Remove(slug string) error {
 	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	if err := os.RemoveAll(filepath.Join(s.root, "build", slug)); err != nil {
+	if err := os.RemoveAll(s.BuildDir(slug)); err != nil {
 		return err
 	}
 	return s.ClearBuilding(slug)

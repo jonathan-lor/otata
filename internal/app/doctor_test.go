@@ -6,7 +6,6 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -113,7 +112,7 @@ func TestFreeProfileFailsTheCheck(t *testing.T) {
 // it, so doctor gets past its server checks to the ones under test.
 func serveThisRoot(t *testing.T, a *App) {
 	t.Helper()
-	if err := a.Store.WriteFile(filepath.Join(a.Store.Public(), "index.html"), []byte("<html>")); err != nil {
+	if err := a.Store.WriteFile(a.Store.IndexPath(), []byte("<html>")); err != nil {
 		t.Fatal(err)
 	}
 	srv, err := server.New(a.Store.Public(), a.IncomingPrefix(), a.RootDigest(), log.New(io.Discard, "", 0))

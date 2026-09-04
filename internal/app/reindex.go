@@ -1,7 +1,6 @@
 package app
 
 import (
-	"path/filepath"
 	"strings"
 
 	"github.com/jonathan-lor/otata/internal/artifact"
@@ -42,7 +41,7 @@ func (a *App) Reindex(baseURL string) error {
 	if err != nil {
 		return err
 	}
-	if err := a.Store.WriteFile(filepath.Join(a.Store.Public(), "index.html"), page); err != nil {
+	if err := a.Store.WriteFile(a.Store.IndexPath(), page); err != nil {
 		return err
 	}
 	// Per-app pages restate the build marker, so a bookmarked link is as honest
@@ -52,8 +51,7 @@ func (a *App) Reindex(baseURL string) error {
 	// manifest gets one; an Android page links the payload itself.
 	for _, r := range records {
 		if r.Platform.InstallsFromManifest() {
-			if err := a.Store.WriteFile(filepath.Join(a.Store.AppDir(r.Slug), "manifest.plist"),
-				Manifest(r, baseURL)); err != nil {
+			if err := a.Store.WriteFile(a.Store.ManifestPath(r.Slug), Manifest(r, baseURL)); err != nil {
 				return err
 			}
 		}
@@ -65,7 +63,7 @@ func (a *App) Reindex(baseURL string) error {
 		if err != nil {
 			return err
 		}
-		if err := a.Store.WriteFile(filepath.Join(a.Store.AppDir(r.Slug), "index.html"), appPage); err != nil {
+		if err := a.Store.WriteFile(a.Store.AppIndexPath(r.Slug), appPage); err != nil {
 			return err
 		}
 	}

@@ -134,7 +134,7 @@ func (a *App) reloadAgent() error {
 		// that, so we just report it
 		return cli.Failf(cli.CodeServerDown,
 			"the launch agent is loaded but nothing has bound port %d", a.Config.Port).
-			WithHint("see " + filepath.Join(a.Root, "server.log") + "; re-run 'otata autostart on' to reinstall the agent")
+			WithHint("see " + a.Store.ServerLog() + "; re-run 'otata autostart on' to reinstall the agent")
 	}
 	if out, err := exec.Command("launchctl", "bootstrap", launchDomain(), launchAgentPath()).CombinedOutput(); err != nil {
 		return cli.Failf(cli.CodeInternal, "could not reload the launch agent: %s", string(out))
@@ -146,7 +146,7 @@ func (a *App) reloadAgent() error {
 		time.Sleep(100 * time.Millisecond)
 	}
 	return cli.Failf(cli.CodeServerDown, "reloaded the launch agent but nothing bound port %d", a.Config.Port).
-		WithHint("see " + filepath.Join(a.Root, "server.log"))
+		WithHint("see " + a.Store.ServerLog())
 }
 
 // EnableAutostart makes the server return at login, but not before it.
@@ -190,7 +190,7 @@ func (a *App) EnableAutostart() error {
 	// fail cleanly: the process starts and hangs in dyld loading its own image
 	// while launchd reports the job running. Testing beats guessing from the
 	// path because TCC also covers iCloud Drive, external volumes, and per-user grants.
-	staged, stageErr := stageAgentBinary(a.Root, exe)
+	staged, stageErr := stageAgentBinary(a.Store.StagedBinary(), exe)
 	if stageErr != nil {
 		_ = a.DisableAutostart()
 		return stageErr
@@ -203,7 +203,7 @@ func (a *App) EnableAutostart() error {
 	if _, ok := errors.AsType[*errAgentNoBind](err); ok {
 		return cli.Failf(cli.CodeServerDown,
 			"the launch agent will not start the server, from %s or from a copy", exe).
-			WithHint("see " + filepath.Join(a.Root, "server.log"))
+			WithHint("see " + a.Store.ServerLog())
 	}
 	return err
 }
@@ -231,7 +231,7 @@ func (a *App) installAgent(program string, wait time.Duration) error {
 		return err
 	}
 
-	plist := launchPlist(program, a.Root, a.Config.Port, a.Config.ServePath, filepath.Join(a.Root, "server.log"))
+	plist := launchPlist(program, a.Root, a.Config.Port, a.Config.ServePath, a.Store.ServerLog())
 	// Atomic because with a torn plist, launchd will retry the corrupt file
 	// at every login while otata, unable to parse it, reports autostart off.
 	if err := atomicfile.WriteData(filepath.Dir(launchAgentPath()), launchAgentPath(), 0o644, plist); err != nil {
@@ -311,11 +311,10 @@ func (a *App) DisableAutostart() error {
 	return nil
 }
 
-// stageAgentBinary copies the binary into the tool's own root, which is never
-// inside a protected directory. Staged and renamed so a running agent never
-// reads a partially written image.
-func stageAgentBinary(root, exe string) (string, error) {
-	dest := filepath.Join(root, "bin", "otata")
+// stageAgentBinary copies the binary to dest, the store's own place for it,
+// which is never inside a protected directory. Staged and renamed so a
+// running agent never reads a partially written image.
+func stageAgentBinary(dest, exe string) (string, error) {
 	err := atomicfile.Write(filepath.Dir(dest), dest, 0o755, func(w io.Writer) error {
 		src, err := os.Open(exe)
 		if err != nil {

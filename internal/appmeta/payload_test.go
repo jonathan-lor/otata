@@ -89,9 +89,13 @@ func TestOpenReadsAnIPA(t *testing.T) {
 		t.Errorf("Info = %+v, want %+v", info, want)
 	}
 
-	dest := filepath.Join(t.TempDir(), "icon.png")
-	if err := payload.Icon(dest); err != nil {
+	dest := filepath.Join(t.TempDir(), "icon")
+	ext, err := payload.Icon(dest)
+	if err != nil {
 		t.Fatalf("Icon: %v", err)
+	}
+	if ext != ".png" {
+		t.Errorf("an iOS icon reported as %q, want .png", ext)
 	}
 	f, err := os.Open(dest)
 	if err != nil {

@@ -29,7 +29,7 @@ func TestReadsRealIPA(t *testing.T) {
 		t.Fatal(err)
 	}
 	icon := filepath.Join(t.TempDir(), "icon.png")
-	iconErr := payload.Icon(icon)
+	_, iconErr := payload.Icon(icon)
 	t.Logf("app=%s bundle=%s title=%q version=%s build=%s icon=%v",
 		info.Name, info.BundleID, info.Title, info.Version, info.Build, iconErr)
 	if info.BundleID == "" {

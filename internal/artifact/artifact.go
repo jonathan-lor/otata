@@ -69,9 +69,27 @@ type Record struct {
 	PayloadName string    `json:"payload_name"`
 	SizeBytes   int64     `json:"size_bytes"`
 	HasIcon     bool      `json:"has_icon"`
+	// IconName is the icon's file in the app's directory, and its extension
+	// is the format: a PNG out of an iOS payload, WebP out of an Android one,
+	// served as it is because nothing here converts. Empty on a record from
+	// before the field existed, when every icon was icon.png.
+	IconName string `json:"icon_name,omitempty"`
 
 	// Recorded so a second project cannot silently claim an existing slug.
 	ProjectPath string `json:"project_path,omitempty"`
+}
+
+// IconFile is the icon's name in the app's directory, or "" when the build
+// shipped none. Reading it here rather than the field is what keeps a record
+// written before IconName existed pointing at the icon it has.
+func (r Record) IconFile() string {
+	switch {
+	case !r.HasIcon:
+		return ""
+	case r.IconName == "":
+		return "icon.png"
+	}
+	return r.IconName
 }
 
 // CacheKey defeats caching of a URL that is otherwise stable across builds.

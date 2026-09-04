@@ -24,7 +24,7 @@ func TestLayoutIsUnderTheRootAndRefusesBadSlugs(t *testing.T) {
 		"index":         store.IndexPath(),
 		"app index":     store.AppIndexPath("app"),
 		"manifest":      store.ManifestPath("app"),
-		"icon":          store.IconPath("app"),
+		"icon":          store.IconPath("app", "icon.webp"),
 		"payload":       store.PayloadPath("app", "App.ipa"),
 		"build dir":     store.BuildDir("app"),
 		"tmp file":      store.TmpFile("icon-app.png"),
@@ -43,17 +43,91 @@ func TestLayoutIsUnderTheRootAndRefusesBadSlugs(t *testing.T) {
 		}
 	}
 	for _, bad := range []string{"..", "a/b", "", "../app"} {
-		if store.AppIndexPath(bad) != "" || store.ManifestPath(bad) != "" || store.IconPath(bad) != "" ||
+		if store.AppIndexPath(bad) != "" || store.ManifestPath(bad) != "" || store.IconPath(bad, "icon.png") != "" ||
 			store.PayloadPath(bad, "App.ipa") != "" || store.BuildDir(bad) != "" {
 			t.Errorf("slug %q yielded a path", bad)
 		}
 	}
 	// A payload name comes out of a record, which a hand can edit.
 	for _, bad := range []string{"../escape.ipa", "sub/App.ipa", ""} {
-		if store.PayloadPath("app", bad) != "" {
-			t.Errorf("payload name %q yielded a path", bad)
+		if store.PayloadPath("app", bad) != "" || store.IconPath("app", bad) != "" {
+			t.Errorf("file name %q yielded a path", bad)
 		}
 	}
+}
+
+// A record from before the icon had a name still names the icon it has, and
+// one without an icon names nothing, so a JSON reader sees the fact spelled out.
+func TestRecordSpellsOutTheIconName(t *testing.T) {
+	store, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, in := range []artifact.Record{
+		{Slug: "legacy", HasIcon: true},
+		{Slug: "webp", HasIcon: true, IconName: "icon.webp"},
+		{Slug: "none"},
+	} {
+		if err := store.PutRecord(in); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want := map[string]string{"legacy": "icon.png", "webp": "icon.webp", "none": ""}
+	for slug, name := range want {
+		r, ok, err := store.Record(slug)
+		if err != nil || !ok {
+			t.Fatalf("%s: %v %v", slug, ok, err)
+		}
+		if r.IconName != name || r.IconFile() != name {
+			t.Errorf("%s: IconName=%q IconFile()=%q, want %q", slug, r.IconName, r.IconFile(), name)
+		}
+	}
+}
+
+// The icon's name changes with its format, so the one a new build does not
+// name is removed, and a build that ships none leaves none behind.
+func TestPruneStaleIconsKeepsOnlyTheNamedOne(t *testing.T) {
+	store, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := store.AppDir("app")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"icon.png", "icon.webp", "index.html", "App.apk"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(name), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := store.PruneStaleIcons("app", "icon.webp"); err != nil {
+		t.Fatal(err)
+	}
+	if left := names(t, dir); !slices.Equal(left, []string{"App.apk", "icon.webp", "index.html"}) {
+		t.Errorf("after pruning around icon.webp: %v", left)
+	}
+	if err := store.PruneStaleIcons("app", ""); err != nil {
+		t.Fatal(err)
+	}
+	if left := names(t, dir); !slices.Equal(left, []string{"App.apk", "index.html"}) {
+		t.Errorf("after pruning with no icon: %v", left)
+	}
+	if err := store.PruneStaleIcons("../x", ""); err == nil {
+		t.Error("PruneStaleIcons accepted a traversal slug")
+	}
+}
+
+func names(t *testing.T, dir string) []string {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []string
+	for _, e := range entries {
+		out = append(out, e.Name())
+	}
+	return out
 }
 
 // A slug becomes both a path component and a URL segment. An unvalidated one

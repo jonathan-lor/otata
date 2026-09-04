@@ -95,6 +95,32 @@ func TestAndroidInstallsByDirectDownload(t *testing.T) {
 	}
 }
 
+// The icon is linked under the name the record gives it, which carries its
+// format: WebP out of an Android payload is served as WebP. A record from
+// before icons had names still links the icon.png it has.
+func TestIconIsLinkedUnderItsOwnName(t *testing.T) {
+	webp := rec()
+	webp.Platform, webp.PayloadName, webp.IconName = artifact.Android, "MyApp.apk", "icon.webp"
+	legacy := rec()
+	legacy.Slug = "legacy"
+	out, err := Index("host", "https://host/otata", []artifact.Record{webp, legacy}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`src="https://host/otata/myapp/icon.webp"`, `src="https://host/otata/legacy/icon.png"`} {
+		if !strings.Contains(string(out), want) {
+			t.Errorf("index lacks %s:\n%s", want, excerpt(string(out), "icon"))
+		}
+	}
+	app, err := App(webp, "https://host/otata", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(app), `src="https://host/otata/myapp/icon.webp"`) {
+		t.Error("the app page does not link the WebP icon under its name")
+	}
+}
+
 // The page is a file. It is written once and read at any later moment, so it
 // carries the build's instant and the phone works out the age.
 func TestFreshnessIsStated(t *testing.T) {

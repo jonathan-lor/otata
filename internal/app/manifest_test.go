@@ -74,6 +74,20 @@ func TestManifestSurvivesHostileValues(t *testing.T) {
 	}
 }
 
+// The manifest links the icon under the name the record gives it, and links
+// none for a build that shipped none.
+func TestManifestLinksTheIconByName(t *testing.T) {
+	rec := artifact.Record{Slug: "app", Title: "App", BundleID: "com.x.y", Version: "1", Build: "1",
+		PayloadName: "App.ipa", BuiltAt: time.Now(), HasIcon: true, IconName: "icon.webp"}
+	if !strings.Contains(string(Manifest(rec, "https://host/otata")), "https://host/otata/app/icon.webp") {
+		t.Error("the icon is not linked under its name")
+	}
+	rec.HasIcon, rec.IconName = false, ""
+	if strings.Contains(string(Manifest(rec, "https://host/otata")), "icon") {
+		t.Error("a build with no icon still links one")
+	}
+}
+
 // The ordinary case that was broken before escaping: a real app name.
 func TestManifestForEverydayName(t *testing.T) {
 	rec := artifact.Record{

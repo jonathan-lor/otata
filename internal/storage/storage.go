@@ -87,7 +87,7 @@ func (s *Store) TmpFile(name string) string { return filepath.Join(s.Tmp(), name
 func (s *Store) IndexPath() string                    { return filepath.Join(s.Public(), "index.html") }
 func (s *Store) AppIndexPath(slug string) string      { return s.appFile(slug, "index.html") }
 func (s *Store) ManifestPath(slug string) string      { return s.appFile(slug, "manifest.plist") }
-func (s *Store) IconPath(slug string) string          { return s.appFile(slug, "icon.png") }
+func (s *Store) IconPath(slug, name string) string    { return s.appFile(slug, name) }
 func (s *Store) PayloadPath(slug, name string) string { return s.appFile(slug, name) }
 
 func (s *Store) appFile(slug, name string) string {
@@ -184,6 +184,9 @@ func (s *Store) Record(slug string) (artifact.Record, bool, error) {
 	if r.Platform == "" {
 		r.Platform = artifact.IOS
 	}
+	// Likewise a record with an icon but no name for it predates the name,
+	// when every icon was icon.png; spelled out so a JSON reader need not know.
+	r.IconName = r.IconFile()
 	return r, true, nil
 }
 
@@ -325,6 +328,20 @@ func (s *Store) Building() (map[string]artifact.Building, error) {
 // would otherwise accumulate silently inside the served directory. ext is
 // what marks a file as a payload, and is the platform's to say.
 func (s *Store) PruneStalePayloads(slug, keep, ext string) error {
+	return s.pruneAppFiles(slug, keep, func(name string) bool { return strings.HasSuffix(name, ext) })
+}
+
+// PruneStaleIcons removes an app's icons other than keep, which is empty when
+// the new build ships none. The icon's name carries its format, so a publish
+// whose icon changed format, or that has none now, would otherwise leave the
+// old one served beside the record that no longer names it.
+func (s *Store) PruneStaleIcons(slug, keep string) error {
+	return s.pruneAppFiles(slug, keep, func(name string) bool { return strings.HasPrefix(name, "icon.") })
+}
+
+// pruneAppFiles removes the files in an app's directory that match, keep
+// excepted. A directory that is not there has nothing to prune.
+func (s *Store) pruneAppFiles(slug, keep string, match func(name string) bool) error {
 	if err := ValidateSlug(slug); err != nil {
 		return err
 	}
@@ -334,10 +351,7 @@ func (s *Store) PruneStalePayloads(slug, keep, ext string) error {
 	}
 	for _, e := range entries {
 		name := e.Name()
-		if name == keep {
-			continue
-		}
-		if strings.HasSuffix(name, ext) {
+		if name != keep && match(name) {
 			_ = os.Remove(filepath.Join(s.AppDir(slug), name))
 		}
 	}

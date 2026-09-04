@@ -22,10 +22,14 @@ type Payload interface {
 	// means the payload carries nothing to read; ErrUnsupported that this
 	// machine cannot read it.
 	Signing(held map[string]bool) (Signing, error)
-	// Icon writes the app's icon to dest as a standard PNG, one a browser
-	// decodes. ErrNoIcon means there is none to ship, or none that could be
-	// made standard; the page's placeholder is the right answer to either.
-	Icon(dest string) error
+	// Icon writes the app's icon to dest in a form a browser decodes, and
+	// reports that form as the extension the file is served under: ".png"
+	// for an iOS icon, which the packaging optimizes and this reverts, and
+	// whatever the launcher icon is for an Android one, WebP in every recent
+	// template, which nothing converts. ErrNoIcon means there is none to
+	// ship, or none that could be made standard; the page's placeholder is
+	// the right answer to either.
+	Icon(dest string) (ext string, err error)
 	Close() error
 }
 
@@ -118,22 +122,22 @@ func (p *ipa) Signing(held map[string]bool) (Signing, error) {
 
 // Icon picks the largest flat icon PNG in the bundle root and writes it to
 // dest, reverting the packaging's iphone optimization so a browser decodes it.
-func (p *ipa) Icon(dest string) error {
+func (p *ipa) Icon(dest string) (string, error) {
 	plist, err := p.infoPlist()
 	if err != nil {
-		return err
+		return "", err
 	}
 	name := findIcon(p.app, plist)
 	if name == "" {
-		return ErrNoIcon
+		return "", ErrNoIcon
 	}
 	if err := copyOut(p.app, name, dest); err != nil {
-		return err
+		return "", err
 	}
 	// The normalize must succeed for the icon to ship: a crushed icon is a
 	// broken image on the page, where no icon is a clean placeholder.
 	if err := normalizeIcon(dest); err != nil {
-		return fmt.Errorf("%w: %v", ErrNoIcon, err)
+		return "", fmt.Errorf("%w: %v", ErrNoIcon, err)
 	}
-	return nil
+	return ".png", nil
 }

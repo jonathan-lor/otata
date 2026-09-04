@@ -472,13 +472,15 @@ func (a *App) Publish(opts PublishOptions, progress func(string)) (*PublishResul
 		return nil, cli.Failf(cli.CodeInternal, "could not stage the payload: %v", err)
 	}
 
-	// The icon ships only when the reader could produce a standard PNG; no
-	// icon is a clean placeholder on the page where a broken image is not.
-	hasIcon := false
-	tmpIcon := a.Store.TmpFile("icon-" + slug + ".png")
-	if payload.Icon(tmpIcon) == nil {
-		if a.Store.CopyInto(a.Store.IconPath(slug), tmpIcon) == nil {
-			hasIcon = true
+	// The icon ships only when the reader could produce one a browser
+	// decodes; no icon is a clean placeholder on the page where a broken image
+	// is not. The reader says which format it wrote, and the file is served
+	// under a name that says so, because nothing here converts.
+	iconName := ""
+	tmpIcon := a.Store.TmpFile("icon-" + slug)
+	if ext, err := payload.Icon(tmpIcon); err == nil {
+		if a.Store.CopyInto(a.Store.IconPath(slug, "icon"+ext), tmpIcon) == nil {
+			iconName = "icon" + ext
 		}
 	}
 	// Remove unconditionally because a failed write may have left a partial file.
@@ -493,7 +495,7 @@ func (a *App) Publish(opts PublishOptions, progress func(string)) (*PublishResul
 		Version: info.Version, Build: info.Build, Config: built.Config,
 		Commit: commit, Branch: branch, Dirty: dirty,
 		BuiltAt: time.Now(), PayloadName: payloadName,
-		SizeBytes: stat.Size(), HasIcon: hasIcon, ProjectPath: abs,
+		SizeBytes: stat.Size(), HasIcon: iconName != "", IconName: iconName, ProjectPath: abs,
 	}
 	// The record goes down BEFORE anything derived from it, and before pruning.
 	// Pruning first could delete the payload the on-disk record still names.
@@ -502,6 +504,9 @@ func (a *App) Publish(opts PublishOptions, progress func(string)) (*PublishResul
 	}
 	if err := a.Store.PruneStalePayloads(slug, payloadName, platform.PayloadExt()); err != nil {
 		return nil, cli.Failf(cli.CodeInternal, "could not prune old payloads: %v", err)
+	}
+	if err := a.Store.PruneStaleIcons(slug, iconName); err != nil {
+		return nil, cli.Failf(cli.CodeInternal, "could not prune old icons: %v", err)
 	}
 
 	// Clear the marker, then render once. A single Reindex produces the final

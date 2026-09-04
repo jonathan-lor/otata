@@ -109,10 +109,16 @@ func (a *App) Transport() (transport.Transport, error) {
 	return t, a.guard(t)
 }
 
-// guard refuses a public transport. None ships with an access guard, so choosing one is refused
+// guard refuses a public transport. None ships with an access guard, so choosing one is refused.
+//
+// The code is transport_down, not invalid_args: the command was called
+// correctly and the transport exists, but the machine's network makes it
+// unusable (Funnel on the listener, a proxy declared public). invalid_args
+// exits 2, which the docs define as "fix the arguments", and there is no
+// argument to fix.
 func (a *App) guard(t transport.Transport) error {
 	if t.Visibility() == transport.Public {
-		return cli.Failf(cli.CodeInvalidArgs,
+		return cli.Failf(cli.CodeTransportDown,
 			"%s is a public transport and no access guard is implemented yet", t.Name()).
 			WithHint("use a private transport, or declare visibility private if your proxy is not publicly reachable")
 	}

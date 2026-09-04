@@ -105,7 +105,7 @@ it ran and failed.
 | `signing_failed` | Certificate, profile or device registration | Needs a human with Apple portal access |
 | `free_profile` | Signed by a free personal team, which iOS will not install over the air | Sign with a paid team; nothing else fixes it |
 | `server_down` | Local server not running, or the port is held by something else | `otata autostart on` once; after that, `otata doctor --fix` and retry |
-| `transport_down` | Transport present but unusable | Needs the machine, e.g. Tailscale logged out |
+| `transport_down` | Transport present but unusable: Tailscale logged out or without HTTPS certificates, or the route is publicly reachable (Funnel on, or a proxy declared public) | Needs the machine; `otata doctor` names it |
 | `no_transport` | No transport selected, or `manual` has no base URL | Run the `otata transport use` command the hint names |
 | `slug_conflict` | Another project owns this name, or its record is unreadable | Pass `--slug`, or `otata forget` it |
 | `build_in_progress` | A live publish already holds this slug | Wait; `otata doctor --fix` clears a marker whose process is gone |

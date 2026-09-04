@@ -45,7 +45,7 @@ exit 1 means it ran and failed.
 | `signing_failed` | Needs a human with Apple portal access; do not retry |
 | `free_profile` | iOS refuses free-team builds over the air; a paid team is the only fix. Do not retry |
 | `server_down` | `otata doctor --fix`; if autostart was never set up, `otata autostart on` once |
-| `transport_down` | Machine-side (e.g. Tailscale logged out); `otata doctor` names it |
+| `transport_down` | Machine-side (Tailscale logged out, or the route is public: Funnel on); `otata doctor` names it. Do not retry until it is fixed |
 | `no_transport` | Run the `otata transport use` command the hint names |
 | `slug_conflict` | Another path owns this name: pass `--slug`, or `otata forget <slug>` |
 | `build_in_progress` | Another publish holds the slug: wait; `doctor --fix` clears a marker whose process is gone |

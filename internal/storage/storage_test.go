@@ -4,11 +4,57 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/jonathan-lor/otata/internal/artifact"
 )
+
+// Every path the app writes or serves is spelled here and nowhere else, all
+// of it under the root, and a slug that fails validation yields no path at
+// all, so a caller that forgot to validate cannot reach outside by accident.
+func TestLayoutIsUnderTheRootAndRefusesBadSlugs(t *testing.T) {
+	root := t.TempDir()
+	store, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths := map[string]string{
+		"index":         store.IndexPath(),
+		"app index":     store.AppIndexPath("app"),
+		"manifest":      store.ManifestPath("app"),
+		"icon":          store.IconPath("app"),
+		"payload":       store.PayloadPath("app", "App.ipa"),
+		"build dir":     store.BuildDir("app"),
+		"tmp file":      store.TmpFile("icon-app.png"),
+		"server log":    store.ServerLog(),
+		"staged binary": store.StagedBinary(),
+	}
+	for name, p := range paths {
+		rel, err := filepath.Rel(root, p)
+		if p == "" || err != nil || strings.HasPrefix(rel, "..") {
+			t.Errorf("%s = %q, want a path under %s", name, p, root)
+		}
+	}
+	for name, p := range map[string]string{"app index": paths["app index"], "manifest": paths["manifest"], "icon": paths["icon"], "payload": paths["payload"]} {
+		if filepath.Dir(p) != store.AppDir("app") {
+			t.Errorf("%s = %q, want a file inside the app's directory", name, p)
+		}
+	}
+	for _, bad := range []string{"..", "a/b", "", "../app"} {
+		if store.AppIndexPath(bad) != "" || store.ManifestPath(bad) != "" || store.IconPath(bad) != "" ||
+			store.PayloadPath(bad, "App.ipa") != "" || store.BuildDir(bad) != "" {
+			t.Errorf("slug %q yielded a path", bad)
+		}
+	}
+	// A payload name comes out of a record, which a hand can edit.
+	for _, bad := range []string{"../escape.ipa", "sub/App.ipa", ""} {
+		if store.PayloadPath("app", bad) != "" {
+			t.Errorf("payload name %q yielded a path", bad)
+		}
+	}
+}
 
 // A slug becomes both a path component and a URL segment. An unvalidated one
 // let `otata forget ..` run RemoveAll on the entire store and return success.

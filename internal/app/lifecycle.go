@@ -30,10 +30,11 @@ func (a *App) Serve() error {
 // background server exists. Everything that needs the server comes through
 // here. With no agent installed, it refuses and tells you the command to run.
 func (a *App) StartServer() error {
-	if a.ServerRunning() {
-		return nil
-	}
-	if p, ok := a.otherRootServer(); ok {
+	// One probe answers both "is ours up" and "is another root's there".
+	if p, ok := a.probeServer("/"); ok {
+		if p.Root == a.RootDigest() {
+			return nil
+		}
 		// Publish must not kill the server of another store because an environment variable was set in this shell.
 		return cli.Failf(cli.CodeServerDown, "port %d is held by %s", a.Config.Port, p.describe()).
 			WithHint("run 'otata restart' to replace it with one for " + a.Root + ", or set OTATA_PORT to a free port")

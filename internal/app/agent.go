@@ -1,7 +1,10 @@
 package app
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -52,6 +55,52 @@ func disabledIn(out, label string) bool {
 		return strings.Contains(rest, "disabled") || strings.Contains(rest, "true")
 	}
 	return false
+}
+
+// forgetAgentPlist drops the memoized plist, after a path that installed or
+// removed the agent.
+func (a *App) forgetAgentPlist() { a.agentRead = false }
+
+// filesDiffer reports whether two binaries differ in content, as cheaply as
+// it can be sure. One file under two names (a symlink beside its target) is
+// no difference; different sizes are; the same size and modification time is
+// the same content, which the staged copy keeps true by carrying its
+// source's time; only what is left is settled by hashing both. Hashing two
+// binaries on every `otata status` was most of what status cost.
+func filesDiffer(a, b string) bool {
+	if a == b {
+		return false
+	}
+	ia, errA := os.Stat(a)
+	ib, errB := os.Stat(b)
+	if errA != nil || errB != nil {
+		// A missing or unreadable file has no content to match; the
+		// digest of nothing differs from any binary's, as before.
+		return fileDigest(a) != fileDigest(b)
+	}
+	if os.SameFile(ia, ib) {
+		return false
+	}
+	if ia.Size() != ib.Size() {
+		return true
+	}
+	if ia.ModTime().Equal(ib.ModTime()) {
+		return false
+	}
+	return fileDigest(a) != fileDigest(b)
+}
+
+func fileDigest(path string) string {
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return ""
+	}
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 // describeAgent names what an agent serves, for a status line or a refusal.

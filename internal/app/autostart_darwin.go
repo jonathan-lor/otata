@@ -3,8 +3,6 @@
 package app
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -40,7 +38,7 @@ func (a *App) AutostartEnabled() bool { return a.agentIsOurs() }
 
 // agentIsOurs reports whether the installed agent serves this root and port.
 func (a *App) agentIsOurs() bool {
-	spec, ok := readAgentPlist()
+	spec, ok := a.readAgentPlist()
 	return ok && agentMatches(spec, a.Root, a.Config.Port)
 }
 
@@ -80,13 +78,23 @@ func (a *App) foreignAgentLoaded() (agentSpec, bool) {
 	if !jobLoaded() || a.agentIsOurs() {
 		return agentSpec{}, false
 	}
-	return readAgentPlist()
+	return a.readAgentPlist()
 }
 
-// readAgentPlist parses the installed plist with plutil rather than searching
+// readAgentPlist is the installed plist, read once per process. The paths
+// that install or remove it forget the answer.
+func (a *App) readAgentPlist() (agentSpec, bool) {
+	if !a.agentRead {
+		a.agent, a.agentOK = parseAgentPlist()
+		a.agentRead = true
+	}
+	return a.agent, a.agentOK
+}
+
+// parseAgentPlist parses the installed plist with plutil rather than searching
 // for literal markup: a plist converted to binary, reformatted, or edited by
 // any other tool would otherwise be misread.
-func readAgentPlist() (agentSpec, bool) {
+func parseAgentPlist() (agentSpec, bool) {
 	out, err := exec.Command("plutil", "-convert", "json", "-o", "-", launchAgentPath()).Output()
 	if err != nil {
 		return agentSpec{}, false
@@ -134,7 +142,7 @@ func (a *App) reloadAgent() error {
 		// that, so we just report it
 		return cli.Failf(cli.CodeServerDown,
 			"the launch agent is loaded but nothing has bound port %d", a.Config.Port).
-			WithHint("see " + filepath.Join(a.Root, "server.log") + "; re-run 'otata autostart on' to reinstall the agent")
+			WithHint("see " + a.Store.ServerLog() + "; re-run 'otata autostart on' to reinstall the agent")
 	}
 	if out, err := exec.Command("launchctl", "bootstrap", launchDomain(), launchAgentPath()).CombinedOutput(); err != nil {
 		return cli.Failf(cli.CodeInternal, "could not reload the launch agent: %s", string(out))
@@ -146,7 +154,7 @@ func (a *App) reloadAgent() error {
 		time.Sleep(100 * time.Millisecond)
 	}
 	return cli.Failf(cli.CodeServerDown, "reloaded the launch agent but nothing bound port %d", a.Config.Port).
-		WithHint("see " + filepath.Join(a.Root, "server.log"))
+		WithHint("see " + a.Store.ServerLog())
 }
 
 // EnableAutostart makes the server return at login, but not before it.
@@ -167,7 +175,7 @@ func (a *App) EnableAutostart() error {
 	// One agent per user. Installing over one that serves a different root
 	// would silently take autostart away from that root: the real store,
 	// typically, from a shell with a scratch OTATA_ROOT set.
-	if spec, ok := readAgentPlist(); ok && !agentMatches(spec, a.Root, a.Config.Port) {
+	if spec, ok := a.readAgentPlist(); ok && !agentMatches(spec, a.Root, a.Config.Port) {
 		return cli.Failf(cli.CodeInvalidArgs,
 			"the launch agent already serves %s; there is one per user", describeAgent(spec)).
 			WithHint("run 'otata autostart off' to remove it, then 'otata autostart on' here")
@@ -190,7 +198,7 @@ func (a *App) EnableAutostart() error {
 	// fail cleanly: the process starts and hangs in dyld loading its own image
 	// while launchd reports the job running. Testing beats guessing from the
 	// path because TCC also covers iCloud Drive, external volumes, and per-user grants.
-	staged, stageErr := stageAgentBinary(a.Root, exe)
+	staged, stageErr := stageAgentBinary(a.Store.StagedBinary(), exe)
 	if stageErr != nil {
 		_ = a.DisableAutostart()
 		return stageErr
@@ -203,7 +211,7 @@ func (a *App) EnableAutostart() error {
 	if _, ok := errors.AsType[*errAgentNoBind](err); ok {
 		return cli.Failf(cli.CodeServerDown,
 			"the launch agent will not start the server, from %s or from a copy", exe).
-			WithHint("see " + filepath.Join(a.Root, "server.log"))
+			WithHint("see " + a.Store.ServerLog())
 	}
 	return err
 }
@@ -221,6 +229,8 @@ func (e *errAgentNoBind) Error() string {
 // is the only honest success signal because launchd reports a job that hangs on load as
 // "running", so asking launchd proves nothing.
 func (a *App) installAgent(program string, wait time.Duration) error {
+	// Whatever happens below writes or removes the plist.
+	defer a.forgetAgentPlist()
 	// Unload BEFORE stopping anything. With KeepAlive set, a signaled server is
 	// respawned faster than it can be confirmed dead, so stopping first can
 	// never succeed and the bootout that would have fixed it never runs.
@@ -231,7 +241,7 @@ func (a *App) installAgent(program string, wait time.Duration) error {
 		return err
 	}
 
-	plist := launchPlist(program, a.Root, a.Config.Port, a.Config.ServePath, filepath.Join(a.Root, "server.log"))
+	plist := launchPlist(program, a.Root, a.Config.Port, a.Config.ServePath, a.Store.ServerLog())
 	// Atomic because with a torn plist, launchd will retry the corrupt file
 	// at every login while otata, unable to parse it, reports autostart off.
 	if err := atomicfile.WriteData(filepath.Dir(launchAgentPath()), launchAgentPath(), 0o644, plist); err != nil {
@@ -304,6 +314,7 @@ func launchPlist(program, root string, port int, servePath, log string) []byte {
 }
 
 func (a *App) DisableAutostart() error {
+	defer a.forgetAgentPlist()
 	_ = exec.Command("launchctl", "bootout", launchTarget()).Run()
 	if err := os.Remove(launchAgentPath()); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return cli.Failf(cli.CodeInternal, "%v", err)
@@ -311,11 +322,10 @@ func (a *App) DisableAutostart() error {
 	return nil
 }
 
-// stageAgentBinary copies the binary into the tool's own root, which is never
-// inside a protected directory. Staged and renamed so a running agent never
-// reads a partially written image.
-func stageAgentBinary(root, exe string) (string, error) {
-	dest := filepath.Join(root, "bin", "otata")
+// stageAgentBinary copies the binary to dest, the store's own place for it,
+// which is never inside a protected directory. Staged and renamed so a
+// running agent never reads a partially written image.
+func stageAgentBinary(dest, exe string) (string, error) {
 	err := atomicfile.Write(filepath.Dir(dest), dest, 0o755, func(w io.Writer) error {
 		src, err := os.Open(exe)
 		if err != nil {
@@ -328,39 +338,28 @@ func stageAgentBinary(root, exe string) (string, error) {
 	if err != nil {
 		return "", cli.Failf(cli.CodeInternal, "could not stage %s: %v", exe, err)
 	}
+	// The copy carries its source's modification time, so the drift check
+	// can tell them apart, or not, by size and time alone, without hashing
+	// two binaries on every status.
+	if info, err := os.Stat(exe); err == nil {
+		_ = os.Chtimes(dest, info.ModTime(), info.ModTime())
+	}
 	return dest, nil
 }
 
 // AutostartProgram reports what the installed agent runs, and whether it has
-// drifted from the binary in use.
+// drifted from the binary in use. Different spellings can still be one file
+// (a symlink beside its target), and a symlink's target moves under it on
+// upgrade, so content decides, as cheaply as it can be settled.
 func (a *App) AutostartProgram() (program string, stale bool) {
-	spec, ok := readAgentPlist()
+	spec, ok := a.readAgentPlist()
 	if !ok {
 		return "", false
 	}
 	program = spec.Program
-
 	exe, err := os.Executable()
 	if err != nil {
 		return program, false
 	}
-	if program == exe {
-		return program, false // same path: drift is impossible
-	}
-	// Different spellings can still be one file (a symlink beside its target),
-	// and a symlink's target moves under it on upgrade, so content decides.
-	return program, fileDigest(program) != fileDigest(exe)
-}
-
-func fileDigest(path string) string {
-	f, err := os.Open(path)
-	if err != nil {
-		return ""
-	}
-	defer f.Close()
-	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
-		return ""
-	}
-	return hex.EncodeToString(h.Sum(nil))
+	return program, filesDiffer(program, exe)
 }

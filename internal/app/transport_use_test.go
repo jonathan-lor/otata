@@ -48,7 +48,7 @@ func TestUseTransportPersistsAndReindexes(t *testing.T) {
 	if onDisk.Port != config.DefaultPort {
 		t.Errorf("port %d was persisted; the file should keep its own", onDisk.Port)
 	}
-	index, err := os.ReadFile(filepath.Join(a.Store.Public(), "index.html"))
+	index, err := os.ReadFile(a.Store.IndexPath())
 	if err != nil {
 		t.Fatalf("no index was generated: %v", err)
 	}
@@ -82,7 +82,7 @@ func TestUseTransportRefusesBadSelectionsBeforeChangingAnything(t *testing.T) {
 		if _, err := os.Stat(config.Path(a.Root)); err == nil {
 			t.Errorf("%s: a refused selection wrote the config", c.name)
 		}
-		if _, err := os.Stat(filepath.Join(a.Store.Public(), "index.html")); err == nil {
+		if _, err := os.Stat(a.Store.IndexPath()); err == nil {
 			t.Errorf("%s: a refused selection generated pages", c.name)
 		}
 	}
@@ -133,8 +133,51 @@ func TestUseTransportRefusesAFunnelledTailnetBeforeChangingAnything(t *testing.T
 	if !bytes.Equal(before, after) {
 		t.Errorf("the config changed under a refused selection:\n%s", after)
 	}
-	if _, err := os.Stat(filepath.Join(a.Store.Public(), "index.html")); err == nil {
+	if _, err := os.Stat(a.Store.IndexPath()); err == nil {
 		t.Error("a refused selection generated pages")
+	}
+}
+
+// A tailnet that cannot serve at all (here, no MagicDNS name) is refused
+// with the obstacle named and nothing changed, rather than at the first
+// publish with whatever `tailscale serve` would have printed.
+func TestUseTransportRefusesAnUnusableTailnet(t *testing.T) {
+	bin, _ := transporttest.Stub(t, transporttest.ServeUnwired, `{"Self": {"DNSName": ""}, "CertDomains": []}`)
+	t.Setenv("PATH", filepath.Dir(bin))
+	a := freshApp(t)
+	err := a.UseTransport(TransportSelection{Name: "tailscale"}, quiet)
+	f := cli.AsFailure(err)
+	if err == nil || f.Code != cli.CodeTransportDown {
+		t.Fatalf("unusable tailnet: err=%v code=%q, want %q", err, f.Code, cli.CodeTransportDown)
+	}
+	if !strings.Contains(f.Message, "MagicDNS") {
+		t.Errorf("the obstacle is not named: %q", f.Message)
+	}
+	if _, err := os.Stat(config.Path(a.Root)); err == nil {
+		t.Error("a refused selection wrote the config")
+	}
+}
+
+// One command asks its transport several questions, and the answer is built
+// once: the tailscale CLI is read once per question per command, not once
+// per caller. Selecting the tailnet and then reporting status used to spawn
+// `serve status` four times and `status` twice.
+func TestTransportIsBuiltOncePerCommand(t *testing.T) {
+	calls := useStubTailscale(t, transporttest.ServeUnwired)
+	a := freshApp(t)
+	if err := a.UseTransport(TransportSelection{Name: "tailscale"}, quiet); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.Status(); err != nil {
+		t.Fatal(err)
+	}
+	// Once for the selection's own questions, once more after Ensure wired
+	// the path and dropped the memo, which is the one re-read that is right.
+	if n := transporttest.Calls(t, calls, "serve status --json"); n != 2 {
+		t.Errorf("serve status read %d times across the command, want 2", n)
+	}
+	if n := transporttest.Calls(t, calls, "status --json"); n != 1 {
+		t.Errorf("status read %d times across the command, want 1", n)
 	}
 }
 
@@ -156,7 +199,7 @@ func TestUseTransportSelectsATailnetThatCanServe(t *testing.T) {
 	if n := transporttest.Calls(t, calls, "serve --bg --https=443 --set-path=/otata http://127.0.0.1:1"); n != 1 {
 		t.Errorf("the serve path was wired %d times, want once", n)
 	}
-	index, err := os.ReadFile(filepath.Join(a.Store.Public(), "index.html"))
+	index, err := os.ReadFile(a.Store.IndexPath())
 	if err != nil {
 		t.Fatalf("no index was generated: %v", err)
 	}

@@ -24,16 +24,11 @@ type TransportSelection struct {
 // new base URL. progress receives the warnings a caller should see but that
 // do not fail the command.
 func (a *App) UseTransport(sel TransportSelection, progress func(string)) error {
-	// Everything gets validated before anything is changed.
+	// Everything gets validated before anything is changed: the arguments
+	// first, as usage errors.
 	var manual *config.Manual
 	switch sel.Name {
 	case "tailscale":
-		// Selection is where tailscale proves it can serve. Failing here will name
-		// the actual obstacle (logged out, HTTPS certificates disabled), whereas
-		// failing at the first publish would surface whatever `tailscale serve` prints.
-		if err := transport.NewTailscale(a.Config.ServePath).Verify(); err != nil {
-			return cli.Failf(cli.CodeTransportDown, "%v", err)
-		}
 	case "manual":
 		if sel.BaseURL == "" {
 			return cli.Fail(cli.CodeInvalidArgs, "manual transport needs --base-url")
@@ -51,16 +46,27 @@ func (a *App) UseTransport(sel TransportSelection, progress func(string)) error 
 			WithHint("tailscale or manual")
 	}
 
-	// The guard every later command applies, applied here first, to the
-	// selection built by the same rule those commands will use. Without this
-	// a funnelled tailnet or a route declared public was torn down to, saved,
-	// and reported as selected, and then refused by every command after.
+	// The candidate, built by the same rule every later command will use, and
+	// kept once selected so what it is asked here it need not be asked again.
 	next := a.Config
 	next.Transport = sel.Name
 	if manual != nil {
 		next.Manual = manual
 	}
-	if err := a.guard(transportFor(next)); err != nil {
+	candidate := transportFor(next)
+
+	// Selection is where the transport proves it can serve, changing nothing.
+	// Failing here names the actual obstacle (tailscale logged out, HTTPS
+	// certificates disabled), whereas failing at the first publish would
+	// surface whatever `tailscale serve` prints. Unwired is not an obstacle:
+	// Ensure below is what wires it.
+	if st := candidate.Status(a.Config.Port); !st.Ready && !st.Repairable {
+		return cli.Fail(cli.CodeTransportDown, st.Detail)
+	}
+	// The guard every later command applies, applied here first. Without this
+	// a funnelled tailnet or a route declared public was torn down to, saved,
+	// and reported as selected, and then refused by every command after.
+	if err := a.guard(candidate); err != nil {
 		return err
 	}
 
@@ -77,6 +83,7 @@ func (a *App) UseTransport(sel TransportSelection, progress func(string)) error 
 		}
 	}
 	a.Config = next
+	a.setTransport(candidate)
 
 	// Persist what was on disk plus this change, so an environment override for
 	// this one invocation does not become permanent.

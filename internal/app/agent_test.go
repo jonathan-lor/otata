@@ -95,6 +95,48 @@ func TestDisabledIn(t *testing.T) {
 	}
 }
 
+// The drift check hashes two binaries only when nothing cheaper settles it:
+// one file under two names is no drift, a size difference is, and the same
+// size and time is the same content, which is what the staged copy promises
+// by carrying its source's time.
+func TestFilesDiffer(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, body string) string {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte(body), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	orig := write("otata", "binary-v1")
+	if filesDiffer(orig, orig) {
+		t.Error("a file differs from itself")
+	}
+	link := filepath.Join(dir, "link")
+	if err := os.Symlink(orig, link); err == nil && filesDiffer(link, orig) {
+		t.Error("a symlink differs from its target")
+	}
+	if !filesDiffer(orig, write("shorter", "v1")) {
+		t.Error("a size difference went unnoticed")
+	}
+	// Same size, different content, different time: only hashing tells.
+	if !filesDiffer(orig, write("rebuilt", "binary-v2")) {
+		t.Error("a same-size rebuild went unnoticed")
+	}
+	// A copy that kept its source's time is the same content without a hash.
+	copied := write("copy", "binary-v1")
+	info, _ := os.Stat(orig)
+	if err := os.Chtimes(copied, info.ModTime(), info.ModTime()); err != nil {
+		t.Fatal(err)
+	}
+	if filesDiffer(orig, copied) {
+		t.Error("a faithful copy with its source's time was called different")
+	}
+	if !filesDiffer(orig, filepath.Join(dir, "missing")) {
+		t.Error("a missing program was not reported as drifted")
+	}
+}
+
 // agentRootDigest fills the default root exactly as agentMatches judges it,
 // so StopServer's foreign-agent check identifies the same store the match
 // logic would.

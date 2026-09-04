@@ -321,7 +321,7 @@ func (a *App) Publish(opts PublishOptions, progress func(string)) (*PublishResul
 	} else {
 		built, err = b.Build(ctx, builder.Options{
 			Container: container, Config: config, Scheme: opts.Scheme,
-			Work: filepath.Join(a.Root, "build", slug),
+			Work: a.Store.BuildDir(slug),
 			Log:  progress,
 		})
 	}
@@ -440,27 +440,24 @@ func (a *App) Publish(opts PublishOptions, progress func(string)) (*PublishResul
 	}
 
 	payloadName := sanitizeFilename(info.Name) + platform.PayloadExt()
-	appDir := a.Store.AppDir(slug)
-	if err := os.MkdirAll(appDir, 0o755); err != nil {
-		return nil, cli.Failf(cli.CodeInternal, "%v", err)
-	}
-	if err := a.Store.CopyInto(filepath.Join(appDir, payloadName), built.PayloadPath); err != nil {
+	payloadPath := a.Store.PayloadPath(slug, payloadName)
+	if err := a.Store.CopyInto(payloadPath, built.PayloadPath); err != nil {
 		return nil, cli.Failf(cli.CodeInternal, "could not stage the payload: %v", err)
 	}
 
 	// The icon ships only when the reader could produce a standard PNG; no
 	// icon is a clean placeholder on the page where a broken image is not.
 	hasIcon := false
-	tmpIcon := filepath.Join(a.Store.Tmp(), "icon-"+slug+".png")
+	tmpIcon := a.Store.TmpFile("icon-" + slug + ".png")
 	if payload.Icon(tmpIcon) == nil {
-		if a.Store.CopyInto(filepath.Join(appDir, "icon.png"), tmpIcon) == nil {
+		if a.Store.CopyInto(a.Store.IconPath(slug), tmpIcon) == nil {
 			hasIcon = true
 		}
 	}
 	// Remove unconditionally because a failed write may have left a partial file.
 	_ = os.Remove(tmpIcon)
 
-	stat, err := os.Stat(filepath.Join(appDir, payloadName))
+	stat, err := os.Stat(payloadPath)
 	if err != nil {
 		return nil, cli.Failf(cli.CodeInternal, "could not stat the staged payload: %v", err)
 	}

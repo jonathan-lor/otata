@@ -39,11 +39,14 @@ func (a *App) foreignAgentLoaded() (agentSpec, bool) {
 	return a.autostart().Installed()
 }
 
-// errAgentDisabled is the refusal for a disabled unit, worded once for
-// everything that reports the state.
+// errAgentDisabled is the refusal for a unit the user switched off at the
+// manager's own level, worded once for everything that reports the state.
+// otata does not override that switch outside `autostart on`, whether or not
+// the manager would let it: launchd refuses to load a disabled unit, systemd
+// would start one now and leave it behind at next login.
 func (a *App) errAgentDisabled() *cli.Failure {
 	sup := a.autostart()
-	return cli.Failf(cli.CodeServerDown, "the %s is disabled, so it will not be loaded now or at login", sup.Kind()).
+	return cli.Failf(cli.CodeServerDown, "the %s is disabled, so it will not return at login", sup.Kind()).
 		WithHint(sup.DisabledHint() + ", then retry")
 }
 
@@ -77,14 +80,16 @@ func (a *App) waitForBind(wait time.Duration) bool {
 func (a *App) reloadAgent() error {
 	sup := a.autostart()
 	if sup.Disabled() {
-		// Loading would fail with the manager's own words, which name neither
-		// the cause nor the switch that flips it back.
+		// The user's switch, refused as itself: a manager that refuses to
+		// load a disabled unit does so in words that name neither the cause
+		// nor the switch, and one that would load it anyway would lose it
+		// again at next login.
 		return a.errAgentDisabled()
 	}
 	if sup.Loaded() {
 		// Installed AND loaded, yet nothing bound: the unit's process is hung
-		// (a TCC-protected binary) or crash-looping. Nothing here can mend
-		// that, so it is reported.
+		// (a binary the manager cannot read) or crash-looping. Nothing here
+		// can mend that, so it is reported.
 		return cli.Failf(cli.CodeServerDown,
 			"the %s is loaded but nothing has bound port %d", sup.Kind(), a.Config.Port).
 			WithHint("see " + a.Store.ServerLog() + "; re-run 'otata autostart on' to reinstall it")
@@ -111,7 +116,9 @@ func (a *App) reloadAgent() error {
 func (a *App) EnableAutostart() error {
 	sup := a.autostart()
 	if !sup.Available() {
-		return cli.Fail(cli.CodeInvalidArgs, "autostart is not implemented on this platform").
+		// No manager to install into: an OS with none wired up, or a Linux
+		// shell with no systemd user manager behind it.
+		return cli.Fail(cli.CodeInvalidArgs, "no service manager is available here to keep the server alive").
 			WithHint(sup.StartHint())
 	}
 	exe, err := os.Executable()
@@ -132,21 +139,25 @@ func (a *App) EnableAutostart() error {
 	if err == nil {
 		return nil
 	}
-	// Only "loaded, but nothing bound" is evidence for the staged-copy fallback
-	// below. Any other failure (a foreign process on the port, a definition
-	// the manager rejects) is returned as itself. It used to fall through
+	// Two failures say the manager cannot run the binary from where it is,
+	// and only those are evidence for the staged copy below: the manager
+	// refusing the program outright, and a unit that loaded but never bound.
+	// Any other failure (a foreign process on the port, a definition the
+	// manager rejects) is returned as itself. It used to fall through
 	// regardless and blame the binary's location for a problem that had
 	// nothing to do with it.
-	if _, ok := errors.AsType[*errAgentNoBind](err); !ok {
+	if !programUnusable(err) {
 		return err
 	}
 
-	// It did not come up. The usual cause is a binary the manager cannot read:
-	// macOS protects ~/Documents, ~/Desktop and ~/Downloads with TCC, and this
-	// does NOT fail cleanly: the process starts and hangs in dyld loading its
-	// own image while launchd reports the job running. Testing beats guessing
-	// from the path because TCC also covers iCloud Drive, external volumes,
-	// and per-user grants.
+	// It did not come up from where it is. Each manager has its own reasons,
+	// and none of them apply under the root. macOS protects ~/Documents,
+	// ~/Desktop and ~/Downloads with TCC, and this does NOT fail cleanly: the
+	// process starts and hangs in dyld loading its own image while launchd
+	// reports the job running. Testing beats guessing from the path because
+	// TCC also covers iCloud Drive, external volumes, and per-user grants.
+	// systemd refuses a path holding a quote or backslash up front, and a
+	// noexec mount shows as a unit that never binds.
 	staged, stageErr := stageAgentBinary(a.Store.StagedBinary(), exe)
 	if stageErr != nil {
 		_ = a.DisableAutostart()
@@ -157,12 +168,26 @@ func (a *App) EnableAutostart() error {
 		return nil
 	}
 	_ = a.DisableAutostart()
+	if prog, ok := errors.AsType[*errAgentProgram](err); ok {
+		// The copy sits under the root, so the root's path is the problem.
+		return cli.Failf(cli.CodeServerDown,
+			"the %s cannot run the server from %s, nor from a copy under %s: %s", sup.Kind(), exe, a.Root, prog.Reason).
+			WithHint("install otata, or set OTATA_ROOT, at a path the " + sup.Kind() + " can run from")
+	}
 	if _, ok := errors.AsType[*errAgentNoBind](err); ok {
 		return cli.Failf(cli.CodeServerDown,
 			"the %s will not start the server, from %s or from a copy", sup.Kind(), exe).
 			WithHint("see " + a.Store.ServerLog())
 	}
 	return err
+}
+
+// programUnusable reports the failures that mean the manager cannot run the
+// binary from where it is, said up front or shown by a load that never bound.
+func programUnusable(err error) bool {
+	_, noBind := errors.AsType[*errAgentNoBind](err)
+	_, refused := errors.AsType[*errAgentProgram](err)
+	return noBind || refused
 }
 
 // errAgentNoBind is the one installAgent failure that says nothing about why:
@@ -173,6 +198,20 @@ type errAgentNoBind struct{ port int }
 
 func (e *errAgentNoBind) Error() string {
 	return fmt.Sprintf("unit loaded but nothing bound port %d", e.port)
+}
+
+// errAgentProgram is a manager's refusal to run the binary from where it is,
+// said before anything is loaded: systemd will not exec a path holding a
+// quote or backslash, however it is escaped. It is the second road to the
+// staged copy. The first, a unit that loads but never binds, is how launchd
+// reports the same thing about a TCC-protected path, after the fact.
+type errAgentProgram struct {
+	Program string
+	Reason  string
+}
+
+func (e *errAgentProgram) Error() string {
+	return fmt.Sprintf("cannot run %s: %s", e.Program, e.Reason)
 }
 
 // installAgent installs a unit running program and waits for the server to
@@ -194,15 +233,24 @@ func (a *App) installAgent(program string, wait time.Duration) error {
 	// what the command that installed it saw.
 	spec := agentSpec{Program: program, Root: a.Root, Port: a.Config.Port, ServePath: a.Config.ServePath, Log: a.Store.ServerLog()}
 	if err := sup.Install(spec); err != nil {
-		return cli.AsFailure(err)
+		// The manager refusing the program is EnableAutostart's cue to stage
+		// a copy, so it travels as itself, and nothing was written. Anything
+		// else is reported here, after removing what a half-finished Install
+		// left: on systemd the file lands before the manager is told about
+		// it, and a file with no login link would read as autostart on.
+		if _, ok := errors.AsType[*errAgentProgram](err); ok {
+			return err
+		}
+		_ = sup.Remove()
+		return cli.Failf(cli.CodeInternal, "could not install the %s: %v", sup.Kind(), err)
 	}
 	/*
 		`autostart on` asks for autostart as explicitly as the manager's own
-		toggle switched it off, so the disable flag is cleared here, on this
+		toggle switched it off, so the user's switch is cleared here, on this
 		path alone. The repair paths (reloadAgent) still refuse a disabled unit
-		instead of overriding the toggle. A disabled unit cannot be loaded,
-		and the failure is the manager's catch-all, which names neither the
-		cause nor the fix.
+		instead of overriding the toggle. Cleared before Load because a manager
+		that refuses to load a disabled unit does so with its catch-all, which
+		names neither the cause nor the fix.
 	*/
 	sup.Enable()
 	if err := sup.Load(); err != nil {

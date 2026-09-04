@@ -73,7 +73,7 @@ func (s *Store) BuildDir(slug string) string {
 func (s *Store) ServerLog() string { return filepath.Join(s.root, "server.log") }
 
 // StagedBinary is where a copy of the otata binary goes when the installed
-// one sits where launchd cannot read it. Under the root, which is never
+// one sits where the service manager cannot run it. Under the root, which is never
 // inside a protected directory.
 func (s *Store) StagedBinary() string { return filepath.Join(s.root, "bin", "otata") }
 

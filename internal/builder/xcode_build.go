@@ -20,13 +20,8 @@ A device build already signs the app and embeds its provisioning profile, so the
 */
 type XcodeBuild struct{ Xcode }
 
-func (x *XcodeBuild) Name() string { return "xcode-build" }
-
 func (x *XcodeBuild) Build(ctx context.Context, opts Options) (Result, error) {
-	ok, container := x.Detect(opts.Dir)
-	if !ok {
-		return Result{}, fmt.Errorf("no .xcworkspace or .xcodeproj found")
-	}
+	container := opts.Container
 	if missing := prerequisite(container); missing != nil {
 		return Result{}, missing
 	}

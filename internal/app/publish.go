@@ -236,25 +236,23 @@ func (a *App) Publish(opts PublishOptions, progress func(string)) (*PublishResul
 		abs = resolved
 	}
 
-	var b builder.Builder = &builder.XcodeBuild{}
-	switch opts.Builder {
-	case "", "build":
-	case "archive":
-		b = &builder.Xcode{}
-	default:
-		return nil, cli.Fail(cli.CodeInvalidArgs, fmt.Sprintf("unknown builder %q", opts.Builder)).
-			WithHint("--builder takes archive or build")
-	}
-	if opts.Artifact != "" {
-		b = &builder.Passthrough{Path: opts.Artifact}
-	} else if ok, _ := b.Detect(abs); !ok {
-		return nil, cli.Fail(cli.CodeNoProject, "no .xcworkspace or .xcodeproj found here").
-			WithHint("run inside a project, or pass --artifact <path to .ipa>")
-	}
-
 	platform := opts.Platform
 	if platform == "" {
 		platform = artifact.IOS
+	}
+	// The builder is chosen and the project found before anything is claimed
+	// or wired, so "nothing to build here" arrives at once. A prebuilt
+	// payload skips both: there is nothing to detect.
+	b, err := builder.For(platform, opts.Builder)
+	if err != nil {
+		return nil, cli.Failf(cli.CodeInvalidArgs, "%v", err)
+	}
+	container := ""
+	if opts.Artifact == "" {
+		if container, err = b.Detect(abs); err != nil {
+			return nil, cli.Failf(cli.CodeNoProject, "%v", err).
+				WithHint("run inside a project, or pass --artifact <path to a built payload>")
+		}
 	}
 	slug := opts.Slug
 	if slug == "" {
@@ -317,11 +315,16 @@ func (a *App) Publish(opts PublishOptions, progress func(string)) (*PublishResul
 		_ = a.Reindex(baseURL)
 	}()
 
-	built, err := b.Build(ctx, builder.Options{
-		Dir: abs, Config: config, Scheme: opts.Scheme,
-		Work: filepath.Join(a.Root, "build", slug),
-		Log:  progress,
-	})
+	var built builder.Result
+	if opts.Artifact != "" {
+		built, err = builder.Prebuilt(opts.Artifact)
+	} else {
+		built, err = b.Build(ctx, builder.Options{
+			Container: container, Config: config, Scheme: opts.Scheme,
+			Work: filepath.Join(a.Root, "build", slug),
+			Log:  progress,
+		})
+	}
 	// Asked before the build's own error is read: a build the caller stopped
 	// reports the stop, not whatever a killed xcodebuild left in its log.
 	// The deferred cleanup above clears the marker on the way out.

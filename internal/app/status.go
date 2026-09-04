@@ -45,6 +45,10 @@ type StatusResult struct {
 	Transport          transport.Status             `json:"transport"`
 	Apps               []artifact.Record            `json:"apps"`
 	Building           map[string]artifact.Building `json:"building,omitempty"`
+
+	// The supervisor's own words for the human rendering: what the unit is
+	// called, and where a disabled one is switched back on.
+	kind, disabledHint string
 }
 
 func (r StatusResult) Human(w io.Writer) {
@@ -62,19 +66,23 @@ func (r StatusResult) Human(w io.Writer) {
 	if r.ServerOtherRoot {
 		cli.Line(w, "           \033[1;33man otata server that is not this root's holds the port\033[0m; 'otata restart' replaces it")
 	}
-	if r.AutostartOtherRoot != "" {
-		cli.Line(w, "           the launch agent serves %s, not this root", r.AutostartOtherRoot)
+	kind := r.kind
+	if kind == "" {
+		kind = "autostart service"
 	}
-	// Disabled trumps not-loaded. Reloading a disabled agent cannot work, so
+	if r.AutostartOtherRoot != "" {
+		cli.Line(w, "           the %s serves %s, not this root", kind, r.AutostartOtherRoot)
+	}
+	// Disabled trumps not-loaded. Reloading a disabled unit cannot work, so
 	// the not-loaded line's advice would prescribe a dead end.
 	switch {
 	case r.Autostart && r.AutostartDisabled:
-		cli.Line(w, "           \033[1;33mthe launch agent is disabled\033[0m; enable otata in System Settings > General > Login Items")
+		cli.Line(w, "           \033[1;33mthe %s is disabled\033[0m; %s", kind, r.disabledHint)
 	case r.Autostart && !r.AutostartLoaded:
-		cli.Line(w, "           \033[1;33mthe launch agent is installed but not loaded\033[0m; 'otata start' reloads it")
+		cli.Line(w, "           \033[1;33mthe %s is installed but not loaded\033[0m; 'otata start' reloads it", kind)
 	}
 	if r.AutostartStale {
-		cli.Line(w, "           \033[1;33mthe launch agent runs a stale copy\033[0m; re-run 'otata autostart on'")
+		cli.Line(w, "           \033[1;33mthe %s runs a stale copy\033[0m; re-run 'otata autostart on'", kind)
 	}
 	// "not ready", not "not wired": the detail line below says which, and a
 	// logged-out tailscale is not a wiring problem.
@@ -109,11 +117,13 @@ func (a *App) Status() (*StatusResult, error) {
 	} else {
 		res.ServerOtherRoot = ok
 	}
+	sup := a.autostart()
+	res.kind, res.disabledHint = sup.Kind(), sup.DisabledHint()
 	if res.Autostart {
 		res.AutostartLoaded = a.agentLoaded()
 		res.AutostartProgram, res.AutostartStale = a.AutostartProgram()
-		res.AutostartDisabled = agentDisabled()
-	} else if spec, ok := a.readAgentPlist(); ok {
+		res.AutostartDisabled = sup.Disabled()
+	} else if spec, ok := sup.Installed(); ok {
 		res.AutostartOtherRoot = describeAgent(spec)
 	}
 	if tr, err := a.Transport(); err == nil {

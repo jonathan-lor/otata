@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 // One launch agent exists per user. Whether it belongs to this root is decided by what it embeds.
@@ -119,13 +120,18 @@ func TestFilesDiffer(t *testing.T) {
 	if !filesDiffer(orig, write("shorter", "v1")) {
 		t.Error("a size difference went unnoticed")
 	}
-	// Same size, different content, different time: only hashing tells.
-	if !filesDiffer(orig, write("rebuilt", "binary-v2")) {
+	// Same size, different content, different time: only hashing tells. The
+	// time is set explicitly; two writes in a row can share a timestamp tick.
+	info, _ := os.Stat(orig)
+	rebuilt := write("rebuilt", "binary-v2")
+	if err := os.Chtimes(rebuilt, info.ModTime().Add(time.Hour), info.ModTime().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if !filesDiffer(orig, rebuilt) {
 		t.Error("a same-size rebuild went unnoticed")
 	}
 	// A copy that kept its source's time is the same content without a hash.
 	copied := write("copy", "binary-v1")
-	info, _ := os.Stat(orig)
 	if err := os.Chtimes(copied, info.ModTime(), info.ModTime()); err != nil {
 		t.Fatal(err)
 	}

@@ -8,8 +8,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-
-	"github.com/jonathan-lor/otata/internal/artifact"
 )
 
 /*
@@ -21,54 +19,29 @@ A device build already signs the app and embeds its provisioning profile, so the
 type XcodeBuild struct{ Xcode }
 
 func (x *XcodeBuild) Build(ctx context.Context, opts Options) (Result, error) {
-	container := opts.Container
-	if missing := prerequisite(container); missing != nil {
-		return Result{}, missing
-	}
-	scheme, err := x.ResolveScheme(container, opts.Scheme)
+	j, err := x.prepare(opts)
 	if err != nil {
 		return Result{}, err
 	}
-	config := opts.Config
-	if config == "" {
-		config = "Release"
+	defer j.log.Close()
+	failed := Result{LogPath: j.logPath}
+
+	opts.logf("building %s (%s, incremental)", j.scheme, j.config)
+	if err := runLogged(ctx, j.log, "xcodebuild", j.args("build")...); err != nil {
+		return failed, classifyBuildFailure(ctx, j.logPath, "build failed")
 	}
 
-	if err := os.MkdirAll(opts.Work, 0o755); err != nil {
-		return Result{}, err
-	}
-	logPath := filepath.Join(opts.Work, "xcodebuild.log")
-	logFile, err := os.Create(logPath)
+	app, err := builtApp(ctx, j.container, j.scheme, j.config)
 	if err != nil {
-		return Result{}, err
-	}
-	defer logFile.Close()
-
-	opts.logf("building %s (%s, incremental)", scheme, config)
-	args := append([]string{"build"}, projectArgs(container)...)
-	args = append(args,
-		"-scheme", scheme,
-		"-configuration", config,
-		"-destination", "generic/platform=iOS",
-		"-allowProvisioningUpdates",
-		"-skipMacroValidation",
-		"ONLY_ACTIVE_ARCH=NO",
-	)
-	if err := runLogged(ctx, logFile, "xcodebuild", args...); err != nil {
-		return Result{LogPath: logPath}, classifyBuildFailure(ctx, logPath, "build failed")
-	}
-
-	app, err := builtApp(ctx, container, scheme, config)
-	if err != nil {
-		return Result{LogPath: logPath}, err
+		return failed, err
 	}
 
 	opts.logf("packaging %s", filepath.Base(app))
 	ipa, err := packageIPA(opts.Work, app)
 	if err != nil {
-		return Result{LogPath: logPath}, err
+		return failed, err
 	}
-	return Result{PayloadPath: ipa, Platform: artifact.IOS, Config: config, LogPath: logPath}, nil
+	return j.result(ipa), nil
 }
 
 // builtApp asks xcodebuild where the scheme's app product landed. The answer

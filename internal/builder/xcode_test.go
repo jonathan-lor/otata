@@ -156,6 +156,39 @@ func TestFlutterWinsOverPodsWhenBothAreMissing(t *testing.T) {
 	}
 }
 
+// The three places that name Flutter's setup step say the same thing, and the
+// pre-check adds only where to run it.
+func TestFlutterSetupIsStatedOnce(t *testing.T) {
+	for _, phrase := range []string{
+		"flutter_tools/bin/xcode_backend.sh: No such file or directory",
+		"Flutter/Generated.xcconfig must exist",
+	} {
+		setup, ok := errors.AsType[*SetupError](diagnose(phrase, "archive failed"))
+		if !ok {
+			t.Fatalf("%q was not classified as setup", phrase)
+		}
+		if *setup != flutterConfigMissing {
+			t.Errorf("%q: %+v, want %+v", phrase, *setup, flutterConfigMissing)
+		}
+	}
+	root := t.TempDir()
+	touch(t, filepath.Join(root, "ios", "Flutter", "AppFrameworkInfo.plist"))
+	want := flutterConfigMissing
+	want.Dir = filepath.Join(root, "ios")
+	if got := prerequisite(filepath.Join(root, "ios", "Runner.xcworkspace")); got == nil || *got != want {
+		t.Errorf("prerequisite = %+v, want %+v", got, want)
+	}
+}
+
+// The configuration is the caller's to choose and announce; a build with none
+// is refused before any toolchain runs, rather than defaulted here as well.
+func TestPrepareRequiresAConfiguration(t *testing.T) {
+	_, err := (&Xcode{}).prepare(Options{Container: filepath.Join(t.TempDir(), "App.xcodeproj")})
+	if err == nil || !strings.Contains(err.Error(), "configuration") {
+		t.Errorf("got %v, want a refusal naming the configuration", err)
+	}
+}
+
 // A native project with neither must be left alone. Reporting a prerequisite
 // here would refuse to build a project that builds.
 func TestNativeProjectHasNoPrerequisite(t *testing.T) {

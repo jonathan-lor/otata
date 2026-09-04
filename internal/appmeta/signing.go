@@ -15,21 +15,31 @@ import (
 	"time"
 )
 
-// Signing is when a published build stops working. Two clocks bound it: the
-// provisioning profile expires, and so does the certificate that signed it.
-// The earlier is the deadline, which is why Expires is not the profile's own
-// date.
-//
-// Renewing either needs a Mac with Xcode and an unlocked keychain.
+// Signing is who signed a published build and, where the platform sets one,
+// when it stops being installable. Identity is the question every platform
+// asks, because a differently signed build cannot replace an installed one:
+// iOS answers with the team, Android with the certificate. The deadline is
+// iOS's alone. Two clocks bound it: the provisioning profile expires, and so
+// does the certificate that signed it. The earlier is the deadline, which is
+// why Expires is not the profile's own date. Renewing either needs a Mac with
+// Xcode and an unlocked keychain. An Android certificate is nominally good
+// for decades, and nothing here counts it down.
 type Signing struct {
 	ProfileName string `json:"profile_name,omitempty"`
 
-	// Team is who signed it. Automatic signing picks, and on a machine with
-	// several Apple accounts it picks silently: a profile name reads "iOS Team
-	// Provisioning Profile: *" for every app a paid team signs, naming no team.
+	// Team is who signed an iOS build. Automatic signing picks, and on a
+	// machine with several Apple accounts it picks silently: a profile name
+	// reads "iOS Team Provisioning Profile: *" for every app a paid team
+	// signs, naming no team.
 	Team string `json:"team,omitempty"`
 
-	ProfileExpires time.Time `json:"profile_expires"`
+	// Signer is who signed an Android build: the certificate's subject CN,
+	// "Android Debug" for the debug keystore every machine has. Fingerprint
+	// is the certificate's SHA-256, which is what Android itself compares.
+	Signer      string `json:"signer,omitempty"`
+	Fingerprint string `json:"fingerprint,omitempty"`
+
+	ProfileExpires time.Time `json:"profile_expires,omitzero"`
 
 	// CertExpires is the profile-authorized certificate whose private key this
 	// machine holds. A profile lists every certificate its team may sign with,
@@ -37,13 +47,14 @@ type Signing struct {
 	// build. Zero when none is held, which is normal on a node that only serves.
 	CertExpires time.Time `json:"cert_expires,omitzero"`
 
-	// Expires is the effective deadline: the earlier of the two above.
-	Expires time.Time `json:"expires"`
+	// Expires is the effective deadline: the earlier of the two above. Zero
+	// where the platform sets none, which HasDeadline is the way to ask.
+	Expires time.Time `json:"expires,omitzero"`
 
 	// Binder names the clock that runs out first, because the remedy differs:
 	// a profile is regenerated, while a certificate is reissued and its private
 	// key then has to land in this machine's keychain.
-	Binder string `json:"binder"`
+	Binder string `json:"binder,omitempty"`
 
 	// Free reports a personal-team profile, and iOS installs those only from a paired host.
 	// See MIInstallerErrorDomain 111.
@@ -148,10 +159,33 @@ func newSigning(name string, profileExpires, certExpires time.Time) Signing {
 	return s
 }
 
-// Detail is the one line doctor and publish both print. It leads with the date
-// because that is what a person acts on, and carries the remaining days because
-// that is what makes the date mean something at a glance.
+// HasDeadline reports whether this build's signing runs out at all. It does
+// on iOS; an Android certificate is not counted down.
+func (s Signing) HasDeadline() bool { return !s.Expires.IsZero() }
+
+// SignerName is who signed an Android build, for a listing: the subject CN,
+// or the fingerprint's first bytes for a certificate that names nobody.
+func (s Signing) SignerName() string {
+	switch {
+	case s.Signer != "":
+		return s.Signer
+	case len(s.Fingerprint) >= 12:
+		return "sha256:" + s.Fingerprint[:12]
+	}
+	return s.Fingerprint
+}
+
+// Detail is the one line doctor and publish both print. With a deadline it
+// leads with the date, because that is what a person acts on, and carries the
+// remaining days because that is what makes the date mean something at a
+// glance. Without one it names the signer, which is the whole answer.
 func (s Signing) Detail(now time.Time) string {
+	if !s.HasDeadline() {
+		if s.Fingerprint != "" && s.Signer != "" {
+			return fmt.Sprintf("signed by %s, sha256 %s", s.Signer, s.Fingerprint)
+		}
+		return "signed by " + s.SignerName()
+	}
 	date := s.Expires.Format("2006-01-02")
 	// Truncating toward zero would call 23 hours "0 days" and read as today.
 	days := int(s.Expires.Sub(now).Hours() / 24)
@@ -167,12 +201,13 @@ func (s Signing) Detail(now time.Time) string {
 	}
 }
 
-// Expired reports whether signing has already stopped working.
-func (s Signing) Expired(now time.Time) bool { return !s.Expires.After(now) }
+// Expired reports whether signing has already stopped working. Signing with
+// no deadline never does.
+func (s Signing) Expired(now time.Time) bool { return s.HasDeadline() && !s.Expires.After(now) }
 
 // Within reports whether the deadline is close enough to be worth saying.
 func (s Signing) Within(d time.Duration, now time.Time) bool {
-	return !s.Expired(now) && s.Expires.Sub(now) < d
+	return s.HasDeadline() && !s.Expired(now) && s.Expires.Sub(now) < d
 }
 
 // ---------- reading ----------

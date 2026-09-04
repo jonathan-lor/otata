@@ -51,11 +51,14 @@ type Record struct {
 
 	Title    string `json:"title"`
 	BundleID string `json:"bundle_id"`
-	// Team is who signed it, copied off the payload's profile at publish. It is
-	// identity, not provenance: iOS installs TEAM.bundle-id, so two teams signing
-	// one bundle identifier are two different apps on the phone. Empty on a
-	// payload with no readable profile.
+	// Team is who signed an iOS build, copied off the payload's profile at
+	// publish. It is identity, not provenance: iOS installs TEAM.bundle-id, so
+	// two teams signing one bundle identifier are two different apps on the
+	// phone. Empty on a payload with no readable profile. Signer is Android's
+	// answer to the same question, the signing certificate's name, and a
+	// differently signed build cannot replace the installed one there either.
 	Team    string `json:"team,omitempty"`
+	Signer  string `json:"signer,omitempty"`
 	Version string `json:"version"`
 	Build   string `json:"build"`
 
@@ -77,6 +80,15 @@ type Record struct {
 
 	// Recorded so a second project cannot silently claim an existing slug.
 	ProjectPath string `json:"project_path,omitempty"`
+}
+
+// SignedBy is who signed the build, whichever platform's answer that is, or
+// "" when the payload carried nothing readable.
+func (r Record) SignedBy() string {
+	if r.Team != "" {
+		return r.Team
+	}
+	return r.Signer
 }
 
 // IconFile is the icon's name in the app's directory, or "" when the build

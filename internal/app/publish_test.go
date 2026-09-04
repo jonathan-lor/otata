@@ -46,6 +46,17 @@ func TestZeroCertExpiryIsOmittedFromJSON(t *testing.T) {
 	if !strings.Contains(string(out), "cert_expires") {
 		t.Errorf("a real cert_expires was dropped: %s", out)
 	}
+	// An Android build's signing is identity alone: no date of any kind
+	// reaches the caller, and the signer does.
+	out, _ = json.Marshal(PublishResult{Signing: &appmeta.Signing{Signer: "Android Debug", Fingerprint: "4f9c"}})
+	for _, absent := range []string{"expires", "binder", "team", "profile"} {
+		if strings.Contains(string(out), absent) {
+			t.Errorf("identity-only signing serialized %s: %s", absent, out)
+		}
+	}
+	if !strings.Contains(string(out), `"signer":"Android Debug"`) || !strings.Contains(string(out), `"fingerprint":"4f9c"`) {
+		t.Errorf("the signer was dropped: %s", out)
+	}
 }
 
 // The title an --artifact publish prints comes out of the payload's own

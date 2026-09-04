@@ -45,6 +45,12 @@ func TestSigningCheckSeverities(t *testing.T) {
 			t.Errorf("%s: no detail; an agent reads the date from here even when nothing is wrong", c.name)
 		}
 	}
+	// Signing with no deadline, an Android build's, passes and names the
+	// signer: a zero Expires must not read as long past.
+	identity := signingCheck("droid signing", appmeta.Signing{Signer: "Android Debug", Fingerprint: "4f9c"}, now)
+	if !identity.OK || identity.Warn || !strings.Contains(identity.Detail, "Android Debug") {
+		t.Errorf("identity-only signing: %+v", identity)
+	}
 }
 
 // The invariant the third state exists for: a warning must not fail the command

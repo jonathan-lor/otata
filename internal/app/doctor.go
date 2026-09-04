@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -271,10 +272,11 @@ func (a *App) Doctor(fix bool) (*DoctorResult, error) {
 
 	// The keychain answer is per-machine, not per-app. One enumeration serves
 	// every signing check below. Enumerating it per app made doctor's cost
-	// scale with the store.
+	// scale with the store. Only an iOS build's deadline is joined against
+	// it, so a store of Android builds never asks.
 	var held map[string]bool
 	var heldErr error
-	if len(records) > 0 {
+	if slices.ContainsFunc(records, func(r artifact.Record) bool { return r.Platform == artifact.IOS }) {
 		held, heldErr = appmeta.HeldIdentities()
 	}
 
@@ -395,18 +397,21 @@ func (a *App) checkSigning(r artifact.Record, held map[string]bool, heldErr erro
 		// Present but unreadable is worth saying quietly. nothing published is broken by it, just unverifiable.
 		return Check{Name: name, OK: true, Warn: true, Detail: err.Error()}, true
 	}
-	// With the keychain unlistable the deadline is unverifiable, and the same
-	// quiet warning is the honest report. The free developer profile wall stands
-	// either way, since it only reads the profile.
-	if heldErr != nil && !sig.Free {
+	// With the keychain unlistable an iOS deadline is unverifiable, and the
+	// same quiet warning is the honest report. The free developer profile
+	// wall stands either way, since it only reads the profile. Signing with
+	// no deadline was never joined against the keychain.
+	if heldErr != nil && sig.HasDeadline() && !sig.Free {
 		return Check{Name: name, OK: true, Warn: true, Detail: heldErr.Error()}, true
 	}
 	return signingCheck(name, sig, now), true
 }
 
-// signingCheck maps a deadline onto a severity. Split out from the reading so
-// the mapping, which is the whole point of the check, is testable without a
-// staged payload, a keychain or a particular date.
+// signingCheck maps signing onto a severity: a deadline by how near it is,
+// and an identity with none as a passing check that names the signer. Split
+// out from the reading so the mapping, which is the whole point of the
+// check, is testable without a staged payload, a keychain or a particular
+// date.
 func signingCheck(name string, sig appmeta.Signing, now time.Time) Check {
 	c := Check{Name: name, OK: true, Detail: sig.Detail(now)}
 	// A free profile is not a deadline to count down. Publishing refuses these.

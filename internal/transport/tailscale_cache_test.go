@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -126,6 +127,20 @@ func TestStatusSaysWhetherEnsureWouldRepair(t *testing.T) {
 	}
 	if !strings.Contains(noDNS.Detail, "MagicDNS") {
 		t.Errorf("the obstacle is not named: %q", noDNS.Detail)
+	}
+}
+
+// A failed mutation is explained by what the CLI printed, and by the exec
+// error only when it printed nothing. "exit status 1" told the user nothing
+// about why a teardown failed.
+func TestCLIErrorPrefersTheCLIsOwnWords(t *testing.T) {
+	err := cliError("tailscale serve failed", []byte("  error: not logged in\n"), errors.New("exit status 1"))
+	if got := err.Error(); got != "tailscale serve failed: error: not logged in" {
+		t.Errorf("got %q", got)
+	}
+	err = cliError("tailscale serve failed", nil, errors.New("signal: killed"))
+	if got := err.Error(); got != "tailscale serve failed: signal: killed" {
+		t.Errorf("silent failure: got %q", got)
 	}
 }
 

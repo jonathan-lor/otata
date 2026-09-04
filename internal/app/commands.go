@@ -823,8 +823,8 @@ func (r DoctorResult) Human(w io.Writer) {
 	}
 }
 
-// processAlive reports whether a pid can still be signaled. Signal 0 performs
-// the permission and existence checks without delivering anything.
+// processAlive reports whether a pid still exists. Signal 0 performs the
+// existence and permission checks without delivering anything.
 func processAlive(pid int) bool {
 	if pid <= 0 {
 		return false
@@ -833,7 +833,12 @@ func processAlive(pid int) bool {
 	if err != nil {
 		return false
 	}
-	return proc.Signal(syscall.Signal(0)) == nil
+	err = proc.Signal(syscall.Signal(0))
+	// EPERM is a process that exists and belongs to someone else. That is
+	// alive: a marker is stale only when its process is gone, and reading a
+	// refused signal as "gone" cleared the marker of a publish another user
+	// was still running.
+	return err == nil || errors.Is(err, syscall.EPERM)
 }
 
 // staleMarkers lists the build markers left behind by a process that is gone.

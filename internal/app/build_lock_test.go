@@ -50,6 +50,21 @@ func TestMarkerStale(t *testing.T) {
 	}
 }
 
+// A process that exists but refuses the probe signal (another user's, which
+// is what pid 1 is to anyone but root) is alive. Reading the refusal as
+// "gone" would clear a marker whose publish is still running.
+func TestProcessAliveTreatsAnotherUsersProcessAsAlive(t *testing.T) {
+	if !processAlive(1) {
+		t.Error("pid 1 was judged dead")
+	}
+	if processAlive(deadPID(t)) {
+		t.Error("a reaped child was judged alive")
+	}
+	if processAlive(0) || processAlive(-1) {
+		t.Error("a non-pid was judged alive")
+	}
+}
+
 // A second publish of a slug that a live publish holds is refused with a code
 // an agent can wait on; one whose holder is gone is taken over.
 func TestClaimBuildRefusesALiveHolderAndTakesOverADeadOne(t *testing.T) {

@@ -36,6 +36,9 @@ agreement, which otata does not involve.
 
 ## How does `otata publish` decide what to build?
 
+- **Platform**: never discovered. `--platform ios|android` is required, because a
+  Mac builds for both and a default there would be a guess. With `--artifact`
+  the payload's extension says which platform it is.
 - **Project**: the single `.xcworkspace` in the current directory, else the
   single `.xcodeproj`; `ios/`, `iosApp/` and `apps/ios/` are searched too.
 - **Scheme**: only schemes that archive an app count — each `.xcscheme` is

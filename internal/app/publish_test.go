@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"testing"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/jonathan-lor/otata/internal/appmeta"
 	"github.com/jonathan-lor/otata/internal/artifact"
+	"github.com/jonathan-lor/otata/internal/cli"
 	"github.com/jonathan-lor/otata/internal/storage"
 )
 
@@ -129,5 +131,83 @@ func TestSignalExit(t *testing.T) {
 	}
 	if got := signalName(syscall.SIGTERM); got != "SIGTERM" {
 		t.Errorf("signalName = %q", got)
+	}
+}
+
+// What to build for is never discovered: a build without --platform is
+// refused, an unknown platform is named, and a platform with no builder yet
+// says so. All three are the caller's to fix, so they exit 2, and all three
+// arrive before anything is claimed, wired or written.
+func TestPublishRequiresAKnownPlatformToBuild(t *testing.T) {
+	cases := []struct {
+		name     string
+		platform artifact.Platform
+		want     string // in the message or the hint
+	}{
+		{"none", "", "--platform"},
+		{"unknown", "windows", `"windows"`},
+		{"no builder yet", artifact.Android, "not supported yet"},
+	}
+	for _, c := range cases {
+		a := freshApp(t)
+		_, err := a.Publish(PublishOptions{Dir: t.TempDir(), Platform: c.platform}, quiet)
+		f := cli.AsFailure(err)
+		if err == nil || f.Code != cli.CodeInvalidArgs {
+			t.Errorf("%s: err=%v code=%q, want %q", c.name, err, f.Code, cli.CodeInvalidArgs)
+			continue
+		}
+		if !strings.Contains(f.Message+f.Hint, c.want) {
+			t.Errorf("%s: %q / %q does not say %q", c.name, f.Message, f.Hint, c.want)
+		}
+		if _, err := os.Stat(a.Store.IndexPath()); err == nil {
+			t.Errorf("%s: a refused publish generated pages", c.name)
+		}
+		if markers, _ := a.Store.Building(); len(markers) != 0 {
+			t.Errorf("%s: a refused publish left a build marker: %v", c.name, markers)
+		}
+	}
+}
+
+// A prebuilt payload says which platform it is, so --platform is not needed
+// with --artifact, and one that disagrees with the file is refused. The
+// platform step is passed when the failure that comes back is the
+// transport's, which is the next thing publish asks for.
+func TestArtifactPublishReadsThePlatformOffTheFile(t *testing.T) {
+	dir := t.TempDir()
+	ipa := filepath.Join(dir, "Demo.ipa")
+	apk := filepath.Join(dir, "Demo.apk")
+	for _, p := range []string{ipa, apk} {
+		if err := os.WriteFile(p, []byte("zip"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cases := []struct {
+		name     string
+		artifact string
+		platform artifact.Platform
+		wantCode string
+		want     string // in the message or the hint
+	}{
+		{"inferred", ipa, "", cli.CodeNoTransport, ""},
+		{"agreeing", ipa, artifact.IOS, cli.CodeNoTransport, ""},
+		{"disagreeing", ipa, artifact.Android, cli.CodeInvalidArgs, "ios payload"},
+		{"unknown platform", ipa, "windows", cli.CodeInvalidArgs, `"windows"`},
+		{"no reader yet", apk, "", cli.CodeInvalidArgs, "not served yet"},
+		{"missing", filepath.Join(dir, "nope.ipa"), "", cli.CodeInvalidArgs, "no artifact"},
+	}
+	for _, c := range cases {
+		a := freshApp(t)
+		// Selected but incomplete, so the transport refuses without probing
+		// for a tailscale CLI on the machine.
+		a.Config.Transport = "manual"
+		_, err := a.Publish(PublishOptions{Dir: dir, Artifact: c.artifact, Platform: c.platform}, quiet)
+		f := cli.AsFailure(err)
+		if err == nil || f.Code != c.wantCode {
+			t.Errorf("%s: err=%v code=%q, want %q", c.name, err, f.Code, c.wantCode)
+			continue
+		}
+		if !strings.Contains(f.Message+f.Hint, c.want) {
+			t.Errorf("%s: %q / %q does not say %q", c.name, f.Message, f.Hint, c.want)
+		}
 	}
 }

@@ -58,7 +58,7 @@ func For(platform artifact.Platform, mode string) (Builder, error) {
 		}
 		return nil, fmt.Errorf("unknown builder %q; --builder takes archive or build", mode)
 	}
-	return nil, fmt.Errorf("%s builds are not supported yet", platform)
+	return nil, fmt.Errorf("%s builds are not supported yet.", platform)
 }
 
 func (o Options) logf(format string, args ...any) {

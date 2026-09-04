@@ -51,6 +51,19 @@ func (a *App) UseTransport(sel TransportSelection, progress func(string)) error 
 			WithHint("tailscale or manual")
 	}
 
+	// The guard every later command applies, applied here first, to the
+	// selection built by the same rule those commands will use. Without this
+	// a funnelled tailnet or a route declared public was torn down to, saved,
+	// and reported as selected, and then refused by every command after.
+	next := a.Config
+	next.Transport = sel.Name
+	if manual != nil {
+		next.Manual = manual
+	}
+	if err := a.guard(transportFor(next)); err != nil {
+		return err
+	}
+
 	// The server strips whatever prefix the transport forwards, and reads that
 	// once at startup, so if this change moves it, the server is restarted
 	// below rather than left serving the old contract.
@@ -63,10 +76,7 @@ func (a *App) UseTransport(sel TransportSelection, progress func(string)) error 
 			progress(fmt.Sprintf("warning: could not tear down %s: %v", previous.Name(), err))
 		}
 	}
-	a.Config.Transport = sel.Name
-	if manual != nil {
-		a.Config.Manual = manual
-	}
+	a.Config = next
 
 	// Persist what was on disk plus this change, so an environment override for
 	// this one invocation does not become permanent.

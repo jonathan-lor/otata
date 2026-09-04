@@ -60,15 +60,20 @@ rule Transport() does.
 
 The selection is read from config and is always nil until 'otata transport use' is run.
 */
-func (a *App) selectTransport() transport.Transport {
-	switch a.Config.Transport {
+func (a *App) selectTransport() transport.Transport { return transportFor(a.Config) }
+
+// transportFor is the one rule that turns a config into a transport. It is
+// separate from the App so a selection can be built from a config that is
+// not yet the App's, and judged by the same rule every later command applies.
+func transportFor(cfg config.Config) transport.Transport {
+	switch cfg.Transport {
 	case "tailscale":
-		return transport.NewTailscale(a.Config.ServePath)
+		return transport.NewTailscale(cfg.ServePath)
 	case "manual":
-		if a.Config.Manual == nil || a.Config.Manual.BaseURL == "" {
+		if cfg.Manual == nil || cfg.Manual.BaseURL == "" {
 			return nil
 		}
-		m := a.Config.Manual
+		m := cfg.Manual
 		// The command that writes the file validates visibility, and covers a
 		// file edited by hand. Anything unparseable fails closed, read as
 		// public, which the guard refuses, rather than open as private.
@@ -113,12 +118,18 @@ func (a *App) Transport() (transport.Transport, error) {
 // exits 2, which the docs define as "fix the arguments", and there is no
 // argument to fix.
 func (a *App) guard(t transport.Transport) error {
-	if t.Visibility() == transport.Public {
-		return cli.Failf(cli.CodeTransportDown,
-			"%s is a public transport and no access guard is implemented yet", t.Name()).
-			WithHint("use a private transport, or declare visibility private if your proxy is not publicly reachable")
+	if t.Visibility() != transport.Public {
+		return nil
 	}
-	return nil
+	// The remedy differs: a tailnet is public because Funnel is on for the
+	// listener, which no otata flag can change, while a manual route is
+	// public because the caller declared it so.
+	hint := "use a private transport, or declare visibility private if your proxy is not publicly reachable"
+	if t.Name() == "tailscale" {
+		hint = "Funnel exposes every handler on that listener: run 'tailscale funnel --https=443 off', or serve through your own proxy"
+	}
+	return cli.Failf(cli.CodeTransportDown,
+		"%s is a public transport and no access guard is implemented yet", t.Name()).WithHint(hint)
 }
 
 // ---------- server lifecycle ----------

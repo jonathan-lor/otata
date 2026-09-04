@@ -20,7 +20,7 @@ Serving a .ipa from a non-macOS machine is technically possible today by buildin
 ## Publishing
 
 ```sh
-ssh mac 'cd ~/path/to/MyApp && ~/.local/bin/otata publish --json'
+ssh mac 'cd ~/path/to/MyApp && ~/.local/bin/otata publish --platform ios --json'
 ```
 
 Spell the binary's full path, or export PATH in `~/.zshenv` on the Mac.

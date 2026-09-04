@@ -28,9 +28,11 @@ type PublishOptions struct {
 	Slug     string
 	Artifact string
 	Builder  string // "" or "build" for the incremental build path, "archive" for the archive+export path
-	// Platform is what to build for; empty is iOS. One publish is one
-	// platform: a cross-platform project publishes once per platform, each
-	// under its own slug. No flag selects another platform yet.
+	// Platform is what to build for, and is required: nothing is discovered,
+	// because a Mac builds for both and a default there would be a guess. One
+	// publish is one platform: a cross-platform project publishes once per
+	// platform, each under its own slug. With Artifact the payload's
+	// extension says which platform it is, and Platform, if given, must agree.
 	Platform artifact.Platform
 }
 
@@ -240,19 +242,42 @@ func (a *App) Publish(opts PublishOptions, progress func(string)) (*PublishResul
 		abs = resolved
 	}
 
-	platform := opts.Platform
-	if platform == "" {
-		platform = artifact.IOS
+	// What to publish is settled before anything is claimed or wired, so
+	// "nothing to build here" and every refusal of the arguments arrive at
+	// once. A prebuilt payload is checked first because its extension is what
+	// says which platform it is; a build has to be told.
+	var (
+		platform  artifact.Platform
+		b         builder.Builder
+		container string
+		built     builder.Result
+	)
+	if opts.Platform != "" {
+		p, err := artifact.ParsePlatform(string(opts.Platform))
+		if err != nil {
+			return nil, cli.Failf(cli.CodeInvalidArgs, "%v", err)
+		}
+		platform = p
 	}
-	// The builder is chosen and the project found before anything is claimed
-	// or wired, so "nothing to build here" arrives at once. A prebuilt
-	// payload skips both: there is nothing to detect.
-	b, err := builder.For(platform, opts.Builder)
-	if err != nil {
-		return nil, cli.Failf(cli.CodeInvalidArgs, "%v", err)
-	}
-	container := ""
-	if opts.Artifact == "" {
+	if opts.Artifact != "" {
+		var err error
+		if built, err = builder.Prebuilt(opts.Artifact); err != nil {
+			return nil, cli.Failf(cli.CodeInvalidArgs, "%v", err)
+		}
+		if platform != "" && platform != built.Platform {
+			return nil, cli.Failf(cli.CodeInvalidArgs, "--platform %s, but %s is an %s payload", platform, opts.Artifact, built.Platform).
+				WithHint("omit --platform with --artifact; the payload's extension says which platform it is")
+		}
+		platform = built.Platform
+	} else {
+		if platform == "" {
+			return nil, cli.Fail(cli.CodeInvalidArgs, "no --platform given").
+				WithHint("pass --platform ios or --platform android.")
+		}
+		var err error
+		if b, err = builder.For(platform, opts.Builder); err != nil {
+			return nil, cli.Failf(cli.CodeInvalidArgs, "%v", err)
+		}
 		if container, err = b.Detect(abs); err != nil {
 			return nil, cli.Failf(cli.CodeNoProject, "%v", err).
 				WithHint("run inside a project, or pass --artifact <path to a built payload>")
@@ -319,10 +344,8 @@ func (a *App) Publish(opts PublishOptions, progress func(string)) (*PublishResul
 		_ = a.Reindex(baseURL)
 	}()
 
-	var built builder.Result
-	if opts.Artifact != "" {
-		built, err = builder.Prebuilt(opts.Artifact)
-	} else {
+	// A prebuilt payload was checked up front; only a build runs here.
+	if opts.Artifact == "" {
 		built, err = b.Build(ctx, builder.Options{
 			Container: container, Config: config, Scheme: opts.Scheme,
 			Work: a.Store.BuildDir(slug),

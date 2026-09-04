@@ -76,13 +76,13 @@ iOS only shows it after connecting to a Mac running Xcode.
 
 ```sh
 cd ~/path/to/MyApp
-otata publish
+otata publish --platform ios
 ```
 
 Two URLs will be printed: one for the app you just ran `otata publish` for, and a root URL for every app you've published.
 Open up either on the phone and tap **Install**.
 
-And that's it! From here, it's just `otata publish` per build.
+And that's it! From here, it's just `otata publish --platform ios` per build.
 
 As a reminder, otata includes an [agent skill](skills/otata/SKILL.md).
 

@@ -9,13 +9,16 @@ import (
 	"strings"
 
 	"github.com/jonathan-lor/otata/internal/app"
+	"github.com/jonathan-lor/otata/internal/artifact"
 	"github.com/jonathan-lor/otata/internal/cli"
 	"github.com/jonathan-lor/otata/internal/version"
 )
 
 const usage = `otata installs iOS builds on your phone over your own network
 
-  otata publish [--config Debug] [--scheme S] [--slug NAME] [--artifact PATH] [--builder archive]
+  otata publish --platform ios|android [--config Debug] [--scheme S] [--slug NAME] [--builder archive]
+  otata publish --artifact PATH [--slug NAME]
+                                publish an already-built payload; the file says which platform
   otata list                    what is published
   otata status                  everything, in one call, changing nothing
   otata doctor [--fix]          verify everything; --fix repairs what it can first
@@ -224,18 +227,26 @@ func globalFlags(argv []string) []string {
 // `otata publish > out` still shows it.
 func progress(line string) { fmt.Fprintf(os.Stderr, "    %s\n", line) }
 
+// publishSynopsis has two forms because --platform is required for a build
+// and read off the file for a prebuilt payload.
+const publishSynopsis = "publish --platform ios|android [--config Debug] [--scheme S] [--slug NAME] [--builder archive]\n" +
+	"       otata publish --artifact PATH [--slug NAME]"
+
 func publish(a *app.App, args []string) int {
 	fs := flag.NewFlagSet("publish", flag.ContinueOnError)
 	var opts app.PublishOptions
+	var platform string
+	fs.StringVar(&platform, "platform", "", "what to build for: ios or android (required; --artifact reads it off the file)")
 	fs.StringVar(&opts.Config, "config", "", "build configuration (default "+app.DefaultConfig+")")
 	fs.StringVar(&opts.Scheme, "scheme", "", "scheme to build")
 	fs.StringVar(&opts.Slug, "slug", "", "publish under this name")
-	fs.StringVar(&opts.Artifact, "artifact", "", "publish an already-built .ipa")
+	fs.StringVar(&opts.Artifact, "artifact", "", "publish an already-built .ipa; its platform is the file's")
 	fs.StringVar(&opts.Builder, "builder", "", "build (default, incremental) or archive")
-	if exit, done := parseFlags(fs, "publish",
-		"publish [--config Debug] [--scheme S] [--slug NAME] [--artifact PATH] [--builder archive]", args); done {
+	if exit, done := parseFlags(fs, "publish", publishSynopsis, args); done {
 		return exit
 	}
+	// Validated in Publish, so a caller of the package gets the same refusal.
+	opts.Platform = artifact.Platform(platform)
 
 	res, err := a.Publish(opts, progress)
 	if err != nil {

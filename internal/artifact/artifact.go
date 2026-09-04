@@ -32,6 +32,17 @@ func (p Platform) PayloadExt() string {
 // manifest is written, linked and probed at all.
 func (p Platform) InstallsFromManifest() bool { return p == IOS }
 
+// ParsePlatform reads a platform off the command line. The set is closed:
+// a platform is a case in every switch that keys on one, so an unknown name
+// is refused here rather than falling through all of them.
+func ParsePlatform(s string) (Platform, error) {
+	switch p := Platform(s); p {
+	case IOS, Android:
+		return p, nil
+	}
+	return "", fmt.Errorf("unknown platform %q; ios or android", s)
+}
+
 // Record is everything known about one published build. It is the unit stored
 // on disk and the unit rendered on the browser install surface.
 type Record struct {

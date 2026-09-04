@@ -14,9 +14,12 @@ happens on the phone.
 
 ```sh
 cd /path/to/MyApp        # the project root
-otata publish --json
+otata publish --platform ios --json
 ```
 
+- `--platform` is required: `ios` or `android`. Nothing is discovered, because
+  a Mac builds for both. A project that always builds for one platform records
+  the flag in its agent instructions. Android has no builder yet and is refused.
 - `--json` is accepted anywhere on any otata command. Success and failure both
   print one JSON envelope on stdout; progress goes to stderr.
 - A publish is synchronous and a build can take minutes. Give it a generous
@@ -25,7 +28,8 @@ otata publish --json
   just wants to see a change — except on Flutter, where a Debug build cannot
   launch from the home screen: use `--config Profile` there.
 - `otata publish --artifact path/to/App.ipa` publishes an already-built .ipa
-  from any toolchain.
+  from any toolchain. The file says which platform it is, so `--platform` is
+  not needed there.
 - `otata status --json` reports the server, transport, and base URL in one
   call, changing nothing. `otata list` shows what is published.
 
@@ -74,7 +78,7 @@ check naming its remedy. Logs on the Mac:
 otata runs only on the Mac; drive it over SSH from anywhere:
 
 ```sh
-ssh mac 'cd ~/path/to/MyApp && ~/.local/bin/otata publish --json'
+ssh mac 'cd ~/path/to/MyApp && ~/.local/bin/otata publish --platform ios --json'
 ```
 
 - Spell the binary's full path: non-interactive zsh reads only `~/.zshenv`,

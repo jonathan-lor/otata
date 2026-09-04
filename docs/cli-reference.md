@@ -4,7 +4,8 @@
 
 | Command | Does |
 | --- | --- |
-| `otata publish [--config Debug] [--scheme S] [--slug NAME] [--artifact PATH] [--builder archive]` | Build and publish the project in the current directory |
+| `otata publish --platform ios\|android [--config Debug] [--scheme S] [--slug NAME] [--builder archive]` | Build and publish the project in the current directory |
+| `otata publish --artifact PATH [--slug NAME]` | Publish an already-built payload instead; the file says which platform |
 | `otata list` | What is published (`otata ls` works too) |
 | `otata status` | Everything in one call |
 | `otata doctor [--fix]` | Verify the server, transport and every URL, report a signing deadline; `--fix` repairs first |
@@ -21,15 +22,23 @@
 ## publish
 
 ```sh
-otata publish [--config Debug] [--scheme S] [--slug NAME] [--artifact PATH] [--builder archive]
+otata publish --platform ios|android [--config Debug] [--scheme S] [--slug NAME] [--builder archive]
+otata publish --artifact PATH [--slug NAME]
 ```
 
-Discovery will fill in what you don't pass: the workspace or project, a scheme that
+What to build for is never discovered: `--platform` is required, because a Mac
+builds for both and a default there would be a guess. A project that always
+builds for one platform can record the flag in its agent instructions. With
+`--artifact` the payload's extension says which platform it is, so the flag is
+not needed there, and one that disagrees with the file is refused.
+
+Discovery will fill in the rest: the workspace or project, a scheme that
 archives an app, the signing team, and the slug from the directory name.
 `--scheme` and `--slug` are for when it asks.
 
 | Flag | Does |
 | --- | --- |
+| `--platform` | What to build for: `ios` or `android`. Required for a build; `--artifact` reads it off the file. Android has no builder yet, so it is refused |
 | `--config` | Build configuration. Defaults to `Release`, and a publish that falls back to it says so before the build starts |
 | `--scheme` | The scheme to build, when discovery finds several candidates |
 | `--slug` | Publish under this name instead of the directory's |

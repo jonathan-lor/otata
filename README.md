@@ -15,7 +15,7 @@ Tailscale is the recommended method for serving, but serving through your own HT
 
 ```sh
 cd ~/path/to/MyApp
-otata publish                # builds, signs, publishes, prints the URL
+otata publish --platform ios # builds, signs, publishes, prints the URL
 ```
 
 ## Requirements
@@ -69,12 +69,12 @@ otata also includes an [agent skill](skills/otata/SKILL.md).
 Three commands cover nearly everything:
 
 ```sh
-otata publish     # build and publish the project in the current directory
-otata list        # what is published
-otata doctor      # verify the server, transport and every URL; --fix repairs first
+otata publish --platform ios   # build and publish the project in the current directory
+otata list                     # what is published
+otata doctor                   # verify the server, transport and every URL; --fix repairs first
 ```
 
-`otata publish` discovers the workspace or project, an archiving scheme, the
+`--platform` is the one thing you must pass. `otata publish` discovers the rest: the workspace or project, an archiving scheme, the
 signing team, and the slug from the directory name. `--scheme` and `--slug` are for when it asks.
 `--config` defaults to `Release`, and a publish that falls back to it will tell you before the build starts.
 Publishing an already-built `.ipa` from any toolchain is `otata publish --artifact <path>`.

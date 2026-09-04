@@ -131,10 +131,15 @@ login, sleep, the keychain prompt — is in
 
 ## What's in `~/.otata`?
 
-There are three trees: `public/` is the only one ever served, `state/` holds records
-naming local paths, and `build/` holds archives and logs. Publishing stages into
-`tmp/` and renames into place, so a client can never fetch a half-written
-payload.
+| Path | Holds |
+| --- | --- |
+| `public/` | The only tree ever served: the index, and a directory per app with its page, manifest, icon and payload |
+| `state/` | One record per app, naming local paths, and the marker of a build in flight |
+| `build/` | Archives, exports and the build log, per app |
+| `tmp/` | Where publishing stages a file before renaming it into `public/`, so a client can never fetch a half-written one |
+| `bin/` | A copy of the otata binary, present only when the installed one sits where launchd cannot read it |
+| `config.json` | The port, serve path and selected transport |
+| `server.log` | The background server's own log and its access log |
 
 ## Why not TestFlight or Firebase App Distribution?
 

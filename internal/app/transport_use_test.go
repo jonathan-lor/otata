@@ -33,7 +33,7 @@ func quiet(string) {}
 // regenerates the pages against its base URL.
 func TestUseTransportPersistsAndReindexes(t *testing.T) {
 	a := freshApp(t)
-	sel := TransportSelection{Name: "manual", BaseURL: "https://box.example.com/otata", Visibility: "private"}
+	sel := TransportSelection{Name: "manual", BaseURL: "https://box.example.com/otata"}
 	if err := a.UseTransport(sel, quiet); err != nil {
 		t.Fatal(err)
 	}
@@ -58,9 +58,7 @@ func TestUseTransportPersistsAndReindexes(t *testing.T) {
 }
 
 // A selection that is refused changes nothing: no config is written and no
-// page generated. The usage errors are the caller's, so they exit 2; a route
-// declared public is refused by the guard every later command applies, and
-// used to be saved first and refused by all of them after.
+// page generated. The usage errors are the caller's, so they exit 2.
 func TestUseTransportRefusesBadSelectionsBeforeChangingAnything(t *testing.T) {
 	cases := []struct {
 		name string
@@ -68,10 +66,8 @@ func TestUseTransportRefusesBadSelectionsBeforeChangingAnything(t *testing.T) {
 		want string
 	}{
 		{"unknown transport", TransportSelection{Name: "wireguard"}, cli.CodeInvalidArgs},
-		{"manual without a base URL", TransportSelection{Name: "manual", Visibility: "private"}, cli.CodeInvalidArgs},
-		{"manual over http", TransportSelection{Name: "manual", BaseURL: "http://x/otata", Visibility: "private"}, cli.CodeInvalidArgs},
-		{"manual with a made-up visibility", TransportSelection{Name: "manual", BaseURL: "https://x/otata", Visibility: "internal"}, cli.CodeInvalidArgs},
-		{"manual declared public", TransportSelection{Name: "manual", BaseURL: "https://x/otata", Visibility: "public"}, cli.CodeTransportDown},
+		{"manual without a base URL", TransportSelection{Name: "manual"}, cli.CodeInvalidArgs},
+		{"manual over http", TransportSelection{Name: "manual", BaseURL: "http://x/otata"}, cli.CodeInvalidArgs},
 	}
 	for _, c := range cases {
 		a := freshApp(t)
@@ -108,7 +104,7 @@ func TestUseTransportRefusesAFunnelledTailnetBeforeChangingAnything(t *testing.T
 	useStubTailscale(t, transporttest.ServeFunnelled)
 	a := freshApp(t)
 	previous := config.Config{Port: config.DefaultPort, ServePath: "/otata", Transport: "manual",
-		Manual: &config.Manual{BaseURL: "https://old.example.com/otata", Visibility: "private"}}
+		Manual: &config.Manual{BaseURL: "https://old.example.com/otata"}}
 	if err := config.Save(a.Root, previous); err != nil {
 		t.Fatal(err)
 	}

@@ -28,14 +28,17 @@ the process.
 | --- | --- |
 | `main.go` | Command dispatch and flag parsing only |
 | `internal/cli` | How commands talk to their caller: JSON vs text, the error taxonomy |
-| `internal/app` | Orchestration: the only place that knows about the others at once |
+| `internal/app` | Orchestration: the only place that knows about the others at once, one file per command |
+| `internal/config` | The little that cannot be discovered: port, serve path, the selected transport |
 | `internal/storage` | The on-disk layout, and the **only** definition of it |
-| `internal/artifact` | The record: what a published build is |
+| `internal/atomicfile` | Stage-and-rename writes, so a crash never leaves a torn file |
+| `internal/artifact` | The record: what a published build is, and the platform it runs on |
 | `internal/builder` | Turning a project into a payload; the only place that knows what Xcode is |
-| `internal/appmeta` | Reading identity and icon out of a built app or an `.ipa` |
+| `internal/appmeta` | Reading identity, icon and signing out of a built payload, one reader per platform |
 | `internal/transport` | Making the loopback server reachable; the only place that knows what Tailscale is |
 | `internal/server` | The install surface over HTTP |
 | `internal/render` | The pages, with templates embedded in the binary |
+| `internal/version` | This binary's version, read from the build's VCS stamp |
 
 ## Testing
 
@@ -46,7 +49,10 @@ go test ./internal/server/ -v
 
 The suite passes on Linux as well as macOS. A test that shells out to a macOS
 tool (`ditto`, `plutil`, `pngcrush`) skips where the tool is absent rather
-than failing.
+than failing. Code that drives the tailscale transport is tested against the
+fake CLI in `internal/transport/transporttest`, which answers from canned
+JSON and counts its invocations; putting its directory on `PATH` is what
+makes the transport find it.
 
 Three `*_manual_test.go` files run against real local artifacts and **skip
 unless told where they are**, so the test suite stays hermetic on a fresh machine:

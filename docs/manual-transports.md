@@ -24,15 +24,16 @@ with the base URL's path.
 The prefix *is* the base URL's path. A base URL with no path (a tunnel
 hostname used bare) sidesteps the question.
 
-## Visibility
+## Reachability
 
-`--visibility public` is refused: no access guard ships. What
-`--visibility private` means depends on the route. On the Caddy route it is a
-fact (the name resolves to a private address), while a tunnel URL is 
-reachable from the whole internet. On any publicly reachable route, the
-unguessable URL is all that stands between your builds and the internet, and
-the index enumerates every published app under it. A random tunnel hostname
-is unguessable on its own, and a stable domain of yours is not. DNS and
+otata verifies nothing about where your proxy can be reached from, and no
+access guard ships, so this transport is for routes you consider private.
+What that means depends on the route. On the Caddy route it is a fact (the
+name resolves to a private address), while a tunnel URL is reachable from
+the whole internet. On any publicly reachable route, the unguessable URL is
+all that stands between your builds and the internet, and the index
+enumerates every published app under it. A random tunnel hostname is
+unguessable on its own, and a stable domain of yours is not. DNS and
 certificate logs publish it so there the secret must be a random path
 segment in the base URL (`--base-url https://host/<random>/`).
 
@@ -48,7 +49,7 @@ It prints a `https://<random>.trycloudflare.com` URL. In another shell:
 ```sh
 otata transport use manual \
   --base-url https://<random>.trycloudflare.com/otata \
-  --keep-prefix --visibility private
+  --keep-prefix
 otata doctor
 ```
 
@@ -110,7 +111,7 @@ phone, should extend that to anywhere (unverified).
    ```sh
    caddy run --config Caddyfile
    otata transport use manual \
-     --base-url https://otata.example.com:8443/otata --visibility private
+     --base-url https://otata.example.com:8443/otata
    otata doctor
    ```
 
@@ -138,7 +139,7 @@ ngrok http 8787
 ```sh
 otata transport use manual \
   --base-url https://<assigned>.ngrok-free.dev/otata \
-  --keep-prefix --visibility private
+  --keep-prefix
 otata doctor
 ```
 

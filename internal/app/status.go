@@ -41,7 +41,7 @@ type StatusResult struct {
 	// "nothing installed", and so it is clear why `autostart on` refuses.
 	AutostartOtherRoot string                       `json:"autostart_other_root,omitempty"`
 	AutostartProgram   string                       `json:"autostart_program,omitempty"`
-	AutostartStale     bool                         `json:"autostart_stale"`
+	AutostartStale     bool                         `json:"autostart_stale,omitempty"`
 	Transport          transport.Status             `json:"transport"`
 	Apps               []artifact.Record            `json:"apps"`
 	Building           map[string]artifact.Building `json:"building,omitempty"`

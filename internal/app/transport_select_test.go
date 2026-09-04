@@ -6,6 +6,7 @@ import (
 
 	"github.com/jonathan-lor/otata/internal/cli"
 	"github.com/jonathan-lor/otata/internal/config"
+	"github.com/jonathan-lor/otata/internal/transport/transporttest"
 )
 
 // The transport is chosen once with 'transport use'.
@@ -45,7 +46,7 @@ func TestExplicitSelectionIsHonored(t *testing.T) {
 		t.Errorf("tailscale selected but not returned: %v", tr)
 	}
 	man := &App{Config: config.Config{Transport: "manual", Manual: &config.Manual{
-		BaseURL: "https://box.example.com/otata", Visibility: "private",
+		BaseURL: "https://box.example.com/otata",
 	}}}
 	if tr := man.selectTransport(); tr == nil || tr.Name() != "manual" {
 		t.Errorf("manual selected but not returned: %v", tr)
@@ -61,11 +62,11 @@ func TestExplicitSelectionIsHonored(t *testing.T) {
 // A public transport is refused because no access guard ships. That is a fact
 // about the machine's network, not about how the command was called, so the
 // code must be transport_down: invalid_args exits 2 and tells an agent to fix
-// the arguments, and there is no argument to fix.
+// the arguments, and there is no argument to fix. Funnel is what makes a
+// tailnet public.
 func TestPublicTransportIsRefusedAsTransportDown(t *testing.T) {
-	a := &App{Config: config.Config{Transport: "manual", Manual: &config.Manual{
-		BaseURL: "https://box.example.com/otata", Visibility: "public",
-	}}}
+	useStubTailscale(t, transporttest.ServeFunnelled)
+	a := &App{Config: config.Config{Transport: "tailscale", ServePath: "/otata"}}
 	_, err := a.Transport()
 	f := cli.AsFailure(err)
 	if err == nil || f.Code != cli.CodeTransportDown {

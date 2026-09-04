@@ -98,16 +98,22 @@ func (e *SetupError) Error() string { return e.Detail }
 // diagnosis pairs a phrase a failing build prints with the remedy for it.
 type diagnosis struct {
 	phrase string
-	// signing marks what only a human with Xcode or portal access can resolve.
-	// The rest are steps a caller can run and then retry, which is the whole
-	// reason the two are different codes.
+	// signing marks what only a human with Xcode or portal access can resolve,
+	// and hint is its remedy. A signing failure states itself, so the matched
+	// phrase is its detail.
 	signing bool
-	// detail states the problem for a setup failure; a signing failure states
-	// itself, so the matched phrase is its detail.
-	detail string
-	hint   string
-	// command is the setup step to run, for the ones that have one.
-	command string
+	hint    string
+	// setup is the step a caller can run and then retry, for the rest, which
+	// is the whole reason the two are different codes.
+	setup SetupError
+}
+
+// flutterConfigMissing is Flutter's one setup step, stated once for the
+// pre-check and for the two log phrases that mean the same thing.
+var flutterConfigMissing = SetupError{
+	Detail:  "Flutter has not generated its build configuration for this project",
+	Command: "flutter build ios --config-only",
+	Hint:    "that xcconfig is generated, not committed, so a fresh clone never has it",
 }
 
 /*
@@ -143,30 +149,24 @@ var diagnoses = []diagnosis{
 	// phase resolves to an absolute path with an empty prefix, which is what
 	// the failure actually looks like. The tidier message below appears only
 	// when CocoaPods reads the Podfile first.
-	{phrase: "flutter_tools/bin/xcode_backend.sh: No such file or directory",
-		detail:  "Flutter has not generated its build configuration for this project",
-		command: "flutter build ios --config-only",
-		hint:    "that xcconfig is generated, not committed, so a fresh clone never has it"},
-	{phrase: "Flutter/Generated.xcconfig must exist",
-		detail:  "Flutter has not generated its build configuration for this project",
-		command: "flutter build ios --config-only",
-		hint:    "that xcconfig is generated, not committed"},
-	{phrase: "The sandbox is not in sync with the Podfile.lock",
-		detail:  "the installed pods no longer match the Podfile",
-		command: "pod install"},
-	{phrase: "Unable to open base configuration reference file",
-		detail:  "a build configuration file the project references is missing",
-		command: "pod install",
-		hint:    "in a CocoaPods project that file is written by the install"},
-	{phrase: "Unable to locate a Java Runtime",
-		detail: "this build runs Gradle, and no JDK is installed",
-		hint:   "install a JDK 17 or newer"},
-	{phrase: "JAVA_HOME is not set",
-		detail: "this build runs Gradle, and no JDK is on PATH",
-		hint:   "install a JDK 17 or newer, or set JAVA_HOME"},
-	{phrase: "SDK location not found",
-		detail: "the Gradle build has an Android target and no Android SDK is configured",
-		hint:   "install the Android SDK and set ANDROID_HOME, or write sdk.dir into local.properties"},
+	{phrase: "flutter_tools/bin/xcode_backend.sh: No such file or directory", setup: flutterConfigMissing},
+	{phrase: "Flutter/Generated.xcconfig must exist", setup: flutterConfigMissing},
+	{phrase: "The sandbox is not in sync with the Podfile.lock", setup: SetupError{
+		Detail:  "the installed pods no longer match the Podfile",
+		Command: "pod install"}},
+	{phrase: "Unable to open base configuration reference file", setup: SetupError{
+		Detail:  "a build configuration file the project references is missing",
+		Command: "pod install",
+		Hint:    "in a CocoaPods project that file is written by the install"}},
+	{phrase: "Unable to locate a Java Runtime", setup: SetupError{
+		Detail: "this build runs Gradle, and no JDK is installed",
+		Hint:   "install a JDK 17 or newer"}},
+	{phrase: "JAVA_HOME is not set", setup: SetupError{
+		Detail: "this build runs Gradle, and no JDK is on PATH",
+		Hint:   "install a JDK 17 or newer, or set JAVA_HOME"}},
+	{phrase: "SDK location not found", setup: SetupError{
+		Detail: "the Gradle build has an Android target and no Android SDK is configured",
+		Hint:   "install the Android SDK and set ANDROID_HOME, or write sdk.dir into local.properties"}},
 }
 
 // classifyBuildFailure reads the tail of the build log and names what failed.
@@ -205,7 +205,8 @@ func diagnose(text, fallback string) error {
 	if match.signing {
 		return &SigningError{Detail: match.phrase, Hint: match.hint}
 	}
-	return &SetupError{Detail: match.detail, Hint: match.hint, Command: match.command}
+	setup := match.setup
+	return &setup
 }
 
 // AmbiguousScheme carries the candidates so a caller can choose without re-running discovery.
@@ -343,16 +344,12 @@ func prerequisite(container string) *SetupError {
 	// directory, so its presence is what makes this a Flutter project.
 	if exists(filepath.Join(dir, "Flutter", "AppFrameworkInfo.plist")) &&
 		!exists(filepath.Join(dir, "Flutter", "Generated.xcconfig")) {
-		where := dir
+		missing := flutterConfigMissing
+		missing.Dir = dir
 		if exists(filepath.Join(root, "pubspec.yaml")) {
-			where = root
+			missing.Dir = root
 		}
-		return &SetupError{
-			Detail:  "Flutter has not generated its build configuration for this project",
-			Command: "flutter build ios --config-only",
-			Dir:     where,
-			Hint:    "that xcconfig is generated, not committed, so a fresh clone never has it",
-		}
+		return &missing
 	}
 
 	// A Podfile with nothing installed is React Native's default state.
@@ -373,74 +370,99 @@ func exists(path string) bool {
 	return err == nil
 }
 
-func (x *Xcode) Build(ctx context.Context, opts Options) (Result, error) {
-	container := opts.Container
-	if missing := prerequisite(container); missing != nil {
-		return Result{}, missing
+// job is what both Xcode builders resolve before running anything: the
+// scheme, the configuration, and an open log in the work directory.
+type job struct {
+	container, scheme, config, logPath string
+	log                                *os.File
+}
+
+// prepare resolves the job, refusing before the toolchain runs when a
+// prerequisite of the project's own toolchain has not been run.
+func (x *Xcode) prepare(opts Options) (*job, error) {
+	if opts.Config == "" {
+		return nil, fmt.Errorf("no build configuration given")
 	}
-	scheme, err := x.ResolveScheme(container, opts.Scheme)
+	if missing := prerequisite(opts.Container); missing != nil {
+		return nil, missing
+	}
+	scheme, err := x.ResolveScheme(opts.Container, opts.Scheme)
 	if err != nil {
-		return Result{}, err
+		return nil, err
 	}
-	config := opts.Config
-	if config == "" {
-		config = "Release"
-	}
-
 	if err := os.MkdirAll(opts.Work, 0o755); err != nil {
-		return Result{}, err
+		return nil, err
 	}
-	archive := filepath.Join(opts.Work, scheme+".xcarchive")
-	export := filepath.Join(opts.Work, "export")
 	logPath := filepath.Join(opts.Work, "xcodebuild.log")
-	_ = os.RemoveAll(archive)
-	_ = os.RemoveAll(export)
-
 	logFile, err := os.Create(logPath)
 	if err != nil {
-		return Result{}, err
+		return nil, err
 	}
-	defer logFile.Close()
+	return &job{container: opts.Container, scheme: scheme, config: opts.Config, logPath: logPath, log: logFile}, nil
+}
 
-	opts.logf("archiving %s (%s)", scheme, config)
-	args := append([]string{"archive"}, projectArgs(container)...)
+// args is the xcodebuild invocation both builders share: the action, what
+// identifies the build, and whatever the action adds.
+func (j *job) args(action string, extra ...string) []string {
+	args := append([]string{action}, projectArgs(j.container)...)
 	args = append(args,
-		"-scheme", scheme,
-		"-configuration", config,
+		"-scheme", j.scheme,
+		"-configuration", j.config,
 		"-destination", "generic/platform=iOS",
-		"-archivePath", archive,
 		"-allowProvisioningUpdates",
 		"-skipMacroValidation",
 		"ONLY_ACTIVE_ARCH=NO",
 	)
-	if err := runLogged(ctx, logFile, "xcodebuild", args...); err != nil {
-		return Result{LogPath: logPath}, classifyBuildFailure(ctx, logPath, "archive failed")
+	return append(args, extra...)
+}
+
+// result is the payload this job produced.
+func (j *job) result(payload string) Result {
+	return Result{PayloadPath: payload, Platform: artifact.IOS, Config: j.config, LogPath: j.logPath}
+}
+
+func (x *Xcode) Build(ctx context.Context, opts Options) (Result, error) {
+	j, err := x.prepare(opts)
+	if err != nil {
+		return Result{}, err
+	}
+	defer j.log.Close()
+	failed := Result{LogPath: j.logPath}
+
+	archive := filepath.Join(opts.Work, j.scheme+".xcarchive")
+	export := filepath.Join(opts.Work, "export")
+	_ = os.RemoveAll(archive)
+	_ = os.RemoveAll(export)
+
+	opts.logf("archiving %s (%s)", j.scheme, j.config)
+	if err := runLogged(ctx, j.log, "xcodebuild", j.args("archive", "-archivePath", archive)...); err != nil {
+		return failed, classifyBuildFailure(ctx, j.logPath, "archive failed")
 	}
 
 	team, err := archiveTeam(archive)
 	if err != nil {
-		return Result{LogPath: logPath}, err
+		return failed, err
 	}
 	optionsPath := filepath.Join(opts.Work, "ExportOptions.plist")
 	if err := os.WriteFile(optionsPath, exportOptions(team), 0o644); err != nil {
-		return Result{LogPath: logPath}, err
+		return failed, err
 	}
 
 	opts.logf("exporting (team %s)", team)
-	if err := runLogged(ctx, logFile, "xcodebuild", "-exportArchive",
+	if err := runLogged(ctx, j.log, "xcodebuild", "-exportArchive",
 		"-archivePath", archive,
 		"-exportOptionsPlist", optionsPath,
 		"-exportPath", export,
 		"-allowProvisioningUpdates",
 	); err != nil {
-		return Result{LogPath: logPath}, classifyBuildFailure(ctx, logPath, "export failed")
+		return failed, classifyBuildFailure(ctx, j.logPath, "export failed")
 	}
 
 	ipa := firstMatch(export, ".ipa")
 	if ipa == "" {
-		return Result{LogPath: logPath}, fmt.Errorf("no .ipa produced in %s", export)
+		return failed, fmt.Errorf("no .ipa produced in %s", export)
 	}
-	return Result{PayloadPath: ipa, Platform: artifact.IOS, Config: config, LogPath: logPath}, nil
+	return j.result(ipa), nil
 }
 
 // runLogged runs a toolchain command with its output in log. The command gets

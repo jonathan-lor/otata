@@ -10,8 +10,23 @@ import (
 	"time"
 
 	"github.com/jonathan-lor/otata/internal/appmeta"
+	"github.com/jonathan-lor/otata/internal/artifact"
 	"github.com/jonathan-lor/otata/internal/storage"
 )
+
+// The publish result speaks the same units and names as the record and the
+// listings: bytes beside the megabytes older callers read, and the platform.
+func TestPublishResultJSONMatchesTheRecord(t *testing.T) {
+	out, err := json.Marshal(PublishResult{Platform: artifact.IOS, SizeBytes: 15 << 20, SizeMB: 15})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"platform":"ios"`, `"size_bytes":15728640`, `"size_mb":15`} {
+		if !strings.Contains(string(out), want) {
+			t.Errorf("publish JSON lacks %s: %s", want, out)
+		}
+	}
+}
 
 // A zero CertExpires, the normal state on a node that only serves, must not
 // reach an agent as the year 0001.

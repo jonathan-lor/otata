@@ -16,10 +16,12 @@ type Options struct {
 	// Container is the buildable thing Detect found: the workspace or project
 	// for Xcode. Build is handed it rather than looking again.
 	Container string
-	Config    string // Debug / Release
-	Scheme    string // optional override
-	Work      string // scratch space for archives and logs
-	Log       func(string)
+	// Config is the build configuration, Debug or Release. Required: the
+	// default is the caller's to choose and announce, not this package's.
+	Config string
+	Scheme string // optional override
+	Work   string // scratch space for archives and logs
+	Log    func(string)
 }
 
 // Result is deliberately just the payload because metadata is always read back out of the payload.

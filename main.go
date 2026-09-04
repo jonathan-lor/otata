@@ -23,7 +23,9 @@ const usage = `otata installs iOS builds on your phone over your own network
   otata serve                   run the file server in the foreground
   otata start | stop | restart  server lifecycle
   otata autostart on|off        run the server under launchd
-  otata transport use <name>    tailscale | manual (--base-url, --keep-prefix, --visibility)
+  otata transport use <name>    tailscale | manual (--base-url, --keep-prefix)
+  otata version                 print the version
+  otata help                    this summary
 
 Options:
   --json                        machine-readable output, for an agent to parse
@@ -260,7 +262,7 @@ func doctor(a *app.App, args []string) int {
 	return 0
 }
 
-const transportSynopsis = "transport use <tailscale|manual> [--base-url URL] [--keep-prefix] [--visibility private|public]"
+const transportSynopsis = "transport use <tailscale|manual> [--base-url URL] [--keep-prefix]"
 
 func transportCmd(a *app.App, args []string) int {
 	if wantsHelp(args) && (len(args) < 2 || args[0] != "use" || args[1] == "-h" || args[1] == "--help") {
@@ -275,12 +277,11 @@ func transportCmd(a *app.App, args []string) int {
 	baseURL := fs.String("base-url", "", "base URL your proxy serves (manual only)")
 	keepPrefix := fs.Bool("keep-prefix", false,
 		"your proxy forwards the base URL's path unchanged instead of stripping it (manual only)")
-	visibility := fs.String("visibility", "private", "private or public (manual only)")
 	if exit, done := parseFlags(fs, "transport", transportSynopsis, args[2:]); done {
 		return exit
 	}
 
-	sel := app.TransportSelection{Name: name, BaseURL: *baseURL, KeepPrefix: *keepPrefix, Visibility: *visibility}
+	sel := app.TransportSelection{Name: name, BaseURL: *baseURL, KeepPrefix: *keepPrefix}
 	if err := a.UseTransport(sel, progress); err != nil {
 		return cli.EmitError("transport", err)
 	}

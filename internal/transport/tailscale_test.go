@@ -140,13 +140,13 @@ func TestVerifyGatesOnMagicDNSAndCertificates(t *testing.T) {
 }
 
 func TestManualRequiresHTTPS(t *testing.T) {
-	if _, err := NewManual("http://box.local/otata", false, Private).Ensure(0); err == nil {
+	if _, err := NewManual("http://box.local/otata", false).Ensure(0); err == nil {
 		t.Error("accepted a plain-http base URL; iOS cannot install from one")
 	}
-	if _, err := NewManual("https://box.local/otata", false, Private).Ensure(0); err != nil {
+	if _, err := NewManual("https://box.local/otata", false).Ensure(0); err != nil {
 		t.Errorf("rejected a valid https base URL: %v", err)
 	}
-	if _, err := NewManual("", false, Private).Ensure(0); err == nil {
+	if _, err := NewManual("", false).Ensure(0); err == nil {
 		t.Error("accepted an empty base URL")
 	}
 }
@@ -155,14 +155,14 @@ func TestManualRequiresHTTPS(t *testing.T) {
 // can still be what is on disk. Status must then name it as the obstacle, and
 // never as repairable: nothing but the config can change it.
 func TestManualStatusNamesABadBaseURL(t *testing.T) {
-	bad := NewManual("http://box.local/otata", false, Private).Status(0)
+	bad := NewManual("http://box.local/otata", false).Status(0)
 	if bad.Ready || bad.Repairable {
 		t.Errorf("http base URL: ready=%v repairable=%v, want neither", bad.Ready, bad.Repairable)
 	}
 	if !strings.Contains(bad.Detail, "https") {
 		t.Errorf("the obstacle is not named: %q", bad.Detail)
 	}
-	good := NewManual("https://box.local/otata", false, Private).Status(0)
+	good := NewManual("https://box.local/otata", false).Status(0)
 	if !good.Ready || good.Detail == "" {
 		t.Errorf("valid base URL: ready=%v detail=%q", good.Ready, good.Detail)
 	}
@@ -189,19 +189,12 @@ func TestValidateBaseURL(t *testing.T) {
 	}
 }
 
-// The visibility flag feeds the guard, so a typo must be refused rather than
-// read as private.
-func TestParseVisibilityIsClosed(t *testing.T) {
-	if v, err := ParseVisibility("Public"); err != nil || v != Public {
-		t.Errorf("Public: got (%q, %v)", v, err)
-	}
-	if v, err := ParseVisibility("private"); err != nil || v != Private {
-		t.Errorf("private: got (%q, %v)", v, err)
-	}
-	for _, bad := range []string{"", "privte", "internal", "yes"} {
-		if _, err := ParseVisibility(bad); err == nil {
-			t.Errorf("%q accepted as a visibility", bad)
-		}
+// The manual transport is private by definition: otata verifies nothing
+// about it, so nothing it could learn would make it public.
+func TestManualIsPrivateByDefinition(t *testing.T) {
+	m := NewManual("https://box.local/otata", false)
+	if m.Visibility() != Private || m.Status(0).Visibility != Private {
+		t.Error("the manual transport reported a visibility other than private")
 	}
 }
 
@@ -222,7 +215,7 @@ func TestManualIncomingPrefix(t *testing.T) {
 		{"https://x/", true, ""},
 	}
 	for _, c := range cases {
-		if got := NewManual(c.base, c.keep, Private).IncomingPrefix(); got != c.want {
+		if got := NewManual(c.base, c.keep).IncomingPrefix(); got != c.want {
 			t.Errorf("NewManual(%q, keep=%v).IncomingPrefix() = %q, want %q", c.base, c.keep, got, c.want)
 		}
 	}

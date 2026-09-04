@@ -43,19 +43,19 @@ noticeably slower. It does however produce a smaller payload. See [gotchas](gotc
 ## transport use
 
 ```sh
-otata transport use <tailscale|manual> [--base-url URL] [--keep-prefix] [--visibility private|public]
+otata transport use <tailscale|manual> [--base-url URL] [--keep-prefix]
 ```
 
 `tailscale` is reachable by the devices on your tailnet and is private.
-`manual` is reachable by whatever your proxy serves, with a visibility you
-declare:
+`manual` is reachable by whatever your proxy serves, which otata does not
+verify; it is for routes you consider private:
 
 ```sh
 otata transport use tailscale
 otata transport use manual --base-url https://builds.example.com/otata
 ```
 
-`--base-url`, `--keep-prefix` and `--visibility` apply to `manual` only.
+`--base-url` and `--keep-prefix` apply to `manual` only.
 `--keep-prefix` says your proxy forwards the base URL's path unchanged instead
 of stripping it. The transport is selected once and validated then. Walkthroughs
 for the manual transport are in [Serving over your own proxy](manual-transports.md).

@@ -100,15 +100,7 @@ func transportFor(cfg config.Config) transport.Transport {
 		if cfg.Manual == nil || cfg.Manual.BaseURL == "" {
 			return nil
 		}
-		m := cfg.Manual
-		// The command that writes the file validates visibility, and covers a
-		// file edited by hand. Anything unparseable fails closed, read as
-		// public, which the guard refuses, rather than open as private.
-		vis, err := transport.ParseVisibility(m.Visibility)
-		if err != nil {
-			vis = transport.Public
-		}
-		return transport.NewManual(m.BaseURL, m.KeepPrefix, vis)
+		return transport.NewManual(cfg.Manual.BaseURL, cfg.Manual.KeepPrefix)
 	}
 	return nil
 }
@@ -148,15 +140,12 @@ func (a *App) guard(t transport.Transport) error {
 	if t.Visibility() != transport.Public {
 		return nil
 	}
-	// The remedy differs: a tailnet is public because Funnel is on for the
-	// listener, which no otata flag can change, while a manual route is
-	// public because the caller declared it so.
-	hint := "use a private transport, or declare visibility private if your proxy is not publicly reachable"
-	if t.Name() == "tailscale" {
-		hint = "Funnel exposes every handler on that listener: run 'tailscale funnel --https=443 off', or serve through your own proxy"
-	}
+	// Only Funnel makes a transport public today: it exposes every handler on
+	// the listener, and no otata flag can change that. The manual route is
+	// private by definition, since otata verifies nothing about it.
 	return cli.Failf(cli.CodeTransportDown,
-		"%s is a public transport and no access guard is implemented yet", t.Name()).WithHint(hint)
+		"%s is a public transport and no access guard is implemented yet", t.Name()).
+		WithHint("run 'tailscale funnel --https=443 off', or serve through your own proxy")
 }
 
 // ---------- server lifecycle ----------

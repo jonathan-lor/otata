@@ -33,6 +33,23 @@ func TestInstallLinkSurvivesTemplateEscaping(t *testing.T) {
 	}
 }
 
+// Everything outside the unreserved set is percent-encoded, a space and a
+// plus included, or the manifest URL inside the itms-services href comes
+// apart. Pinned so the encoding cannot drift with its implementation.
+func TestEscape(t *testing.T) {
+	cases := map[string]string{
+		"https://host.ts.net/otata/myapp/manifest.plist?v=abc-7": "https%3A%2F%2Fhost.ts.net%2Fotata%2Fmyapp%2Fmanifest.plist%3Fv%3Dabc-7",
+		"a b+c&d=e":      "a%20b%2Bc%26d%3De",
+		"safe-._~09AZaz": "safe-._~09AZaz",
+		"":               "",
+	}
+	for in, want := range cases {
+		if got := escape(in); got != want {
+			t.Errorf("escape(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 // An Android app installs by fetching the payload, so its link is the payload
 // itself with the same cache key, with no itms-services scheme and no manifest
 // anywhere on the page, and the page's advice is Android's rather than iOS's.

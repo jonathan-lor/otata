@@ -147,32 +147,32 @@ func (a *App) Doctor(fix bool) (*DoctorResult, error) {
 			detail := fmt.Sprintf("port %d is held by %s; 'otata restart' replaces it with one for %s, or set OTATA_PORT to a free port",
 				a.Config.Port, p.describe(), a.Root)
 			if spec, loaded := a.foreignAgentLoaded(); loaded && agentRootDigest(spec) == p.Root {
-				detail = fmt.Sprintf("port %d is held by an otata server for %s, kept alive by its launch agent; run 'otata autostart off' to remove that agent (there is one per user), then 'otata autostart on' here",
-					a.Config.Port, describeAgent(spec))
+				detail = fmt.Sprintf("port %d is held by an otata server for %s, kept alive by its %s; run 'otata autostart off' to remove it (there is one per user), then 'otata autostart on' here",
+					a.Config.Port, describeAgent(spec), a.autostart().Kind())
 			}
 			fail("server", detail)
 			return res, nil
 		}
-		// With no agent installed there is nothing --fix can start, and the remedy is the setup step.
+		// With no unit installed there is nothing --fix can start, and the remedy is the setup step.
 		if !a.AutostartEnabled() {
-			fail("server", "not running, and autostart is not set up; "+startHint)
+			fail("server", "not running, and autostart is not set up; "+a.autostart().StartHint())
 			return res, nil
 		}
-		// A disabled agent is likewise beyond repair from here. Only the user
-		// can re-enable what they switched off in Login Items.
-		if agentDisabled() {
-			fail("server", "not running; "+failureDetail(errAgentDisabled()))
+		// A disabled unit is likewise beyond repair from here. Only the user
+		// can re-enable what they switched off.
+		if a.autostart().Disabled() {
+			fail("server", "not running; "+failureDetail(a.errAgentDisabled()))
 			return res, nil
 		}
 		if !fix {
-			needsFix("server", "not running", "'otata start' or 'otata doctor --fix' reloads the launch agent")
+			needsFix("server", "not running", "'otata start' or 'otata doctor --fix' reloads the "+a.autostart().Kind())
 			return res, nil
 		}
 		if err := a.StartServer(); err != nil {
 			fail("server", failureDetail(err))
 			return res, nil
 		}
-		res.Repaired = append(res.Repaired, "reloaded the launch agent")
+		res.Repaired = append(res.Repaired, "reloaded the "+a.autostart().Kind())
 	}
 	// Note the state BEFORE repairing it. Ensure is what wires the transport, so
 	// asking afterwards always says "ready" and the repair goes unreported.

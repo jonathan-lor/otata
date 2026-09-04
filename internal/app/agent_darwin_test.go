@@ -12,7 +12,7 @@ import (
 // The plist embeds everything the agent needs to serve what the installing
 // command saw, and survives values launchctl would otherwise choke on.
 func TestLaunchPlistEmbedsRootPortAndPath(t *testing.T) {
-	raw := launchPlist("/Users/a & b/bin/otata", "/Users/a & b/.otata", 9123, "/builds<1>", "/tmp/server.log")
+	raw := launchPlist(agentSpec{Program: "/Users/a & b/bin/otata", Root: "/Users/a & b/.otata", Port: 9123, ServePath: "/builds<1>", Log: "/tmp/server.log"})
 	cmd := exec.Command("plutil", "-convert", "json", "-o", "-", "-")
 	cmd.Stdin = bytes.NewReader(raw)
 	out, err := cmd.Output()

@@ -10,12 +10,15 @@ import (
 	"strings"
 )
 
-// agentSpec is what a LaunchAgent plist says it runs. One agent exists per
-// user, under one label, and it embeds the root and port it was installed with.
+// agentSpec is what a supervisor's unit says it runs: the definition otata
+// writes and reads back. One unit exists per user, and it embeds the root,
+// port and serve path it was installed with.
 type agentSpec struct {
-	Program string
-	Root    string
-	Port    int
+	Program   string
+	Root      string
+	Port      int
+	ServePath string
+	Log       string
 }
 
 // agentMatches reports whether an installed agent serves this root and port and both must match exactly.
@@ -56,10 +59,6 @@ func disabledIn(out, label string) bool {
 	}
 	return false
 }
-
-// forgetAgentPlist drops the memoized plist, after a path that installed or
-// removed the agent.
-func (a *App) forgetAgentPlist() { a.agentRead = false }
 
 // filesDiffer reports whether two binaries differ in content, as cheaply as
 // it can be sure. One file under two names (a symlink beside its target) is

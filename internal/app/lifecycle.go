@@ -46,7 +46,7 @@ func (a *App) StartServer() error {
 	}
 
 	if !a.AutostartEnabled() {
-		return cli.Fail(cli.CodeServerDown, "the server is not running").WithHint(startHint)
+		return cli.Fail(cli.CodeServerDown, "the server is not running").WithHint(a.autostart().StartHint())
 	}
 	return a.reloadAgent()
 }
@@ -68,15 +68,15 @@ func (a *App) StopServer() error {
 	if spec, loaded := a.foreignAgentLoaded(); loaded {
 		if p, held := a.otherRootServer(); held && agentRootDigest(spec) == p.Root {
 			return cli.Failf(cli.CodeServerDown,
-				"port %d is held by an otata server for %s, kept alive by its launch agent",
-				a.Config.Port, describeAgent(spec)).
-				WithHint("run 'otata autostart off' to remove that agent (there is one per user), then 'otata autostart on' here")
+				"port %d is held by an otata server for %s, kept alive by its %s",
+				a.Config.Port, describeAgent(spec), a.autostart().Kind()).
+				WithHint("run 'otata autostart off' to remove it (there is one per user), then 'otata autostart on' here")
 		}
 	}
 
 	if a.agentLoaded() {
-		if err := bootoutAgent(); err != nil {
-			return err
+		if err := a.autostart().Unload(); err != nil {
+			return cli.Failf(cli.CodeInternal, "could not unload the %s: %v", a.autostart().Kind(), err)
 		}
 		for range 30 {
 			if gone() {

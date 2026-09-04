@@ -36,13 +36,13 @@ type App struct {
 	transport    transport.Transport
 	transportSet bool
 
-	// agent is the installed launch agent's plist, read once per process:
-	// parsing it is a subprocess, and status asked four times. Only this
-	// process installing or removing the agent changes it, and both forget
-	// the answer.
-	agent     agentSpec
-	agentOK   bool
-	agentRead bool
+	// sup is whatever keeps the background server alive on this OS. Made on
+	// first use by autostart(), so an App built by hand gets the platform's;
+	// a test hands in a fake.
+	sup supervisor
+	// bindWait, when set, replaces every wait for a loaded unit to bind the
+	// port. Tests set it so a unit that never binds is judged in milliseconds.
+	bindWait time.Duration
 }
 
 func DefaultRoot() string {

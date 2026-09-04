@@ -8,9 +8,12 @@ package transport
 import (
 	"fmt"
 	"net/url"
-	"strings"
 )
 
+// Visibility is where a transport's URL can be reached from. It is derived
+// where it can be (Tailscale reads it off Funnel) and private by definition
+// where it cannot (a proxy otata knows nothing about); the guard that keeps
+// unreleased builds off the public internet refuses Public.
 type Visibility string
 
 const (
@@ -53,19 +56,6 @@ type Transport interface {
 	// loopback server: what this transport forwards without stripping. Empty
 	// means bare paths. The server strips exactly this, so the two cannot differ.
 	IncomingPrefix() string
-}
-
-// ParseVisibility accepts only the closed set. Visibility is the input to the
-// guard that keeps unreleased builds off the public internet, so a typo must
-// be refused rather than quietly read as private.
-func ParseVisibility(s string) (Visibility, error) {
-	switch Visibility(strings.ToLower(s)) {
-	case Private:
-		return Private, nil
-	case Public:
-		return Public, nil
-	}
-	return "", fmt.Errorf("visibility must be %q or %q, not %q", Private, Public, s)
 }
 
 // ValidateBaseURL checks a manual base URL before it is persisted, so a bad

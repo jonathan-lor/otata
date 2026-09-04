@@ -23,9 +23,6 @@ type Manual struct {
 	// of stripping it, so the server has to strip it. False is the common
 	// case and what Tailscale does.
 	KeepPrefix bool `json:"keep_prefix,omitempty"`
-	// Visibility must be declared, because otata cannot infer whether an
-	// arbitrary proxy is reachable from the public internet.
-	Visibility string `json:"visibility"`
 }
 
 type Config struct {

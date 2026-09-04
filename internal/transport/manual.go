@@ -11,7 +11,6 @@ import (
 type Manual struct {
 	baseURL    string
 	keepPrefix bool
-	visibility Visibility
 }
 
 /*
@@ -22,19 +21,18 @@ tunnel, etc. Stripping is the default, as Tailscale does.
 
 The prefix is derived from the base URL, not declared separately.
 */
-func NewManual(baseURL string, keepPrefix bool, visibility Visibility) *Manual {
-	if visibility != Public {
-		visibility = Private
-	}
-	return &Manual{
-		baseURL:    strings.TrimSuffix(baseURL, "/"),
-		keepPrefix: keepPrefix,
-		visibility: visibility,
-	}
+func NewManual(baseURL string, keepPrefix bool) *Manual {
+	return &Manual{baseURL: strings.TrimSuffix(baseURL, "/"), keepPrefix: keepPrefix}
 }
 
-func (m *Manual) Name() string           { return "manual" }
-func (m *Manual) Visibility() Visibility { return m.visibility }
+func (m *Manual) Name() string { return "manual" }
+
+// Visibility is private by definition. otata verifies nothing about where a
+// proxy is reachable from, and with no access guard shipping, this transport
+// is for routes the user considers private; which routes those are is the
+// documentation's subject. A declared visibility used to exist and could only
+// ever be "private", which is not a declaration.
+func (m *Manual) Visibility() Visibility { return Private }
 
 // IncomingPrefix is the base URL's path when the proxy forwards it, else nothing.
 func (m *Manual) IncomingPrefix() string {
@@ -60,7 +58,7 @@ func (m *Manual) Ensure(int) (string, error) {
 }
 
 func (m *Manual) Status(int) Status {
-	s := Status{Name: m.Name(), BaseURL: m.baseURL, Visibility: m.visibility}
+	s := Status{Name: m.Name(), BaseURL: m.baseURL, Visibility: Private}
 	// Ensure changes nothing for this transport, so it is the readiness
 	// question itself: a base URL it would refuse is the obstacle, and never
 	// repairable, because the config is what has to change.

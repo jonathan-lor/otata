@@ -142,7 +142,7 @@ func TestDoctorReportsTheTransportObstacleNotWiring(t *testing.T) {
 	a := &App{Root: root, Store: store, Config: config.Config{
 		ServePath: "/otata",
 		Transport: "manual",
-		Manual:    &config.Manual{BaseURL: "http://127.0.0.1:1/otata", Visibility: "private"},
+		Manual:    &config.Manual{BaseURL: "http://127.0.0.1:1/otata"},
 	}}
 	serveThisRoot(t, a)
 
@@ -190,7 +190,6 @@ func TestDoctorReportsChecksInOrderHoweverProbesLand(t *testing.T) {
 			// leaving the machine; the order they report in is what is under test.
 			BaseURL:    "https://127.0.0.1:1/otata",
 			KeepPrefix: true,
-			Visibility: "private",
 		},
 	}}
 
@@ -227,7 +226,7 @@ func TestDoctorProbesNoManifestForAndroid(t *testing.T) {
 	a := freshApp(t)
 	a.Config.ServePath, a.Config.Transport = "/otata", "manual"
 	// Port 1 answers nothing, so the URL probes fail fast without leaving the machine.
-	a.Config.Manual = &config.Manual{BaseURL: "https://127.0.0.1:1/otata", KeepPrefix: true, Visibility: "private"}
+	a.Config.Manual = &config.Manual{BaseURL: "https://127.0.0.1:1/otata", KeepPrefix: true}
 	now := time.Now()
 	for _, r := range []artifact.Record{
 		{Slug: "droid", Platform: artifact.Android, PayloadName: "App.apk", BuiltAt: now},
@@ -272,7 +271,6 @@ func TestDoctorProbesIndexThroughIncomingPrefix(t *testing.T) {
 			// under test fail fast and without leaving the machine.
 			BaseURL:    "https://127.0.0.1:1/otata",
 			KeepPrefix: true,
-			Visibility: "private",
 		},
 	}}
 	if got := a.IncomingPrefix(); got != "/otata" {
@@ -314,7 +312,7 @@ func TestDoctorNamesAutostartWhenItCannotStartTheServer(t *testing.T) {
 		Port:      1,
 		ServePath: "/otata",
 		Transport: "manual",
-		Manual:    &config.Manual{BaseURL: "https://127.0.0.1:1/otata", KeepPrefix: true, Visibility: "private"},
+		Manual:    &config.Manual{BaseURL: "https://127.0.0.1:1/otata", KeepPrefix: true},
 	}}
 
 	for _, fix := range []bool{false, true} {

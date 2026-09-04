@@ -14,7 +14,6 @@ type TransportSelection struct {
 	Name       string
 	BaseURL    string
 	KeepPrefix bool
-	Visibility string
 }
 
 // UseTransport selects the transport every later command will serve through,
@@ -36,11 +35,7 @@ func (a *App) UseTransport(sel TransportSelection, progress func(string)) error 
 		if err := transport.ValidateBaseURL(sel.BaseURL); err != nil {
 			return cli.Failf(cli.CodeInvalidArgs, "%v", err)
 		}
-		vis, err := transport.ParseVisibility(sel.Visibility)
-		if err != nil {
-			return cli.Failf(cli.CodeInvalidArgs, "%v", err)
-		}
-		manual = &config.Manual{BaseURL: sel.BaseURL, KeepPrefix: sel.KeepPrefix, Visibility: string(vis)}
+		manual = &config.Manual{BaseURL: sel.BaseURL, KeepPrefix: sel.KeepPrefix}
 	default:
 		return cli.Failf(cli.CodeInvalidArgs, "unknown transport %q", sel.Name).
 			WithHint("tailscale or manual")

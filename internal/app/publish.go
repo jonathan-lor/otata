@@ -35,17 +35,21 @@ type PublishOptions struct {
 }
 
 type PublishResult struct {
-	Slug        string  `json:"slug"`
-	Title       string  `json:"title"`
-	Version     string  `json:"version"`
-	Build       string  `json:"build"`
-	BuildConfig string  `json:"config"`
-	SizeMB      float64 `json:"size_mb"`
-	Commit      string  `json:"commit,omitempty"`
-	Dirty       bool    `json:"dirty"`
-	InstallURL  string  `json:"install_url"`
-	IndexURL    string  `json:"index_url"`
-	Transport   string  `json:"transport"`
+	Slug        string            `json:"slug"`
+	Platform    artifact.Platform `json:"platform"`
+	Title       string            `json:"title"`
+	Version     string            `json:"version"`
+	Build       string            `json:"build"`
+	BuildConfig string            `json:"config"`
+	// SizeBytes is the unit the record and every listing use; SizeMB stays
+	// for the callers that read it before the two agreed.
+	SizeBytes  int64   `json:"size_bytes"`
+	SizeMB     float64 `json:"size_mb"`
+	Commit     string  `json:"commit,omitempty"`
+	Dirty      bool    `json:"dirty"`
+	InstallURL string  `json:"install_url"`
+	IndexURL   string  `json:"index_url"`
+	Transport  string  `json:"transport"`
 
 	// Signing is when this build stops being installable, for a caller that wants the dates.
 	Signing *appmeta.Signing `json:"signing,omitempty"`
@@ -489,8 +493,8 @@ func (a *App) Publish(opts PublishOptions, progress func(string)) (*PublishResul
 	published = true
 
 	return &PublishResult{
-		Slug: slug, Title: rec.Title, Version: rec.Version, Build: rec.Build,
-		BuildConfig: rec.Config, SizeMB: rec.SizeMB(), Commit: commit, Dirty: dirty,
+		Slug: slug, Platform: rec.Platform, Title: rec.Title, Version: rec.Version, Build: rec.Build,
+		BuildConfig: rec.Config, SizeBytes: rec.SizeBytes, SizeMB: rec.SizeMB(), Commit: commit, Dirty: dirty,
 		InstallURL: fmt.Sprintf("%s/%s/", strings.TrimSuffix(baseURL, "/"), slug),
 		IndexURL:   strings.TrimSuffix(baseURL, "/") + "/",
 		Transport:  tr.Name(),

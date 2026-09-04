@@ -5,6 +5,7 @@
 package builder
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/jonathan-lor/otata/internal/artifact"
@@ -32,7 +33,9 @@ type Builder interface {
 	// buildable thing actually lives. Cross-platform frameworks keep it in a
 	// subdirectory rather than at the repository root.
 	Detect(dir string) (bool, string)
-	Build(opts Options) (Result, error)
+	// Build produces the payload. Cancelling ctx stops the toolchain along
+	// with every process it started, and Build returns ctx.Err().
+	Build(ctx context.Context, opts Options) (Result, error)
 }
 
 func (o Options) logf(format string, args ...any) {

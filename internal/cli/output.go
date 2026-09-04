@@ -73,7 +73,8 @@ func Emit(command string, data Payload) {
 }
 
 // EmitError writes a failure and returns the process exit code to use:
-// 2 when the command was called wrongly, and 1 for everything else.
+// 2 when the command was called wrongly, 1 for everything else, unless the
+// failure carries its own (a signal's 128+N).
 // Text goes to stderr so a caller redirecting stdout still sees it.
 // JSON goes to stdout, where the caller is already parsing.
 func EmitError(command string, err error) int {
@@ -97,10 +98,7 @@ func EmitFailure(command string, data Payload, err error) int {
 			fmt.Fprintf(w, "  %s\n", Clean(f.Hint))
 		}
 	}
-	if f.Code == CodeInvalidArgs {
-		return 2
-	}
-	return 1
+	return f.exitStatus()
 }
 
 func writeJSON(w io.Writer, v any) {

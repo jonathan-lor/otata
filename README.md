@@ -92,7 +92,7 @@ $ otata status --json | jq .data.transport.base_url
 ```
 
 otata errors carry stable machine codes to make it easier for agents to branch off them.
-The exit code is 2 when the command was called wrongly and 1 when it ran and failed.
+The exit code is 2 when the command was called wrongly, 1 when it ran and failed, and 128 plus the signal number when a signal stopped it.
 The [CLI reference](docs/cli-reference.md#error-codes) also lists every code and what to do about it.
 
 ## Current Limitations

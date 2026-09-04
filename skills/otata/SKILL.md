@@ -34,7 +34,8 @@ otata publish --json
 Every command prints `{ok, command, data, error}`. On failure, `error` carries
 a stable `code`, a `message`, and often a `hint` and `details`. Branch on the
 code, never on message text. Exit 2 means the command was called wrongly;
-exit 1 means it ran and failed.
+exit 1 means it ran and failed; 128 plus a signal number means a signal
+stopped it.
 
 | `error.code` | What to do |
 | --- | --- |
@@ -45,12 +46,13 @@ exit 1 means it ran and failed.
 | `signing_failed` | Needs a human with Apple portal access; do not retry |
 | `free_profile` | iOS refuses free-team builds over the air; a paid team is the only fix. Do not retry |
 | `server_down` | `otata doctor --fix`; if autostart was never set up, `otata autostart on` once |
-| `transport_down` | Machine-side (e.g. Tailscale logged out); `otata doctor` names it |
+| `transport_down` | Machine-side (Tailscale logged out, or the route is public: Funnel on); `otata doctor` names it. Do not retry until it is fixed |
 | `no_transport` | Run the `otata transport use` command the hint names |
 | `slug_conflict` | Another path owns this name: pass `--slug`, or `otata forget <slug>` |
 | `build_in_progress` | Another publish holds the slug: wait; `doctor --fix` clears a marker whose process is gone |
 | `not_found` | Check `otata list` |
 | `unhealthy` | Read `data.checks`; each failing check names its remedy |
+| `interrupted` | A signal stopped the publish (your timeout, a dropped connection); the build was killed and nothing is half-done. Retry when ready |
 | `invalid_args` | Fix the arguments |
 | `internal` | Unclassified; read the message |
 

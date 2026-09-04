@@ -92,17 +92,38 @@ func (t *Tailscale) Available() bool {
 	return t.run("status") == nil
 }
 
-// run and output both time out. a wedged tailscaled must not hang the CLI
+// cliTimeout bounds every tailscale invocation. A wedged tailscaled must not
+// hang the CLI, whichever question was being asked of it.
+const cliTimeout = 10 * time.Second
+
 func (t *Tailscale) run(args ...string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), cliTimeout)
 	defer cancel()
 	return exec.CommandContext(ctx, t.bin, args...).Run()
 }
 
 func (t *Tailscale) output(args ...string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), cliTimeout)
 	defer cancel()
 	return exec.CommandContext(ctx, t.bin, args...).Output()
+}
+
+// combined is for the mutations, whose failure is explained by what the CLI
+// printed rather than by its exit status.
+func (t *Tailscale) combined(args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), cliTimeout)
+	defer cancel()
+	return exec.CommandContext(ctx, t.bin, args...).CombinedOutput()
+}
+
+// cliError describes a failed invocation by what it printed, or by the exec
+// error when it printed nothing: a timeout, or a binary that would not run.
+func cliError(what string, out []byte, err error) error {
+	msg := strings.TrimSpace(string(out))
+	if msg == "" {
+		msg = err.Error()
+	}
+	return fmt.Errorf("%s: %s", what, msg)
 }
 
 // serveConfig is the shape of `tailscale serve status --json`.
@@ -280,8 +301,8 @@ func (t *Tailscale) Ensure(port int) (string, error) {
 			args = append(args, "--set-path="+t.servePath)
 		}
 		args = append(args, target)
-		if out, err := exec.Command(t.bin, args...).CombinedOutput(); err != nil {
-			return "", fmt.Errorf("tailscale serve failed: %s", strings.TrimSpace(string(out)))
+		if out, err := t.combined(args...); err != nil {
+			return "", cliError("tailscale serve failed", out, err)
 		}
 		// The wiring just changed what `serve status` reports; drop the memo
 		// so a later question re-reads reality.
@@ -299,7 +320,9 @@ func (t *Tailscale) Status(port int) Status {
 	s.BaseURL = t.baseURL(t.hostname())
 	s.Ready = t.wired(port)
 	if !s.Ready {
+		// Verified but unwired is the one state Ensure mends.
 		s.Detail = "serve path not wired"
+		s.Repairable = true
 	}
 	return s
 }
@@ -310,8 +333,13 @@ func (t *Tailscale) Teardown() error {
 	if t.bin == "" || t.servePath == "" {
 		return nil
 	}
-	err := t.run("serve", fmt.Sprintf("--https=%d", servePort), "--set-path="+t.servePath, "off")
+	out, err := t.combined("serve", fmt.Sprintf("--https=%d", servePort), "--set-path="+t.servePath, "off")
 	// Whatever the outcome, the serve config may have changed underneath the memo.
 	t.serveRead = false
-	return err
+	if err != nil {
+		// The CLI's own words, not "exit status 1": this is printed as a
+		// warning by transport use, and the exit status explains nothing.
+		return cliError("tailscale serve off failed", out, err)
+	}
+	return nil
 }

@@ -57,3 +57,21 @@ func TestExplicitSelectionIsHonored(t *testing.T) {
 		t.Errorf("manual without base URL: err=%v", err)
 	}
 }
+
+// A public transport is refused because no access guard ships. That is a fact
+// about the machine's network, not about how the command was called, so the
+// code must be transport_down: invalid_args exits 2 and tells an agent to fix
+// the arguments, and there is no argument to fix.
+func TestPublicTransportIsRefusedAsTransportDown(t *testing.T) {
+	a := &App{Config: config.Config{Transport: "manual", Manual: &config.Manual{
+		BaseURL: "https://box.example.com/otata", Visibility: "public",
+	}}}
+	_, err := a.Transport()
+	f := cli.AsFailure(err)
+	if err == nil || f.Code != cli.CodeTransportDown {
+		t.Fatalf("public transport: err=%v, code=%q, want %q", err, f.Code, cli.CodeTransportDown)
+	}
+	if !strings.Contains(f.Message, "public") {
+		t.Errorf("the refusal does not say why: %q", f.Message)
+	}
+}

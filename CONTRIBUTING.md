@@ -44,6 +44,10 @@ go test ./...              # everything
 go test ./internal/server/ -v
 ```
 
+The suite passes on Linux as well as macOS. A test that shells out to a macOS
+tool (`ditto`, `plutil`, `pngcrush`) skips where the tool is absent rather
+than failing.
+
 Three `*_manual_test.go` files run against real local artifacts and **skip
 unless told where they are**, so the test suite stays hermetic on a fresh machine:
 

@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 )
 
 // agentSpec is what a supervisor's unit says it runs: the definition otata
@@ -21,13 +20,13 @@ type agentSpec struct {
 	Log       string
 }
 
-// agentMatches reports whether an installed agent serves this root and port and both must match exactly.
-// Every plist this binary writes embeds both, so one missing either is hand-made or foreign.
+// agentMatches reports whether an installed unit serves this root and port and both must match exactly.
+// Every unit this binary writes embeds both, so one missing either is hand-made or foreign.
 func agentMatches(spec agentSpec, root string, port int) bool {
 	return agentRootDigest(spec) == rootDigest(root) && spec.Port == port
 }
 
-// agentRootDigest identifies the store an installed agent serves. A plist
+// agentRootDigest identifies the store an installed unit serves. A unit
 // with no OTATA_ROOT runs against the default root, because that is what the
 // binary defaults to.
 func agentRootDigest(spec agentSpec) string {
@@ -37,27 +36,6 @@ func agentRootDigest(spec agentSpec) string {
 		root = filepath.Join(home, ".otata")
 	}
 	return rootDigest(root)
-}
-
-/*
-disabledIn reads `launchctl print-disabled` output and reports whether
-label is disabled there. It's the state the System Settings Login Items toggle
-and `launchctl disable` record.
-
-It's split from the fetching just so the parse is testable.
-Lines read `"label" => disabled` on current macOS and `"label" => true` on older ones.
-Both mean disabled, and a label absent from the list is enabled.
-*/
-func disabledIn(out, label string) bool {
-	for line := range strings.SplitSeq(out, "\n") {
-		line = strings.TrimSpace(line)
-		rest, found := strings.CutPrefix(line, `"`+label+`"`)
-		if !found {
-			continue
-		}
-		return strings.Contains(rest, "disabled") || strings.Contains(rest, "true")
-	}
-	return false
 }
 
 // filesDiffer reports whether two binaries differ in content, as cheaply as

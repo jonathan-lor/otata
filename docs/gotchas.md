@@ -24,7 +24,7 @@ These are some surprises you might hit.
   team. Settle it once with `flutter config --select-ios-signing-settings`,
   per project in Xcode's Signing & Capabilities, or `TEAM_ID` for a KMP
   template.
-- **Publishing is refused while Tailscale Funnel is on for `:443`.** Funnel is
+- **Selecting or publishing through Tailscale is refused while Funnel is on for `:443`.** Funnel is
   granted per listener instead of per path, so anything funnelled there makes
   every handler on that port reachable from the whole internet.
   No access guard ships yet, so otata refuses instead of serving your

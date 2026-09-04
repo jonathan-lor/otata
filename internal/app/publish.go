@@ -435,7 +435,7 @@ func (a *App) Publish(opts PublishOptions, progress func(string)) (*PublishResul
 		}
 	}
 
-	payloadName := sanitizeFilename(appName) + ".ipa"
+	payloadName := sanitizeFilename(appName) + platform.PayloadExt()
 	appDir := a.Store.AppDir(slug)
 	if err := os.MkdirAll(appDir, 0o755); err != nil {
 		return nil, cli.Failf(cli.CodeInternal, "%v", err)
@@ -475,7 +475,7 @@ func (a *App) Publish(opts PublishOptions, progress func(string)) (*PublishResul
 	if err := a.Store.PutRecord(rec); err != nil {
 		return nil, cli.Failf(cli.CodeInternal, "could not write the record: %v", err)
 	}
-	if err := a.Store.PruneStalePayloads(slug, payloadName); err != nil {
+	if err := a.Store.PruneStalePayloads(slug, payloadName, platform.PayloadExt()); err != nil {
 		return nil, cli.Failf(cli.CodeInternal, "could not prune old payloads: %v", err)
 	}
 

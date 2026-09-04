@@ -18,6 +18,20 @@ const (
 	Android Platform = "android"
 )
 
+// PayloadExt is the extension a platform's payload file carries.
+func (p Platform) PayloadExt() string {
+	if p == Android {
+		return ".apk"
+	}
+	return ".ipa"
+}
+
+// InstallsFromManifest reports whether the phone installs from a manifest
+// that names the payload, which is iOS's itms-services route, rather than
+// by fetching the payload itself, which is Android's. It decides whether a
+// manifest is written, linked and probed at all.
+func (p Platform) InstallsFromManifest() bool { return p == IOS }
+
 // Record is everything known about one published build. It is the unit stored
 // on disk and the unit rendered on the browser install surface.
 type Record struct {

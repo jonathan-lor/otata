@@ -48,11 +48,14 @@ func (a *App) Reindex(baseURL string) error {
 	// Per-app pages restate the build marker, so a bookmarked link is as honest
 	// as the index. Manifests are regenerated here too. They embed the base URL,
 	// so a new transport or serve path would otherwise leave every app pointing
-	// at a URL that no longer resolves.
+	// at a URL that no longer resolves. Only a platform that installs from a
+	// manifest gets one; an Android page links the payload itself.
 	for _, r := range records {
-		if err := a.Store.WriteFile(filepath.Join(a.Store.AppDir(r.Slug), "manifest.plist"),
-			Manifest(r, baseURL)); err != nil {
-			return err
+		if r.Platform.InstallsFromManifest() {
+			if err := a.Store.WriteFile(filepath.Join(a.Store.AppDir(r.Slug), "manifest.plist"),
+				Manifest(r, baseURL)); err != nil {
+				return err
+			}
 		}
 		var b *artifact.Building
 		if m, ok := building[r.Slug]; ok {

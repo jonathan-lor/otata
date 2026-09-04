@@ -3,6 +3,7 @@ package storage
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -142,6 +143,40 @@ func TestWriteFileIsAtomic(t *testing.T) {
 	info, _ := os.Stat(dest)
 	if info.Mode().Perm() != 0o644 {
 		t.Errorf("mode = %v, want 0644; a served file must not be 0600", info.Mode().Perm())
+	}
+}
+
+// Pruning removes the payloads a rename left behind and nothing else: not the
+// pages beside them, and not a file whose extension is another platform's,
+// since the extension is what marks a payload as this platform's.
+func TestPruneStalePayloadsRemovesOnlyThisPlatformsOldPayloads(t *testing.T) {
+	store, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := store.AppDir("app")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"New.ipa", "Old.ipa", "Older.ipa", "index.html", "manifest.plist", "icon.png", "Other.apk"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(name), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := store.PruneStalePayloads("app", "New.ipa", ".ipa"); err != nil {
+		t.Fatal(err)
+	}
+	entries, _ := os.ReadDir(dir)
+	var left []string
+	for _, e := range entries {
+		left = append(left, e.Name())
+	}
+	want := []string{"New.ipa", "Other.apk", "icon.png", "index.html", "manifest.plist"}
+	if !slices.Equal(left, want) {
+		t.Errorf("after pruning: %v, want %v", left, want)
+	}
+	if err := store.PruneStalePayloads("../x", "a", ".ipa"); err == nil {
+		t.Error("PruneStalePayloads accepted a traversal slug")
 	}
 }
 

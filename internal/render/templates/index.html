@@ -25,7 +25,7 @@
         {{if .HasIcon}}<img class="icon" src="{{.IconURL}}" alt="">{{else}}<div class="icon"></div>{{end}}
         <div>
           <h2>{{.Title}}</h2>
-          <div class="sub">{{.Version}} ({{.Build}}) &middot; {{.Config}}</div>
+          <div class="sub">{{.Version}} ({{.Build}}) &middot; {{.Config}} &middot; {{.PlatformLabel}}</div>
         </div>
         <span class="chevron">&rsaquo;</span>
       </a>
@@ -57,7 +57,8 @@
     <div class="card"><p class="empty">Nothing published yet. Run <code>otata publish</code> inside a project.</p></div>
 {{end}}
     <div class="note">
-      <p><strong>Developer Mode must be on</strong> for development-signed builds: Settings &rsaquo; Privacy &amp; Security &rsaquo; Developer Mode. Turning it on reboots the phone.</p>
+      {{if .AnyIOS}}<p><strong>Developer Mode must be on</strong> for development-signed builds: Settings &rsaquo; Privacy &amp; Security &rsaquo; Developer Mode. Turning it on reboots the phone.</p>{{end}}
+      {{if .AnyAndroid}}<p><strong>Android asks once to allow installs from this browser.</strong> Tap the downloaded file if nothing opens on its own.</p>{{end}}
       <p>If an install fails, delete any existing copy of that app first: a differently-signed build cannot replace it.</p>
     </div>
   </div>

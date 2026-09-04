@@ -138,6 +138,49 @@ func TestUseTransportRefusesAFunnelledTailnetBeforeChangingAnything(t *testing.T
 	}
 }
 
+// A tailnet that cannot serve at all (here, no MagicDNS name) is refused
+// with the obstacle named and nothing changed, rather than at the first
+// publish with whatever `tailscale serve` would have printed.
+func TestUseTransportRefusesAnUnusableTailnet(t *testing.T) {
+	bin, _ := transporttest.Stub(t, transporttest.ServeUnwired, `{"Self": {"DNSName": ""}, "CertDomains": []}`)
+	t.Setenv("PATH", filepath.Dir(bin))
+	a := freshApp(t)
+	err := a.UseTransport(TransportSelection{Name: "tailscale"}, quiet)
+	f := cli.AsFailure(err)
+	if err == nil || f.Code != cli.CodeTransportDown {
+		t.Fatalf("unusable tailnet: err=%v code=%q, want %q", err, f.Code, cli.CodeTransportDown)
+	}
+	if !strings.Contains(f.Message, "MagicDNS") {
+		t.Errorf("the obstacle is not named: %q", f.Message)
+	}
+	if _, err := os.Stat(config.Path(a.Root)); err == nil {
+		t.Error("a refused selection wrote the config")
+	}
+}
+
+// One command asks its transport several questions, and the answer is built
+// once: the tailscale CLI is read once per question per command, not once
+// per caller. Selecting the tailnet and then reporting status used to spawn
+// `serve status` four times and `status` twice.
+func TestTransportIsBuiltOncePerCommand(t *testing.T) {
+	calls := useStubTailscale(t, transporttest.ServeUnwired)
+	a := freshApp(t)
+	if err := a.UseTransport(TransportSelection{Name: "tailscale"}, quiet); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.Status(); err != nil {
+		t.Fatal(err)
+	}
+	// Once for the selection's own questions, once more after Ensure wired
+	// the path and dropped the memo, which is the one re-read that is right.
+	if n := transporttest.Calls(t, calls, "serve status --json"); n != 2 {
+		t.Errorf("serve status read %d times across the command, want 2", n)
+	}
+	if n := transporttest.Calls(t, calls, "status --json"); n != 1 {
+		t.Errorf("status read %d times across the command, want 1", n)
+	}
+}
+
 // The same tailnet without Funnel is selected: verified, wired, persisted,
 // and the pages regenerated against its MagicDNS name.
 func TestUseTransportSelectsATailnetThatCanServe(t *testing.T) {

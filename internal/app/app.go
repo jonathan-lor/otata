@@ -27,6 +27,14 @@ type App struct {
 	Root   string
 	Config config.Config
 	Store  *storage.Store
+
+	// transport is the selection Config describes, built once per process.
+	// A Tailscale value memoizes its CLI reads for its lifetime, so one
+	// instance per command is what keeps a command from asking tailscaled the
+	// same question once per caller. UseTransport replaces it, being the one
+	// thing that changes Config after Open.
+	transport    transport.Transport
+	transportSet bool
 }
 
 func DefaultRoot() string {
@@ -60,7 +68,18 @@ rule Transport() does.
 
 The selection is read from config and is always nil until 'otata transport use' is run.
 */
-func (a *App) selectTransport() transport.Transport { return transportFor(a.Config) }
+func (a *App) selectTransport() transport.Transport {
+	if !a.transportSet {
+		a.setTransport(transportFor(a.Config))
+	}
+	return a.transport
+}
+
+// setTransport installs a transport already built from Config, so what was
+// asked of it before it was installed is not asked again.
+func (a *App) setTransport(t transport.Transport) {
+	a.transport, a.transportSet = t, true
+}
 
 // transportFor is the one rule that turns a config into a transport. It is
 // separate from the App so a selection can be built from a config that is

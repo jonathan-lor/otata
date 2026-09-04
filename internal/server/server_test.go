@@ -30,6 +30,7 @@ func newTestServer(t *testing.T, incomingPrefix string) *Server {
 	write("myapp/index.html", "<h1>myapp</h1>")
 	write("myapp/manifest.plist", "<plist/>")
 	write("myapp/MyApp.ipa", strings.Repeat("A", 4096))
+	write("myapp/MyApp.apk", strings.Repeat("B", 64))
 
 	// The thing an attacker wants, one level above the served root.
 	if err := os.WriteFile(filepath.Join(base, "secret.json"), []byte(`{"token":"leaked"}`), 0o600); err != nil {
@@ -160,6 +161,8 @@ func TestMIMEOverrides(t *testing.T) {
 	want := map[string]string{
 		"/myapp/manifest.plist": "application/xml",
 		"/myapp/MyApp.ipa":      "application/octet-stream",
+		// Android's browser offers to install only under this type.
+		"/myapp/MyApp.apk": "application/vnd.android.package-archive",
 	}
 	for target, ct := range want {
 		if got := get(t, s, target).Header.Get("Content-Type"); got != ct {

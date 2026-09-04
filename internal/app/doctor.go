@@ -292,12 +292,19 @@ func (a *App) Doctor(fix bool) (*DoctorResult, error) {
 	*/
 	type urlProbe struct{ name, url string }
 	probes := []urlProbe{{"index", res.IndexURL}}
-	for _, r := range records {
+	// first[i] is where record i's probes start; they run to first[i+1].
+	// Records differ in how many they have: an iOS app installs from a
+	// manifest, which must answer too, while an Android app is its payload alone.
+	first := make([]int, len(records)+1)
+	for i, r := range records {
+		first[i] = len(probes)
 		base := strings.TrimSuffix(baseURL, "/") + "/" + r.Slug
-		probes = append(probes,
-			urlProbe{r.Slug + " manifest", base + "/manifest.plist"},
-			urlProbe{r.Slug + " payload", base + "/" + r.PayloadName})
+		if r.Platform.InstallsFromManifest() {
+			probes = append(probes, urlProbe{r.Slug + " manifest", base + "/manifest.plist"})
+		}
+		probes = append(probes, urlProbe{r.Slug + " payload", base + "/" + r.PayloadName})
 	}
+	first[len(records)] = len(probes)
 	probed := make([]Check, len(probes))
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, 8)
@@ -321,11 +328,12 @@ func (a *App) Doctor(fix bool) (*DoctorResult, error) {
 	wg.Wait()
 
 	// Assembled in the order the serial loop produced: the index, then each
-	// app's manifest, payload and signing.
+	// app's manifest (where it has one), payload and signing.
 	res.record(probed[0])
 	for i := range records {
-		res.record(probed[1+2*i])
-		res.record(probed[2+2*i])
+		for _, c := range probed[first[i]:first[i+1]] {
+			res.record(c)
+		}
 		if signingPresent[i] {
 			res.record(signing[i])
 		}
@@ -369,17 +377,19 @@ Ok is false when there is nothing to say about this payload.
 */
 func (a *App) checkSigning(r artifact.Record, held map[string]bool, heldErr error, now time.Time) (c Check, ok bool) {
 	name := r.Slug + " signing"
-	appFS, closer, _, err := appmeta.FromIPA(filepath.Join(a.Store.AppDir(r.Slug), r.PayloadName))
+	payload, err := appmeta.Open(r.Platform, filepath.Join(a.Store.AppDir(r.Slug), r.PayloadName))
 	if err != nil {
-		// The payload probe already reports a payload that cannot be read. Saying it twice would imply two problems.
+		// The payload probe already reports a payload that cannot be read, and
+		// saying it twice would imply two problems. A platform with no reader
+		// yet has nothing to say either.
 		return Check{}, false
 	}
-	defer closer()
+	defer payload.Close()
 
-	sig, err := appmeta.ReadSigning(appFS, held)
+	sig, err := payload.Signing(held)
 	switch {
-	// Neither is a fault. An Android build carries no profile, and a node that
-	// only serves has no business auditing what another machine signed.
+	// Neither is a fault. A stripped payload carries no profile, and a node
+	// that only serves has no business auditing what another machine signed.
 	case errors.Is(err, appmeta.ErrNoProfile), errors.Is(err, appmeta.ErrUnsupported):
 		return Check{}, false
 	case err != nil:

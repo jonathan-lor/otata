@@ -56,25 +56,21 @@ const (
 )
 
 // ErrNoProfile reports that the payload carries no provisioning profile at
-// all: an Android build, or an .ipa published through --artifact by a
-// toolchain that strips it. Nothing is wrong in that case, so callers say
-// nothing.
+// all: an .ipa published through --artifact by a toolchain that strips it.
+// Nothing is wrong in that case, so callers say nothing.
 var ErrNoProfile = errors.New("no embedded provisioning profile")
 
-// ErrUnsupported reports that this platform cannot read a profile. The tools
-// are macOS's, and so is every build that produces one: a Linux node serves
-// artifacts some other machine signed, and has no standing to audit them.
-var ErrUnsupported = errors.New("reading a provisioning profile needs macOS")
-
-// ReadSigning reports when the build in app stops being installable. held is
+// readSigning reports when the build in app stops being installable. held is
 // this machine's code-signing identities from HeldIdentities, handed in
 // rather than enumerated here: the keychain answer is a fact about the
 // machine, identical for every payload a command inspects, and enumerating it
 // per payload made doctor's cost scale with the number of published apps. A
 // nil map reads as holding none.
-func ReadSigning(app fs.FS, held map[string]bool) (Signing, error) {
+func readSigning(app fs.FS, held map[string]bool) (Signing, error) {
+	// The tools are macOS's: a Linux node serves artifacts some other machine
+	// signed, and has no standing to audit them.
 	if runtime.GOOS != "darwin" {
-		return Signing{}, ErrUnsupported
+		return Signing{}, fmt.Errorf("a provisioning profile %w: it needs macOS's security tool", ErrUnsupported)
 	}
 	raw, err := readLimited(app, "embedded.mobileprovision", maxProfileBytes)
 	if err != nil {
@@ -252,7 +248,7 @@ func fingerprint(cert *x509.Certificate) string {
 // inspects: the answer is per-machine, and the subprocess costs ~50ms.
 func HeldIdentities() (map[string]bool, error) {
 	if runtime.GOOS != "darwin" {
-		return nil, ErrUnsupported
+		return nil, fmt.Errorf("the keychain %w: it needs macOS's security tool", ErrUnsupported)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()

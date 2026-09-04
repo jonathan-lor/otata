@@ -4,6 +4,8 @@ import (
 	"os"
 	"testing"
 	"time"
+
+	"github.com/jonathan-lor/otata/internal/artifact"
 )
 
 // Reads the profile out of a real .ipa named by OTATA_TEST_IPA, which is the
@@ -18,17 +20,17 @@ func TestReadsRealSigning(t *testing.T) {
 	if _, err := os.Stat(ipa); err != nil {
 		t.Fatalf("OTATA_TEST_IPA: %v", err)
 	}
-	app, closer, _, err := FromIPA(ipa)
+	payload, err := Open(artifact.IOS, ipa)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer closer()
+	defer payload.Close()
 
 	held, err := HeldIdentities()
 	if err != nil {
 		t.Fatal(err)
 	}
-	sig, err := ReadSigning(app, held)
+	sig, err := payload.Signing(held)
 	if err != nil {
 		t.Fatal(err)
 	}

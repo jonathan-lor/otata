@@ -33,6 +33,51 @@ func TestInstallLinkSurvivesTemplateEscaping(t *testing.T) {
 	}
 }
 
+// An Android app installs by fetching the payload, so its link is the payload
+// itself with the same cache key, with no itms-services scheme and no manifest
+// anywhere on the page, and the page's advice is Android's rather than iOS's.
+func TestAndroidInstallsByDirectDownload(t *testing.T) {
+	r := rec()
+	r.Platform, r.PayloadName = artifact.Android, "MyApp.apk"
+	index, err := Index("host", "https://host/otata", []artifact.Record{r}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	app, err := App(r, "https://host/otata", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range map[string]string{"index": string(index), "app": string(app)} {
+		if !strings.Contains(body, `href="https://host/otata/myapp/MyApp.apk?v=abc1234-7"`) {
+			t.Errorf("the %s page does not link the payload with its cache key:\n%s", name, excerpt(body, "install"))
+		}
+		if strings.Contains(body, "itms-services") || strings.Contains(body, "manifest.plist") {
+			t.Errorf("the %s page refers to a manifest an Android app does not have", name)
+		}
+		if strings.Contains(body, "Developer Mode") {
+			t.Errorf("the %s page gives iOS advice for an Android app", name)
+		}
+		if !strings.Contains(body, "allow installs") {
+			t.Errorf("the %s page gives no Android install advice", name)
+		}
+		if !strings.Contains(stripScripts(body), "Android") {
+			t.Errorf("the %s page does not name the platform", name)
+		}
+	}
+
+	// A mixed index carries both platforms' advice, and an iOS-only one none of Android's.
+	ios := rec()
+	ios.Slug = "iosapp"
+	mixed, _ := Index("host", "https://host/otata", []artifact.Record{ios, r}, nil)
+	if !strings.Contains(string(mixed), "Developer Mode") || !strings.Contains(string(mixed), "allow installs") {
+		t.Error("a mixed index dropped one platform's advice")
+	}
+	only, _ := Index("host", "https://host/otata", []artifact.Record{ios}, nil)
+	if strings.Contains(string(only), "allow installs") {
+		t.Error("an iOS-only index carries Android advice")
+	}
+}
+
 // The page is a file. It is written once and read at any later moment, so it
 // carries the build's instant and the phone works out the age.
 func TestFreshnessIsStated(t *testing.T) {

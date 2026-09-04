@@ -21,8 +21,6 @@ import (
 // routes through xcodebuild too.
 type Xcode struct{}
 
-func (x *Xcode) Name() string { return "xcode" }
-
 // searchDirs covers the repository root plus the subdirectories cross-platform
 // frameworks use instead of assuming the project sits at top level. React
 // Native has no workspace at all until pods are installed.
@@ -31,18 +29,18 @@ func searchDirs(dir string) []string {
 }
 
 // Detect prefers a workspace because a project inside one generally cannot be built on its own.
-func (x *Xcode) Detect(dir string) (bool, string) {
+func (x *Xcode) Detect(dir string) (string, error) {
 	for _, d := range searchDirs(dir) {
 		if p := firstMatch(d, ".xcworkspace"); p != "" {
-			return true, p
+			return p, nil
 		}
 	}
 	for _, d := range searchDirs(dir) {
 		if p := firstMatch(d, ".xcodeproj"); p != "" {
-			return true, p
+			return p, nil
 		}
 	}
-	return false, ""
+	return "", fmt.Errorf("no .xcworkspace or .xcodeproj found here")
 }
 
 func firstMatch(dir, ext string) string {
@@ -376,10 +374,7 @@ func exists(path string) bool {
 }
 
 func (x *Xcode) Build(ctx context.Context, opts Options) (Result, error) {
-	ok, container := x.Detect(opts.Dir)
-	if !ok {
-		return Result{}, fmt.Errorf("no .xcworkspace or .xcodeproj found")
-	}
+	container := opts.Container
 	if missing := prerequisite(container); missing != nil {
 		return Result{}, missing
 	}

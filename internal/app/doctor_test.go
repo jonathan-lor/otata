@@ -222,6 +222,38 @@ func TestDoctorReportsChecksInOrderHoweverProbesLand(t *testing.T) {
 	}
 }
 
+// An Android app has no manifest to answer, so doctor probes its payload
+// alone, and the report still reads app by app whatever each one has.
+func TestDoctorProbesNoManifestForAndroid(t *testing.T) {
+	a := freshApp(t)
+	a.Config.ServePath, a.Config.Transport = "/otata", "manual"
+	// Port 1 answers nothing, so the URL probes fail fast without leaving the machine.
+	a.Config.Manual = &config.Manual{BaseURL: "https://127.0.0.1:1/otata", KeepPrefix: true, Visibility: "private"}
+	now := time.Now()
+	for _, r := range []artifact.Record{
+		{Slug: "droid", Platform: artifact.Android, PayloadName: "App.apk", BuiltAt: now},
+		{Slug: "iosapp", Platform: artifact.IOS, PayloadName: "App.ipa", BuiltAt: now.Add(-time.Hour)},
+	} {
+		if err := a.Store.PutRecord(r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	serveThisRoot(t, a)
+
+	res, err := a.Doctor(false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, c := range res.Checks {
+		names = append(names, c.Name)
+	}
+	want := []string{"index", "droid payload", "iosapp manifest", "iosapp payload"}
+	if !slices.Equal(names, want) {
+		t.Errorf("checks = %v, want %v", names, want)
+	}
+}
+
 // Under a keep-prefix manual transport every request reaching the server
 // carries the base URL's path, and the bare root is refused by design. Doctor's
 // "can the server serve the index" probe must therefore ask with the prefix.

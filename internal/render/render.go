@@ -34,7 +34,12 @@ type appView struct {
 	BundleID, Commit, Branch            string
 	Dirty, HasIcon                      bool
 	Size                                string
-	InstallURL                          template.URL
+	// Platform selects the per-platform parts of a page: the install note,
+	// and which of the two link shapes InstallURL took. PlatformLabel is how
+	// the page names it.
+	Platform      artifact.Platform
+	PlatformLabel string
+	InstallURL    template.URL
 	// Built is the build's timestamp, as the stamp the HTML carries. The page
 	// is a static file written at publish and read at any later time, so it
 	// can say WHEN the build happened but never how long ago that was.
@@ -73,6 +78,9 @@ type indexView struct {
 	Apps         []appView
 	BuildingOnly []pendingView
 	AnyBuilding  bool
+	// AnyIOS and AnyAndroid select which install notes the page carries:
+	// each platform's advice is noise on a page with none of its apps.
+	AnyIOS, AnyAndroid bool
 	// AnyInstallable is whether any row carries an install link, which is not the
 	// negation of AnyBuilding. A store can hold one app mid-build and another
 	// ready to tap. The latch script ships only where there is a link to latch.
@@ -100,6 +108,12 @@ func Index(host, baseURL string, records []artifact.Record, building map[string]
 		}
 		if !a.Building {
 			view.AnyInstallable = true
+		}
+		switch r.Platform {
+		case artifact.Android:
+			view.AnyAndroid = true
+		default:
+			view.AnyIOS = true
 		}
 		view.Apps = append(view.Apps, a)
 	}
@@ -131,11 +145,11 @@ func App(r artifact.Record, baseURL string, building *artifact.Building) ([]byte
 func viewFor(r artifact.Record, baseURL string) appView {
 	base := strings.TrimSuffix(baseURL, "/")
 	appBase := base + "/" + r.Slug
-	manifest := fmt.Sprintf("%s/manifest.plist?v=%s", appBase, r.CacheKey())
-	return appView{
+	v := appView{
 		Slug: r.Slug, Title: r.Title, Version: r.Version, Build: r.Build,
 		Config: r.Config, BundleID: r.BundleID, Commit: r.Commit, Branch: r.Branch,
 		Dirty: r.Dirty, HasIcon: r.HasIcon,
+		Platform: r.Platform, PlatformLabel: platformLabel(r.Platform),
 		Built: stampOf(r.BuiltAt),
 		Size:  Size(r.SizeMB()),
 		// Absolute like the manifest's URLs, and regenerated with them when the
@@ -147,11 +161,28 @@ func viewFor(r artifact.Record, baseURL string) appView {
 		PageURL:  appBase + "/",
 		IconURL:  appBase + "/icon.png",
 		IndexURL: base + "/",
-		// template.URL is required: html/template rejects unknown schemes in an
-		// href and would replace itms-services:// with #ZgotmplZ, breaking every
-		// install link silently.
-		InstallURL: template.URL("itms-services://?action=download-manifest&url=" + escape(manifest)),
 	}
+	// How the phone installs is the platform's. iOS is handed a manifest through
+	// the itms-services scheme; Android fetches the payload itself, so the link
+	// is the payload, with the same cache key so a new build is never served
+	// from cache. template.URL is required either way: html/template rejects
+	// unknown schemes in an href and would replace itms-services:// with
+	// #ZgotmplZ, breaking every install link silently.
+	if r.Platform.InstallsFromManifest() {
+		manifest := fmt.Sprintf("%s/manifest.plist?v=%s", appBase, r.CacheKey())
+		v.InstallURL = template.URL("itms-services://?action=download-manifest&url=" + escape(manifest))
+	} else {
+		v.InstallURL = template.URL(fmt.Sprintf("%s/%s?v=%s", appBase, r.PayloadName, r.CacheKey()))
+	}
+	return v
+}
+
+// platformLabel is how a page names a platform.
+func platformLabel(p artifact.Platform) string {
+	if p == artifact.Android {
+		return "Android"
+	}
+	return "iOS"
 }
 
 func execute(name string, data any) ([]byte, error) {

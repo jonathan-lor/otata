@@ -137,6 +137,11 @@ func (s *Store) Record(slug string) (artifact.Record, bool, error) {
 		return r, false, fmt.Errorf("record for %q is unreadable: %w", slug, err)
 	}
 	r.Slug = slug // the filename is authoritative
+	// A record with no platform is an iOS one: nothing else was ever written,
+	// and a hand-edited record must not lose its install link over it.
+	if r.Platform == "" {
+		r.Platform = artifact.IOS
+	}
 	return r, true, nil
 }
 
@@ -275,8 +280,9 @@ func (s *Store) Building() (map[string]artifact.Building, error) {
 }
 
 // PruneStalePayloads removes payloads left behind when an app is renamed, which
-// would otherwise accumulate silently inside the served directory.
-func (s *Store) PruneStalePayloads(slug, keep string) error {
+// would otherwise accumulate silently inside the served directory. ext is
+// what marks a file as a payload, and is the platform's to say.
+func (s *Store) PruneStalePayloads(slug, keep, ext string) error {
 	if err := ValidateSlug(slug); err != nil {
 		return err
 	}
@@ -289,7 +295,7 @@ func (s *Store) PruneStalePayloads(slug, keep string) error {
 		if name == keep {
 			continue
 		}
-		if strings.HasSuffix(name, ".ipa") {
+		if strings.HasSuffix(name, ext) {
 			_ = os.Remove(filepath.Join(s.AppDir(slug), name))
 		}
 	}

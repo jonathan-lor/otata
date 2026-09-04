@@ -1,11 +1,10 @@
-// Package appmeta reads identity, icon and signing out of a built iOS app.
-//
-// It works against an fs.FS rooted at the .app inside an .ipa, read in place
-// without unpacking it.
+// Package appmeta reads identity, icon and signing out of a built app: what
+// the install surface, the manifest and doctor need. Open picks the reader
+// for a platform's payload; the iOS one works against an fs.FS rooted at the
+// .app inside an .ipa, read in place without unpacking it.
 package appmeta
 
 import (
-	"archive/zip"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -34,26 +33,22 @@ const (
 	maxProfileCerts = 64
 )
 
+// Info is an app's identity, as the pages and the manifest state it.
 type Info struct {
+	// Name is the product's name on disk (MyApp, for Payload/MyApp.app), and
+	// is what the served payload is named after.
+	Name     string
 	BundleID string
 	Title    string
 	Version  string
 	Build    string
-	// IconName is the entry inside the bundle, empty if none was found.
-	IconName string
 }
 
-// Read pulls what the install surface and the manifest need.
-func Read(app fs.FS) (Info, error) {
-	raw, err := readLimited(app, "Info.plist", maxPlistBytes)
-	if err != nil {
-		return Info{}, fmt.Errorf("could not read Info.plist: %w", err)
-	}
-	plist, err := decodePlist(raw)
-	if err != nil {
-		return Info{}, err
-	}
+// infoFrom pulls what the install surface and the manifest need out of a
+// decoded Info.plist, with a stand-in for anything a malformed one lacks.
+func infoFrom(name string, plist map[string]any) Info {
 	info := Info{
+		Name:     name,
 		BundleID: str(plist, "CFBundleIdentifier"),
 		Version:  str(plist, "CFBundleShortVersionString"),
 		Build:    str(plist, "CFBundleVersion"),
@@ -70,14 +65,16 @@ func Read(app fs.FS) (Info, error) {
 	if info.Build == "" {
 		info.Build = "0"
 	}
-	info.IconName = findIcon(app, plist)
-	return info, nil
+	return info
 }
 
 // decodePlist converts a plist of any encoding to JSON and parses that.
 // Info.plist in a built app is binary, and Go has no stdlib plist reader.
 // plutil ships with macOS, which iOS builds already require.
 func decodePlist(raw []byte) (map[string]any, error) {
+	if _, err := exec.LookPath("plutil"); err != nil {
+		return nil, fmt.Errorf("Info.plist %w: it needs plutil, which macOS ships", ErrUnsupported)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "plutil", "-convert", "json", "-o", "-", "-")
@@ -86,7 +83,7 @@ func decodePlist(raw []byte) (map[string]any, error) {
 	cmd.Stdout = &out
 	cmd.Stderr = &errBuf
 	if err := cmd.Run(); err != nil {
-		// Include the exec error: when plutil is missing entirely, stderr is empty and the message would otherwise end at the colon.
+		// Include the exec error: when plutil fails without a word, stderr is empty and the message would otherwise end at the colon.
 		return nil, fmt.Errorf("could not decode Info.plist: %v %s", err, strings.TrimSpace(errBuf.String()))
 	}
 	var parsed map[string]any
@@ -188,35 +185,7 @@ func findIcon(app fs.FS, plist map[string]any) string {
 	return found[0].name
 }
 
-// ---------- sources ----------
-
-// FromIPA roots an FS at the Payload/*.app inside an .ipa, without unpacking
-// it. Returned closer must be called.
-func FromIPA(ipaPath string) (fs.FS, func() error, string, error) {
-	zr, err := zip.OpenReader(ipaPath)
-	if err != nil {
-		return nil, nil, "", fmt.Errorf("could not read %s: %w", ipaPath, err)
-	}
-	appDir := ""
-	for _, f := range zr.File {
-		parts := strings.Split(f.Name, "/")
-		if len(parts) >= 2 && parts[0] == "Payload" && strings.HasSuffix(parts[1], ".app") {
-			appDir = "Payload/" + parts[1]
-			break
-		}
-	}
-	if appDir == "" {
-		zr.Close()
-		return nil, nil, "", fmt.Errorf("no Payload/*.app inside %s", ipaPath)
-	}
-	sub, err := fs.Sub(zr, appDir)
-	if err != nil {
-		zr.Close()
-		return nil, nil, "", err
-	}
-	name := strings.TrimSuffix(path.Base(appDir), ".app")
-	return sub, zr.Close, name, nil
-}
+// ---------- icons ----------
 
 // pngSignature is the 8-byte header every PNG starts with.
 var pngSignature = []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}
@@ -240,12 +209,12 @@ func pngFirstChunk(path string) string {
 	return string(head[12:16])
 }
 
-// NormalizeIcon rewrites the icon at path into standard PNG when Xcode's
+// normalizeIcon rewrites the icon at path into standard PNG when Xcode's
 // packaging has applied its iphone optimization (a CgBI chunk, byte-swapped
 // channels, premultiplied alpha). That form decodes only in iOS's own
 // frameworks. The revert runs on the Mac at publish, because pngcrush ships inside Xcode;
 // an error means the caller should ship no icon, since the placeholder renders and a crushed PNG does not.
-func NormalizeIcon(path string) error {
+func normalizeIcon(path string) error {
 	if pngFirstChunk(path) != "CgBI" {
 		return nil // standard PNG, or not a PNG at all; nothing to revert
 	}
@@ -268,8 +237,8 @@ func NormalizeIcon(path string) error {
 	return os.Rename(out, path)
 }
 
-// CopyOut writes one file from the bundle to dest, bounded.
-func CopyOut(app fs.FS, name, dest string) error {
+// copyOut writes one file from the bundle to dest, bounded.
+func copyOut(app fs.FS, name, dest string) error {
 	src, err := app.Open(name)
 	if err != nil {
 		return err

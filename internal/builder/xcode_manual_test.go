@@ -21,9 +21,9 @@ func TestResolvesRealProject(t *testing.T) {
 		t.Fatalf("OTATA_TEST_PROJECT: %v", err)
 	}
 	x := &Xcode{}
-	ok, container := x.Detect(dir)
-	if !ok {
-		t.Fatal("did not detect the project")
+	container, err := x.Detect(dir)
+	if err != nil {
+		t.Fatalf("did not detect the project: %v", err)
 	}
 	t.Logf("container = %s", filepath.Base(container))
 

@@ -28,6 +28,10 @@ type PublishOptions struct {
 	Slug     string
 	Artifact string
 	Builder  string // "" or "build" for the incremental build path, "archive" for the archive+export path
+	// Platform is what to build for; empty is iOS. One publish is one
+	// platform: a cross-platform project publishes once per platform, each
+	// under its own slug. No flag selects another platform yet.
+	Platform artifact.Platform
 }
 
 type PublishResult struct {
@@ -232,32 +236,34 @@ func (a *App) Publish(opts PublishOptions, progress func(string)) (*PublishResul
 		abs = resolved
 	}
 
-	var b builder.Builder = &builder.XcodeBuild{}
-	switch opts.Builder {
-	case "", "build":
-	case "archive":
-		b = &builder.Xcode{}
-	default:
-		return nil, cli.Fail(cli.CodeInvalidArgs, fmt.Sprintf("unknown builder %q", opts.Builder)).
-			WithHint("--builder takes archive or build")
+	platform := opts.Platform
+	if platform == "" {
+		platform = artifact.IOS
 	}
-	if opts.Artifact != "" {
-		b = &builder.Passthrough{Path: opts.Artifact}
-	} else if ok, _ := b.Detect(abs); !ok {
-		return nil, cli.Fail(cli.CodeNoProject, "no .xcworkspace or .xcodeproj found here").
-			WithHint("run inside a project, or pass --artifact <path to .ipa>")
+	// The builder is chosen and the project found before anything is claimed
+	// or wired, so "nothing to build here" arrives at once. A prebuilt
+	// payload skips both: there is nothing to detect.
+	b, err := builder.For(platform, opts.Builder)
+	if err != nil {
+		return nil, cli.Failf(cli.CodeInvalidArgs, "%v", err)
 	}
-
+	container := ""
+	if opts.Artifact == "" {
+		if container, err = b.Detect(abs); err != nil {
+			return nil, cli.Failf(cli.CodeNoProject, "%v", err).
+				WithHint("run inside a project, or pass --artifact <path to a built payload>")
+		}
+	}
 	slug := opts.Slug
 	if slug == "" {
-		slug = Slugify(filepath.Base(abs))
+		slug = DefaultSlug(abs, platform)
 	}
 	// An explicit --slug used to bypass Slugify entirely and reach filepath.Join.
 	if err := storage.ValidateSlug(slug); err != nil {
 		return nil, cli.Failf(cli.CodeInvalidArgs, "%v", err).
 			WithHint("pass --slug with a simple name like my-app")
 	}
-	if err := a.CheckSlug(slug, abs); err != nil {
+	if err := a.CheckSlug(slug, abs, platform); err != nil {
 		return nil, err
 	}
 
@@ -309,11 +315,16 @@ func (a *App) Publish(opts PublishOptions, progress func(string)) (*PublishResul
 		_ = a.Reindex(baseURL)
 	}()
 
-	built, err := b.Build(ctx, builder.Options{
-		Dir: abs, Config: config, Scheme: opts.Scheme,
-		Work: filepath.Join(a.Root, "build", slug),
-		Log:  progress,
-	})
+	var built builder.Result
+	if opts.Artifact != "" {
+		built, err = builder.Prebuilt(opts.Artifact)
+	} else {
+		built, err = b.Build(ctx, builder.Options{
+			Container: container, Config: config, Scheme: opts.Scheme,
+			Work: filepath.Join(a.Root, "build", slug),
+			Log:  progress,
+		})
+	}
 	// Asked before the build's own error is read: a build the caller stopped
 	// reports the stop, not whatever a killed xcodebuild left in its log.
 	// The deferred cleanup above clears the marker on the way out.
@@ -365,15 +376,21 @@ func (a *App) Publish(opts PublishOptions, progress func(string)) (*PublishResul
 		}
 		return nil, f
 	}
+	// The slug was checked against the platform asked for, so the payload had
+	// better be that platform's, or the record and the check disagree.
+	if built.Platform != platform {
+		return nil, cli.Failf(cli.CodeInternal, "asked for an %s build and got an %s payload", platform, built.Platform)
+	}
 
 	// Metadata always comes from the payload, never the build tree, so every
-	// builder converges on one path.
-	appFS, closer, appName, err := appmeta.FromIPA(built.PayloadPath)
+	// builder converges on one path, and the platform's reader is the only
+	// thing that knows how the payload is packaged.
+	payload, err := appmeta.Open(platform, built.PayloadPath)
 	if err != nil {
 		return nil, cli.Failf(cli.CodeBuildFailed, "%v", err)
 	}
-	defer closer()
-	info, err := appmeta.Read(appFS)
+	defer payload.Close()
+	info, err := payload.Info()
 	if err != nil {
 		return nil, cli.Failf(cli.CodeBuildFailed, "%v", err)
 	}
@@ -393,7 +410,7 @@ func (a *App) Publish(opts PublishOptions, progress func(string)) (*PublishResul
 	// carries no readable one: an --artifact publish of something stripped, or
 	// a platform that has none.
 	team := ""
-	if s, err := appmeta.ReadSigning(appFS, held); err == nil {
+	if s, err := payload.Signing(held); err == nil {
 		now := time.Now()
 		team = s.Team
 		// Refuse before staging anything. The build is fine and signs fine, but what
@@ -422,7 +439,7 @@ func (a *App) Publish(opts PublishOptions, progress func(string)) (*PublishResul
 		}
 	}
 
-	payloadName := sanitizeFilename(appName) + ".ipa"
+	payloadName := sanitizeFilename(info.Name) + platform.PayloadExt()
 	appDir := a.Store.AppDir(slug)
 	if err := os.MkdirAll(appDir, 0o755); err != nil {
 		return nil, cli.Failf(cli.CodeInternal, "%v", err)
@@ -431,20 +448,17 @@ func (a *App) Publish(opts PublishOptions, progress func(string)) (*PublishResul
 		return nil, cli.Failf(cli.CodeInternal, "could not stage the payload: %v", err)
 	}
 
+	// The icon ships only when the reader could produce a standard PNG; no
+	// icon is a clean placeholder on the page where a broken image is not.
 	hasIcon := false
-	if info.IconName != "" {
-		tmpIcon := filepath.Join(a.Store.Tmp(), "icon-"+slug+".png")
-		// The normalize must succeed for the icon to ship: Xcode's packaging
-		// rewrites PNGs into a form only iOS decodes, and a crushed icon is a
-		// broken image on the page where no icon is a clean placeholder.
-		if appmeta.CopyOut(appFS, info.IconName, tmpIcon) == nil && appmeta.NormalizeIcon(tmpIcon) == nil {
-			if a.Store.CopyInto(filepath.Join(appDir, "icon.png"), tmpIcon) == nil {
-				hasIcon = true
-			}
+	tmpIcon := filepath.Join(a.Store.Tmp(), "icon-"+slug+".png")
+	if payload.Icon(tmpIcon) == nil {
+		if a.Store.CopyInto(filepath.Join(appDir, "icon.png"), tmpIcon) == nil {
+			hasIcon = true
 		}
-		// Remove unconditionally because a failed CopyOut may have left a partial file.
-		_ = os.Remove(tmpIcon)
 	}
+	// Remove unconditionally because a failed write may have left a partial file.
+	_ = os.Remove(tmpIcon)
 
 	stat, err := os.Stat(filepath.Join(appDir, payloadName))
 	if err != nil {
@@ -462,7 +476,7 @@ func (a *App) Publish(opts PublishOptions, progress func(string)) (*PublishResul
 	if err := a.Store.PutRecord(rec); err != nil {
 		return nil, cli.Failf(cli.CodeInternal, "could not write the record: %v", err)
 	}
-	if err := a.Store.PruneStalePayloads(slug, payloadName); err != nil {
+	if err := a.Store.PruneStalePayloads(slug, payloadName, platform.PayloadExt()); err != nil {
 		return nil, cli.Failf(cli.CodeInternal, "could not prune old payloads: %v", err)
 	}
 

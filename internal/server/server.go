@@ -17,11 +17,14 @@ import (
 	"github.com/jonathan-lor/otata/internal/version"
 )
 
-// Extensions no system MIME table knows, and which iOS is strict about.
-// The install daemon rejects a manifest served as octet-stream.
+// Extensions no system MIME table knows, and which the phones are strict
+// about. iOS's install daemon rejects a manifest served as octet-stream, and
+// Android's browser offers to install an APK only under its own type; as
+// octet-stream it is just a download.
 var mimeOverrides = map[string]string{
 	".ipa":   "application/octet-stream",
 	".plist": "application/xml",
+	".apk":   "application/vnd.android.package-archive",
 }
 
 type Server struct {

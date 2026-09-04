@@ -24,6 +24,8 @@ const usage = `otata installs iOS builds on your phone over your own network
   otata start | stop | restart  server lifecycle
   otata autostart on|off        run the server under launchd
   otata transport use <name>    tailscale | manual (--base-url, --keep-prefix)
+  otata version                 print the version
+  otata help                    this summary
 
 Options:
   --json                        machine-readable output, for an agent to parse

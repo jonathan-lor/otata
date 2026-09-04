@@ -238,8 +238,22 @@ func Slugify(name string) string {
 	return strings.Trim(s, "-")
 }
 
-// CheckSlug refuses to let one project overwrite another's published app.
-func (a *App) CheckSlug(slug, projectPath string) error {
+// DefaultSlug is the name a project publishes under when --slug is absent:
+// its directory name, and for every platform but iOS that name with the
+// platform appended, so a cross-platform project's builds sit side by side
+// (myapp and myapp-android) instead of overwriting each other. iOS keeps the
+// bare name: it is the default platform, and every existing store uses it.
+func DefaultSlug(dir string, platform artifact.Platform) string {
+	slug := Slugify(filepath.Base(dir))
+	if platform != artifact.IOS {
+		slug = Slugify(slug + "-" + string(platform))
+	}
+	return slug
+}
+
+// CheckSlug refuses to let one publish overwrite another's app: a different
+// project's, or the same project's build for another platform.
+func (a *App) CheckSlug(slug, projectPath string, platform artifact.Platform) error {
 	rec, ok, err := a.Store.Record(slug)
 	if err != nil {
 		// Failing open here lets a second project silently overwrite the first's
@@ -255,6 +269,15 @@ func (a *App) CheckSlug(slug, projectPath string) error {
 		return cli.Failf(cli.CodeSlugConflict,
 			"slug %q already belongs to %s", slug, rec.ProjectPath).
 			WithHint("pass --slug to publish under a different name")
+	}
+	// One slug is one payload. The same project's build for another platform
+	// belongs beside this one, under the name DefaultSlug gives it, not in
+	// its place; an explicit --slug shared by both would otherwise make each
+	// publish silently replace the other's.
+	if rec.Platform != "" && rec.Platform != platform {
+		return cli.Failf(cli.CodeSlugConflict,
+			"slug %q holds this project's %s build; this is an %s build", slug, rec.Platform, platform).
+			WithHint(fmt.Sprintf("omit --slug to publish it as %q, or pass another name", DefaultSlug(projectPath, platform)))
 	}
 	return nil
 }

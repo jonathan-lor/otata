@@ -28,6 +28,10 @@ type PublishOptions struct {
 	Slug     string
 	Artifact string
 	Builder  string // "" or "build" for the incremental build path, "archive" for the archive+export path
+	// Platform is what to build for; empty is iOS. One publish is one
+	// platform: a cross-platform project publishes once per platform, each
+	// under its own slug. No flag selects another platform yet.
+	Platform artifact.Platform
 }
 
 type PublishResult struct {
@@ -248,16 +252,20 @@ func (a *App) Publish(opts PublishOptions, progress func(string)) (*PublishResul
 			WithHint("run inside a project, or pass --artifact <path to .ipa>")
 	}
 
+	platform := opts.Platform
+	if platform == "" {
+		platform = artifact.IOS
+	}
 	slug := opts.Slug
 	if slug == "" {
-		slug = Slugify(filepath.Base(abs))
+		slug = DefaultSlug(abs, platform)
 	}
 	// An explicit --slug used to bypass Slugify entirely and reach filepath.Join.
 	if err := storage.ValidateSlug(slug); err != nil {
 		return nil, cli.Failf(cli.CodeInvalidArgs, "%v", err).
 			WithHint("pass --slug with a simple name like my-app")
 	}
-	if err := a.CheckSlug(slug, abs); err != nil {
+	if err := a.CheckSlug(slug, abs, platform); err != nil {
 		return nil, err
 	}
 
@@ -364,6 +372,11 @@ func (a *App) Publish(opts PublishOptions, progress func(string)) (*PublishResul
 			f = f.WithHint("see " + built.LogPath).WithDetails(map[string]any{"log": built.LogPath})
 		}
 		return nil, f
+	}
+	// The slug was checked against the platform asked for, so the payload had
+	// better be that platform's, or the record and the check disagree.
+	if built.Platform != platform {
+		return nil, cli.Failf(cli.CodeInternal, "asked for an %s build and got an %s payload", platform, built.Platform)
 	}
 
 	// Metadata always comes from the payload, never the build tree, so every

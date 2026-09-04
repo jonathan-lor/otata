@@ -7,18 +7,16 @@ import (
 	"time"
 )
 
-// Platform exists as a field so Android support can be added later
+// Platform is what a payload runs on. It is the switch for everything that
+// differs between them: how a build is packaged, how the phone installs it,
+// and what the pages and manifests say. One record holds one platform's
+// payload; a cross-platform project publishes one record per platform.
 type Platform string
 
-/*
 const (
-
-	IOS Platform = "ios"
+	IOS     Platform = "ios"
 	Android Platform = "android"
-
 )
-*/
-const IOS Platform = "ios"
 
 // Record is everything known about one published build. It is the unit stored
 // on disk and the unit rendered on the browser install surface.

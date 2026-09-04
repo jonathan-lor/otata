@@ -62,7 +62,7 @@ func TestPNGFirstChunk(t *testing.T) {
 func TestNormalizeIconLeavesStandardPNGAlone(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "icon.png")
 	orig := writeTestPNG(t, path)
-	if err := NormalizeIcon(path); err != nil {
+	if err := normalizeIcon(path); err != nil {
 		t.Fatal(err)
 	}
 	got, err := os.ReadFile(path)
@@ -93,7 +93,7 @@ func TestNormalizeIconRevertsAppleOptimization(t *testing.T) {
 		t.Fatalf("fixture was not crushed: first chunk %q", got)
 	}
 
-	if err := NormalizeIcon(crushed); err != nil {
+	if err := normalizeIcon(crushed); err != nil {
 		t.Fatal(err)
 	}
 	f, err := os.Open(crushed)

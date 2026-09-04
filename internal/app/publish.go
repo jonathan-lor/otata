@@ -380,13 +380,14 @@ func (a *App) Publish(opts PublishOptions, progress func(string)) (*PublishResul
 	}
 
 	// Metadata always comes from the payload, never the build tree, so every
-	// builder converges on one path.
-	appFS, closer, appName, err := appmeta.FromIPA(built.PayloadPath)
+	// builder converges on one path, and the platform's reader is the only
+	// thing that knows how the payload is packaged.
+	payload, err := appmeta.Open(platform, built.PayloadPath)
 	if err != nil {
 		return nil, cli.Failf(cli.CodeBuildFailed, "%v", err)
 	}
-	defer closer()
-	info, err := appmeta.Read(appFS)
+	defer payload.Close()
+	info, err := payload.Info()
 	if err != nil {
 		return nil, cli.Failf(cli.CodeBuildFailed, "%v", err)
 	}
@@ -406,7 +407,7 @@ func (a *App) Publish(opts PublishOptions, progress func(string)) (*PublishResul
 	// carries no readable one: an --artifact publish of something stripped, or
 	// a platform that has none.
 	team := ""
-	if s, err := appmeta.ReadSigning(appFS, held); err == nil {
+	if s, err := payload.Signing(held); err == nil {
 		now := time.Now()
 		team = s.Team
 		// Refuse before staging anything. The build is fine and signs fine, but what
@@ -435,7 +436,7 @@ func (a *App) Publish(opts PublishOptions, progress func(string)) (*PublishResul
 		}
 	}
 
-	payloadName := sanitizeFilename(appName) + platform.PayloadExt()
+	payloadName := sanitizeFilename(info.Name) + platform.PayloadExt()
 	appDir := a.Store.AppDir(slug)
 	if err := os.MkdirAll(appDir, 0o755); err != nil {
 		return nil, cli.Failf(cli.CodeInternal, "%v", err)
@@ -444,20 +445,17 @@ func (a *App) Publish(opts PublishOptions, progress func(string)) (*PublishResul
 		return nil, cli.Failf(cli.CodeInternal, "could not stage the payload: %v", err)
 	}
 
+	// The icon ships only when the reader could produce a standard PNG; no
+	// icon is a clean placeholder on the page where a broken image is not.
 	hasIcon := false
-	if info.IconName != "" {
-		tmpIcon := filepath.Join(a.Store.Tmp(), "icon-"+slug+".png")
-		// The normalize must succeed for the icon to ship: Xcode's packaging
-		// rewrites PNGs into a form only iOS decodes, and a crushed icon is a
-		// broken image on the page where no icon is a clean placeholder.
-		if appmeta.CopyOut(appFS, info.IconName, tmpIcon) == nil && appmeta.NormalizeIcon(tmpIcon) == nil {
-			if a.Store.CopyInto(filepath.Join(appDir, "icon.png"), tmpIcon) == nil {
-				hasIcon = true
-			}
+	tmpIcon := filepath.Join(a.Store.Tmp(), "icon-"+slug+".png")
+	if payload.Icon(tmpIcon) == nil {
+		if a.Store.CopyInto(filepath.Join(appDir, "icon.png"), tmpIcon) == nil {
+			hasIcon = true
 		}
-		// Remove unconditionally because a failed CopyOut may have left a partial file.
-		_ = os.Remove(tmpIcon)
 	}
+	// Remove unconditionally because a failed write may have left a partial file.
+	_ = os.Remove(tmpIcon)
 
 	stat, err := os.Stat(filepath.Join(appDir, payloadName))
 	if err != nil {

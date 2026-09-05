@@ -53,7 +53,8 @@ type PublishResult struct {
 	IndexURL   string  `json:"index_url"`
 	Transport  string  `json:"transport"`
 
-	// Signing is when this build stops being installable, for a caller that wants the dates.
+	// Signing is who signed this build and, on iOS, when it stops being
+	// installable, for a caller that wants the identity or the dates.
 	Signing *appmeta.Signing `json:"signing,omitempty"`
 	// SigningWarning is set only when that deadline is close enough to act on,
 	// so an regular publish says nothing about signing.
@@ -427,19 +428,34 @@ func (a *App) Publish(opts PublishOptions, progress func(string)) (*PublishResul
 	// would surface too late. A read failure is not one. It says nothing about
 	// whether the build works, and doctor will say so at leisure.
 	//
-	// The keychain is enumerated up front and handed in. The held identities
-	// are a fact about the machine, not the payload, and are what ReadSigning
-	// joins the profile's certificates against.
-	held, heldErr := appmeta.HeldIdentities()
+	// The keychain is enumerated up front and handed in, for iOS alone. The
+	// held identities are a fact about the machine, not the payload, and are
+	// what the profile's certificates are joined against to find the deadline;
+	// an APK's signer is read off the APK itself, and no keychain is asked.
+	var held map[string]bool
+	var heldErr error
+	if platform == artifact.IOS {
+		held, heldErr = appmeta.HeldIdentities()
+	}
 	var signing *appmeta.Signing
 	var signingWarning string
-	// Team is identity read off the profile. It stays empty when the payload
-	// carries no readable one: an --artifact publish of something stripped, or
-	// a platform that has none.
-	team := ""
-	if s, err := payload.Signing(held); err == nil {
+	// Identity is read off the payload's signature, as each platform states
+	// it: the team off a profile, the signer off an APK's certificate. Both
+	// stay empty when the payload carries nothing readable, as an --artifact
+	// publish of something stripped.
+	team, signer := "", ""
+	s, err := payload.Signing(held)
+	// An APK that does not verify will not install, so it is refused before
+	// staging, as a free profile is below: what a release build with no
+	// signing config produces, which the debug keystore or a signingConfig
+	// mends. Nothing else about how it was built is wrong.
+	if errors.Is(err, appmeta.ErrUnsigned) {
+		return nil, cli.Failf(cli.CodeSigningFailed, "%v; Android refuses to install it", err).
+			WithHint("build with --config Debug, which signs with the debug keystore, or add a release signingConfig to the module's build script")
+	}
+	if err == nil {
 		now := time.Now()
-		team = s.Team
+		team, signer = s.Team, s.SignerName()
 		// Refuse before staging anything. The build is fine and signs fine, but what
 		// it cannot do is install by the only route otata has, so publishing
 		// would put a URL on the index that iOS declines on every tap.
@@ -457,7 +473,8 @@ func (a *App) Publish(opts PublishOptions, progress func(string)) (*PublishResul
 		// The deadline is the profile joined against the held certificates.
 		// With the keychain unlistable the join is unverifiable, and a deadline
 		// that may overstate reality is worse than none, so none is claimed.
-		// otata doctor warns about the same payload at leisure.
+		// otata doctor warns about the same payload at leisure. Signing with
+		// no deadline has nothing to warn about, and is reported as it is.
 		if heldErr == nil {
 			signing = &s
 			if s.Expired(now) || s.Within(signingWindow, now) {
@@ -472,13 +489,18 @@ func (a *App) Publish(opts PublishOptions, progress func(string)) (*PublishResul
 		return nil, cli.Failf(cli.CodeInternal, "could not stage the payload: %v", err)
 	}
 
-	// The icon ships only when the reader could produce a standard PNG; no
-	// icon is a clean placeholder on the page where a broken image is not.
-	hasIcon := false
+	// The icon ships only when the reader could produce one a browser
+	// decodes; no icon is a clean placeholder on the page where a broken image
+	// is not. The reader says which format it wrote, and the file is served
+	// under a name that says so, because nothing here converts.
+	// The scratch file keeps a .png name whatever the reader writes into it:
+	// nothing serves it by name, and the iOS reader hands the path to
+	// pngcrush, which has only ever been given one that ends in .png.
+	iconName := ""
 	tmpIcon := a.Store.TmpFile("icon-" + slug + ".png")
-	if payload.Icon(tmpIcon) == nil {
-		if a.Store.CopyInto(a.Store.IconPath(slug), tmpIcon) == nil {
-			hasIcon = true
+	if ext, err := payload.Icon(tmpIcon); err == nil {
+		if a.Store.CopyInto(a.Store.IconPath(slug, "icon"+ext), tmpIcon) == nil {
+			iconName = "icon" + ext
 		}
 	}
 	// Remove unconditionally because a failed write may have left a partial file.
@@ -489,11 +511,11 @@ func (a *App) Publish(opts PublishOptions, progress func(string)) (*PublishResul
 		return nil, cli.Failf(cli.CodeInternal, "could not stat the staged payload: %v", err)
 	}
 	rec := artifact.Record{
-		Slug: slug, Platform: built.Platform, Title: info.Title, BundleID: info.BundleID, Team: team,
+		Slug: slug, Platform: built.Platform, Title: info.Title, BundleID: info.BundleID, Team: team, Signer: signer,
 		Version: info.Version, Build: info.Build, Config: built.Config,
 		Commit: commit, Branch: branch, Dirty: dirty,
 		BuiltAt: time.Now(), PayloadName: payloadName,
-		SizeBytes: stat.Size(), HasIcon: hasIcon, ProjectPath: abs,
+		SizeBytes: stat.Size(), HasIcon: iconName != "", IconName: iconName, ProjectPath: abs,
 	}
 	// The record goes down BEFORE anything derived from it, and before pruning.
 	// Pruning first could delete the payload the on-disk record still names.
@@ -502,6 +524,9 @@ func (a *App) Publish(opts PublishOptions, progress func(string)) (*PublishResul
 	}
 	if err := a.Store.PruneStalePayloads(slug, payloadName, platform.PayloadExt()); err != nil {
 		return nil, cli.Failf(cli.CodeInternal, "could not prune old payloads: %v", err)
+	}
+	if err := a.Store.PruneStaleIcons(slug, iconName); err != nil {
+		return nil, cli.Failf(cli.CodeInternal, "could not prune old icons: %v", err)
 	}
 
 	// Clear the marker, then render once. A single Reindex produces the final

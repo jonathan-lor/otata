@@ -240,7 +240,7 @@ func publish(a *app.App, args []string) int {
 	fs.StringVar(&opts.Config, "config", "", "build configuration (default "+app.DefaultConfig+")")
 	fs.StringVar(&opts.Scheme, "scheme", "", "scheme to build")
 	fs.StringVar(&opts.Slug, "slug", "", "publish under this name")
-	fs.StringVar(&opts.Artifact, "artifact", "", "publish an already-built .ipa; its platform is the file's")
+	fs.StringVar(&opts.Artifact, "artifact", "", "publish an already-built .ipa or .apk; its platform is the file's")
 	fs.StringVar(&opts.Builder, "builder", "", "build (default, incremental) or archive")
 	if exit, done := parseFlags(fs, "publish", publishSynopsis, args); done {
 		return exit

@@ -97,6 +97,34 @@ func TestDetailReadsAsADate(t *testing.T) {
 	}
 }
 
+// Signing with no deadline, which is every Android build, is neither expired
+// nor about to be: a zero Expires must not read as the year 0001 having passed.
+func TestNoDeadlineNeverExpires(t *testing.T) {
+	now := time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC)
+	s := Signing{Signer: "Android Debug", Fingerprint: "4f9c1a2b3c4d5e6f"}
+	if s.HasDeadline() || s.Expired(now) || s.Within(365*24*time.Hour, now) {
+		t.Error("identity-only signing reported a deadline")
+	}
+	if got := s.Detail(now); got != "signed by Android Debug, sha256 4f9c1a2b3c4d5e6f" {
+		t.Errorf("Detail = %q", got)
+	}
+	if got := s.SignerName(); got != "Android Debug" {
+		t.Errorf("SignerName = %q", got)
+	}
+	// A certificate that names nobody is still an identity, by fingerprint.
+	anon := Signing{Fingerprint: "4f9c1a2b3c4d5e6f"}
+	if got := anon.SignerName(); got != "sha256:4f9c1a2b3c4d" {
+		t.Errorf("SignerName with no CN = %q", got)
+	}
+	if got := anon.Detail(now); got != "signed by sha256:4f9c1a2b3c4d" {
+		t.Errorf("Detail with no CN = %q", got)
+	}
+	// An iOS profile still has its deadline.
+	if !newSigning("p", now.Add(time.Hour), time.Time{}).HasDeadline() {
+		t.Error("a profile's expiry was not a deadline")
+	}
+}
+
 func TestExpiredAndWithin(t *testing.T) {
 	now := time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC)
 	window := 30 * 24 * time.Hour

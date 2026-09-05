@@ -326,13 +326,13 @@ func Manifest(r artifact.Record, baseURL string) []byte {
 					<key>kind</key><string>software-package</string>
 					<key>url</key><string>%s/%s?v=%s</string>
 				</dict>`, xmlText(appBase), xmlText(r.PayloadName), xmlText(r.CacheKey()))
-	if r.HasIcon {
+	if icon := r.IconFile(); icon != "" {
 		for _, kind := range []string{"display-image", "full-size-image"} {
 			fmt.Fprintf(&assets, `
 				<dict>
 					<key>kind</key><string>%s</string>
-					<key>url</key><string>%s/icon.png</string>
-				</dict>`, kind, xmlText(appBase))
+					<key>url</key><string>%s/%s</string>
+				</dict>`, kind, xmlText(appBase), xmlText(icon))
 		}
 	}
 	return fmt.Appendf(nil, `<?xml version="1.0" encoding="UTF-8"?>

@@ -17,15 +17,21 @@ import (
 type Payload interface {
 	// Info is the app's identity.
 	Info() (Info, error)
-	// Signing is when the build stops being installable. held is this
-	// machine's code-signing identities, from HeldIdentities. ErrNoProfile
-	// means the payload carries nothing to read; ErrUnsupported that this
-	// machine cannot read it.
+	// Signing is who signed the build and, on iOS, when it stops being
+	// installable. held is this machine's code-signing identities, from
+	// HeldIdentities, which the iOS reader joins the profile against and
+	// the Android reader ignores. ErrNoProfile means an iOS payload carries
+	// nothing to read; ErrUnsigned that an APK will not install; and
+	// ErrUnsupported that this machine cannot read it.
 	Signing(held map[string]bool) (Signing, error)
-	// Icon writes the app's icon to dest as a standard PNG, one a browser
-	// decodes. ErrNoIcon means there is none to ship, or none that could be
-	// made standard; the page's placeholder is the right answer to either.
-	Icon(dest string) error
+	// Icon writes the app's icon to dest in a form a browser decodes, and
+	// reports that form as the extension the file is served under: ".png"
+	// for an iOS icon, which the packaging optimizes and this reverts, and
+	// whatever the launcher icon is for an Android one, WebP in every recent
+	// template, which nothing converts. ErrNoIcon means there is none to
+	// ship, or none that could be made standard; the page's placeholder is
+	// the right answer to either.
+	Icon(dest string) (ext string, err error)
 	Close() error
 }
 
@@ -33,10 +39,11 @@ type Payload interface {
 var ErrNoIcon = errors.New("the payload carries no usable icon")
 
 // ErrUnsupported reports that this machine cannot read what was asked for.
-// The tools are macOS's (plutil for a plist, security for a profile), and
-// so is every build that produces an iOS payload; a node that only serves
-// what another machine built has nothing to read it with, and nothing wrong
-// with it either. It is wrapped with what exactly is missing.
+// The tools are the platform's (plutil and security for an iOS payload,
+// aapt2 and apksigner for an Android one), and so is every build that
+// produces the payload; a node that only serves what another machine built
+// has nothing to read it with, and nothing wrong with it either. It is
+// wrapped with what exactly is missing.
 var ErrUnsupported = errors.New("cannot be read on this machine")
 
 // Open returns the reader for a platform's payload at path. This is the one
@@ -46,8 +53,10 @@ func Open(platform artifact.Platform, path string) (Payload, error) {
 	switch platform {
 	case artifact.IOS:
 		return openIPA(path)
+	case artifact.Android:
+		return openAPK(path)
 	}
-	return nil, fmt.Errorf("an %s payload %w: no reader for it yet", platform, ErrUnsupported)
+	return nil, fmt.Errorf("an %s payload %w: no reader for it", platform, ErrUnsupported)
 }
 
 // ipa reads an iOS payload: the .app inside Payload/, in place, without
@@ -118,22 +127,22 @@ func (p *ipa) Signing(held map[string]bool) (Signing, error) {
 
 // Icon picks the largest flat icon PNG in the bundle root and writes it to
 // dest, reverting the packaging's iphone optimization so a browser decodes it.
-func (p *ipa) Icon(dest string) error {
+func (p *ipa) Icon(dest string) (string, error) {
 	plist, err := p.infoPlist()
 	if err != nil {
-		return err
+		return "", err
 	}
 	name := findIcon(p.app, plist)
 	if name == "" {
-		return ErrNoIcon
+		return "", ErrNoIcon
 	}
 	if err := copyOut(p.app, name, dest); err != nil {
-		return err
+		return "", err
 	}
 	// The normalize must succeed for the icon to ship: a crushed icon is a
 	// broken image on the page, where no icon is a clean placeholder.
 	if err := normalizeIcon(dest); err != nil {
-		return fmt.Errorf("%w: %v", ErrNoIcon, err)
+		return "", fmt.Errorf("%w: %v", ErrNoIcon, err)
 	}
-	return nil
+	return ".png", nil
 }

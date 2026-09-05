@@ -52,16 +52,23 @@ func TestDetectNamesWhatItLookedFor(t *testing.T) {
 }
 
 // A prebuilt payload is checked, not built: it must exist, be a file, and be
-// a kind otata serves.
+// a kind otata serves, and its extension says which platform it is.
 func TestPrebuilt(t *testing.T) {
 	dir := t.TempDir()
 	ipa := filepath.Join(dir, "App.ipa")
-	if err := os.WriteFile(ipa, []byte("zip"), 0o644); err != nil {
-		t.Fatal(err)
+	apk := filepath.Join(dir, "App.APK")
+	for _, p := range []string{ipa, apk} {
+		if err := os.WriteFile(p, []byte("zip"), 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
 	res, err := Prebuilt(ipa)
 	if err != nil || res.PayloadPath != ipa || res.Platform != artifact.IOS || res.Config != ConfigPrebuilt {
 		t.Errorf("Prebuilt(ipa) = %+v, %v", res, err)
+	}
+	res, err = Prebuilt(apk)
+	if err != nil || res.PayloadPath != apk || res.Platform != artifact.Android || res.Config != ConfigPrebuilt {
+		t.Errorf("Prebuilt(apk) = %+v, %v", res, err)
 	}
 	for name, path := range map[string]string{
 		"missing":   filepath.Join(dir, "nope.ipa"),

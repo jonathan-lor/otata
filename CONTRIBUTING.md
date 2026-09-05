@@ -54,12 +54,13 @@ fake CLI in `internal/transport/transporttest`, which answers from canned
 JSON and counts its invocations; putting its directory on `PATH` is what
 makes the transport find it.
 
-Three `*_manual_test.go` files run against real local artifacts and **skip
+Four `*_manual_test.go` files run against real local artifacts and **skip
 unless told where they are**, so the test suite stays hermetic on a fresh machine:
 
 ```sh
 OTATA_TEST_PROJECT=~/path/to/MyApp OTATA_TEST_SCHEME=MyApp go test ./internal/builder/ -run Real -v
 OTATA_TEST_IPA=~/.otata/public/myapp/MyApp.ipa go test ./internal/appmeta/ -run Real -v
+OTATA_TEST_APK=~/path/to/app-debug.apk go test ./internal/appmeta/ -run Real -v
 ```
 
 ## A few important details

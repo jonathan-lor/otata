@@ -28,8 +28,11 @@ otata publish --platform ios --json
   just wants to see a change — except on Flutter, where a Debug build cannot
   launch from the home screen: use `--config Profile` there.
 - `otata publish --artifact path/to/App.ipa` publishes an already-built .ipa
-  from any toolchain. The file says which platform it is, so `--platform` is
-  not needed there.
+  or .apk from any toolchain. The file says which platform it is, so
+  `--platform` is not needed there. An .apk needs the Android SDK's
+  build-tools on the machine (`ANDROID_HOME`), and one that is unsigned is
+  refused with `signing_failed`: build it with `--config Debug`, or add a
+  release signingConfig.
 - `otata status --json` reports the server, transport, and base URL in one
   call, changing nothing. `otata list` shows what is published.
 
@@ -47,7 +50,7 @@ stopped it.
 | `ambiguous_scheme` | Re-run with `--scheme`; the candidates are in `details` |
 | `needs_setup` | Run `details.command` in `details.dir`, then retry |
 | `build_failed` | Read the log at the path in `details` |
-| `signing_failed` | Needs a human with Apple portal access; do not retry |
+| `signing_failed` | On iOS, needs a human with Apple portal access; do not retry. On Android the APK is unsigned or does not verify: a debug build is signed, a release build needs a signingConfig |
 | `free_profile` | iOS refuses free-team builds over the air; a paid team is the only fix. Do not retry |
 | `server_down` | `otata doctor --fix`; if autostart was never set up, `otata autostart on` once |
 | `transport_down` | Machine-side (Tailscale logged out, or the route is public: Funnel on); `otata doctor` names it. Do not retry until it is fixed |

@@ -160,7 +160,7 @@ func viewFor(r artifact.Record, baseURL string) appView {
 		// entirely: unstyled pages while the stylesheet was a link, broken
 		// icons after.
 		PageURL:  appBase + "/",
-		IconURL:  appBase + "/icon.png",
+		IconURL:  appBase + "/" + r.IconFile(),
 		IndexURL: base + "/",
 	}
 	// How the phone installs is the platform's. iOS is handed a manifest through

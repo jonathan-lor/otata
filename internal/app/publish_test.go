@@ -46,6 +46,17 @@ func TestZeroCertExpiryIsOmittedFromJSON(t *testing.T) {
 	if !strings.Contains(string(out), "cert_expires") {
 		t.Errorf("a real cert_expires was dropped: %s", out)
 	}
+	// An Android build's signing is identity alone: no date of any kind
+	// reaches the caller, and the signer does.
+	out, _ = json.Marshal(PublishResult{Signing: &appmeta.Signing{Signer: "Android Debug", Fingerprint: "4f9c"}})
+	for _, absent := range []string{"expires", "binder", "team", "profile"} {
+		if strings.Contains(string(out), absent) {
+			t.Errorf("identity-only signing serialized %s: %s", absent, out)
+		}
+	}
+	if !strings.Contains(string(out), `"signer":"Android Debug"`) || !strings.Contains(string(out), `"fingerprint":"4f9c"`) {
+		t.Errorf("the signer was dropped: %s", out)
+	}
 }
 
 // The title an --artifact publish prints comes out of the payload's own
@@ -176,7 +187,7 @@ func TestArtifactPublishReadsThePlatformOffTheFile(t *testing.T) {
 	dir := t.TempDir()
 	ipa := filepath.Join(dir, "Demo.ipa")
 	apk := filepath.Join(dir, "Demo.apk")
-	for _, p := range []string{ipa, apk} {
+	for _, p := range []string{ipa, apk, filepath.Join(dir, "Demo.aab")} {
 		if err := os.WriteFile(p, []byte("zip"), 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -188,11 +199,13 @@ func TestArtifactPublishReadsThePlatformOffTheFile(t *testing.T) {
 		wantCode string
 		want     string // in the message or the hint
 	}{
-		{"inferred", ipa, "", cli.CodeNoTransport, ""},
+		{"inferred ios", ipa, "", cli.CodeNoTransport, ""},
+		{"inferred android", apk, "", cli.CodeNoTransport, ""},
 		{"agreeing", ipa, artifact.IOS, cli.CodeNoTransport, ""},
 		{"disagreeing", ipa, artifact.Android, cli.CodeInvalidArgs, "ios payload"},
+		{"disagreeing the other way", apk, artifact.IOS, cli.CodeInvalidArgs, "android payload"},
 		{"unknown platform", ipa, "windows", cli.CodeInvalidArgs, `"windows"`},
-		{"no reader yet", apk, "", cli.CodeInvalidArgs, "not served yet"},
+		{"unrecognized", filepath.Join(dir, "Demo.aab"), "", cli.CodeInvalidArgs, "unrecognized"},
 		{"missing", filepath.Join(dir, "nope.ipa"), "", cli.CodeInvalidArgs, "no artifact"},
 	}
 	for _, c := range cases {

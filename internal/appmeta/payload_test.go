@@ -89,9 +89,13 @@ func TestOpenReadsAnIPA(t *testing.T) {
 		t.Errorf("Info = %+v, want %+v", info, want)
 	}
 
-	dest := filepath.Join(t.TempDir(), "icon.png")
-	if err := payload.Icon(dest); err != nil {
+	dest := filepath.Join(t.TempDir(), "icon")
+	ext, err := payload.Icon(dest)
+	if err != nil {
 		t.Fatalf("Icon: %v", err)
+	}
+	if ext != ".png" {
+		t.Errorf("an iOS icon reported as %q, want .png", ext)
 	}
 	f, err := os.Open(dest)
 	if err != nil {
@@ -116,13 +120,16 @@ func TestOpenReadsAnIPA(t *testing.T) {
 }
 
 // A platform with no reader is refused as unsupported, so doctor and publish
-// say nothing about it rather than something wrong.
+// say nothing about it rather than something wrong, and a payload that is
+// not there does not open for any platform.
 func TestOpenRefusesAPlatformWithoutAReader(t *testing.T) {
-	_, err := Open(artifact.Android, "whatever.apk")
+	_, err := Open(artifact.Platform("windows"), "whatever.exe")
 	if !errors.Is(err, ErrUnsupported) {
 		t.Errorf("got %v, want ErrUnsupported", err)
 	}
-	if _, err := Open(artifact.IOS, filepath.Join(t.TempDir(), "missing.ipa")); err == nil {
-		t.Error("a missing payload opened")
+	for _, p := range []artifact.Platform{artifact.IOS, artifact.Android} {
+		if _, err := Open(p, filepath.Join(t.TempDir(), "missing"+p.PayloadExt())); err == nil {
+			t.Errorf("a missing %s payload opened", p)
+		}
 	}
 }

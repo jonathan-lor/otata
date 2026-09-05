@@ -34,7 +34,7 @@ func (r ListResult) Human(w io.Writer) {
 		// Dim: a header is orientation, not content, findable when wanted,
 		// and ignorable once the columns are known.
 		cli.Line(w, "\033[2m"+listColumns+"\033[0m",
-			"SLUG", "APP", "VERSION", "CONFIG", "TEAM", "SIZE", "COMMIT", "BUILT")
+			"SLUG", "APP", "VERSION", "CONFIG", "SIGNER", "SIZE", "COMMIT", "BUILT")
 	}
 	now := time.Now()
 	for _, a := range r.Apps {
@@ -47,7 +47,7 @@ func (r ListResult) Human(w io.Writer) {
 			state = "BUILDING"
 		}
 		cli.Line(w, listColumns,
-			a.Slug, a.Title, a.Version+" ("+a.Build+")", a.Config, orDash(a.Team),
+			a.Slug, a.Title, a.Version+" ("+a.Build+")", a.Config, orDash(a.SignedBy()),
 			render.Size(a.SizeMB()), orDash(commit), state)
 	}
 	switch {
@@ -59,7 +59,7 @@ func (r ListResult) Human(w io.Writer) {
 }
 
 // orDash distinguishes an absent value from a blank one. A payload with no
-// readable profile has no team recorded, which is not "signed by nobody".
+// readable signature has no signer recorded, which is not "signed by nobody".
 func orDash(s string) string {
 	if s == "" {
 		return "-"

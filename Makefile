@@ -8,12 +8,12 @@ BIN_DIR := $(HOME)/.local/bin
 build: ## Compile for this machine into bin/
 	go build -o bin/$(BINARY) .
 
-## install copies rather than symlinks on purpose: launchd cannot execute a
-## binary inside a TCC-protected directory such as ~/Documents, and it fails by
-## hanging in dyld rather than erroring, which is very hard to diagnose.
-## Write beside the target and rename into place. Overwriting a binary that is
-## currently running corrupts its mapped image and macOS kills the process with
-## SIGKILL; rename swaps the directory entry and leaves the running inode alone.
+## install copies instead of symlinking on purpose. launchd cannot execute a
+## launchd can't run a binary in a TCC-protected directory like ~/Documents
+## and it fails by hanging in dyld instead of erroring which is very hard to diagnose.
+## Write beside the target and rename into place. Overwriting a currently running
+## binary corrupts its mapped image and macOS kills the process with SIGKILL.
+## Rename swaps the directory entry and leaves the running inode alone.
 install: build
 	@mkdir -p $(BIN_DIR)
 	cp bin/$(BINARY) $(BIN_DIR)/.$(BINARY).new

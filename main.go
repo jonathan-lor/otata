@@ -18,11 +18,11 @@ const usage = `otata installs iOS builds on your phone over your own network
 
   otata publish --platform ios|android [--config Debug] [--scheme S] [--slug NAME] [--builder archive]
   otata publish --artifact PATH [--slug NAME]
-                                publish an already-built payload; the file says which platform
+                                publish an already-built payload
   otata list                    what is published
-  otata status                  everything, in one call, changing nothing
+  otata status                  the status of everything
   otata doctor [--fix]          verify everything; --fix repairs what it can first
-  otata forget <slug>           drop one app
+  otata forget <slug>           drop a specified app
   otata serve                   run the file server in the foreground
   otata start | stop | restart  server lifecycle
   otata autostart on|off        run the server at login (launchd or systemd --user)
@@ -31,8 +31,7 @@ const usage = `otata installs iOS builds on your phone over your own network
   otata help                    this summary
 
 Options:
-  --json                        machine-readable output, for an agent to parse
-  --version                     print the version
+  --json 
 
 'otata <command> --help' shows a command's flags.
 
@@ -50,6 +49,7 @@ func run() int {
 	command := argv[0]
 	args := argv[1:]
 
+	// General help and version
 	switch command {
 	case "help", "-h", "--help":
 		fmt.Print(usage)
@@ -59,7 +59,7 @@ func run() int {
 		return 0
 	}
 
-	// Commands that take no flags still answer --help, and refuse anything else
+	// Input validation and answering --help for certain commands
 	switch command {
 	case "list", "ls", "status", "serve", "start", "stop", "restart":
 		if wantsHelp(args) {
@@ -209,6 +209,7 @@ func parseFlags(fs *flag.FlagSet, command, synopsis string, args []string) (exit
 }
 
 // globalFlags applies the flags that belong to no one command and returns the rest.
+// It currently preprocesses the --json flag and sets the global variable for it.
 // --json is accepted anywhere so callers don't need to know which position a flag parser expects.
 func globalFlags(argv []string) []string {
 	rest := argv[:0:0]

@@ -26,11 +26,10 @@ otata publish --platform ios|android [--config Debug] [--scheme S] [--slug NAME]
 otata publish --artifact PATH [--slug NAME]
 ```
 
-What to build for is never discovered: `--platform` is required, because a Mac
-builds for both and a default there would be a guess. A project that always
+`--platform` is always required. A project that always
 builds for one platform can record the flag in its agent instructions. With
-`--artifact` the payload's extension says which platform it is, so the flag is
-not needed there, and one that disagrees with the file is refused.
+`--artifact` the payload's extension specifies its platform, so the flag isn't needed there,
+and one that disagrees with the file is refused.
 
 Discovery will fill in the rest: the workspace or project, a scheme that
 archives an app, the signing team, and the slug from the directory name.

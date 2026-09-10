@@ -8,8 +8,8 @@ import (
 	"github.com/jonathan-lor/otata/internal/transport"
 )
 
-// TransportSelection is what `otata transport use` was asked for. The manual
-// fields apply to the manual transport only.
+// TransportSelection is what `otata transport use` was asked for.
+// The manual fields only apply to the manual transport.
 type TransportSelection struct {
 	Name       string
 	BaseURL    string
@@ -22,9 +22,10 @@ type TransportSelection struct {
 // changed is restarted, and every page and manifest is regenerated against the
 // new base URL. progress receives the warnings a caller should see but that
 // do not fail the command.
+//
+// UseTransport sets the
 func (a *App) UseTransport(sel TransportSelection, progress func(string)) error {
-	// Everything gets validated before anything is changed: the arguments
-	// first, as usage errors.
+	// Everything gets validated before anything is changed.
 	var manual *config.Manual
 	switch sel.Name {
 	case "tailscale":
@@ -41,8 +42,7 @@ func (a *App) UseTransport(sel TransportSelection, progress func(string)) error 
 			WithHint("tailscale or manual")
 	}
 
-	// The candidate, built by the same rule every later command will use, and
-	// kept once selected so what it is asked here it need not be asked again.
+	// Build a Transport instance candidate for the requested transport
 	next := a.Config
 	next.Transport = sel.Name
 	if manual != nil {
@@ -50,17 +50,17 @@ func (a *App) UseTransport(sel TransportSelection, progress func(string)) error 
 	}
 	candidate := transportFor(next)
 
-	// Selection is where the transport proves it can serve, changing nothing.
-	// Failing here names the actual obstacle (tailscale logged out, HTTPS
+	// This is where the transport proves it can serve.
+	// Failing here will name the actual obstacle (tailscale logged out, HTTPS
 	// certificates disabled), whereas failing at the first publish would
 	// surface whatever `tailscale serve` prints. Unwired is not an obstacle:
 	// Ensure below is what wires it.
 	if st := candidate.Status(a.Config.Port); !st.Ready && !st.Repairable {
 		return cli.Fail(cli.CodeTransportDown, st.Detail)
 	}
-	// The guard every later command applies, applied here first. Without this
-	// a funnelled tailnet or a route declared public was torn down to, saved,
-	// and reported as selected, and then refused by every command after.
+
+	// The common sanity guard against letting a public transport through.
+	// Public transports are not yet supported.
 	if err := a.guard(candidate); err != nil {
 		return err
 	}
@@ -71,7 +71,7 @@ func (a *App) UseTransport(sel TransportSelection, progress func(string)) error 
 	previousPrefix := a.IncomingPrefix()
 
 	// Tear down the transport being replaced, or its route stays wired to our
-	// port after we stop using it. Teardown is scoped to what otata added.
+	// port after we stop using it.
 	if previous := a.selectTransport(); previous != nil && previous.Name() != sel.Name {
 		if err := previous.Teardown(); err != nil {
 			progress(fmt.Sprintf("warning: could not tear down %s: %v", previous.Name(), err))

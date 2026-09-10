@@ -1,8 +1,8 @@
 // Package cli owns how commands talk to their caller.
 //
 // Output is formatted text unless --json is passed. The JSON form
-// is the contract an agent can parse which provides stable error codes
-// and details it can act on. Color follows the usual conventions of on when
+// is designed for agents to parse and provides stable error codes
+// and actionable details. Color follows the usual conventions of on when
 // stdout is a terminal, and off when it is not or NO_COLOR is set.
 package cli
 
@@ -118,7 +118,7 @@ func Section(w io.Writer, title string) {
 // Line formats for a person. The format string is ours and may carry ANSI
 // color; the arguments are not. A display name comes out of an Info.plist,
 // untrusted for --artifact, so every string argument has its control
-// characters removed. JSON output is unaffected: the encoder escapes them.
+// characters removed. JSON output is unaffected since the encoder escapes them.
 func Line(w io.Writer, format string, args ...any) {
 	cleaned := make([]any, len(args))
 	for i, arg := range args {

@@ -3,9 +3,7 @@ package app
 /*
 supervisor is whatever keeps the background server alive on this OS: launchd
 on macOS, the user's own systemd manager on Linux, nothing where neither is
-reachable. It speaks the manager's own language and nothing else. What an
-installed unit means for this root, how one is brought to a bound server,
-and what to say when it cannot be, is App's to decide, once, in autostart.go.
+reachable.
 
 One unit exists per user, and it embeds the root, port and serve path it was
 installed with, so a unit for another root is not this root's autostart.

@@ -18,11 +18,11 @@ const usage = `otata installs iOS builds on your phone over your own network
 
   otata publish --platform ios|android [--config Debug] [--scheme S] [--slug NAME] [--builder archive]
   otata publish --artifact PATH [--slug NAME]
-                                publish an already-built payload; the file says which platform
+                                publish an already-built payload
   otata list                    what is published
-  otata status                  everything, in one call, changing nothing
+  otata status                  the status of everything
   otata doctor [--fix]          verify everything; --fix repairs what it can first
-  otata forget <slug>           drop one app
+  otata forget <slug>           drop a specified app
   otata serve                   run the file server in the foreground
   otata start | stop | restart  server lifecycle
   otata autostart on|off        run the server at login (launchd or systemd --user)
@@ -31,8 +31,7 @@ const usage = `otata installs iOS builds on your phone over your own network
   otata help                    this summary
 
 Options:
-  --json                        machine-readable output, for an agent to parse
-  --version                     print the version
+  --json
 
 'otata <command> --help' shows a command's flags.
 
@@ -50,6 +49,7 @@ func run() int {
 	command := argv[0]
 	args := argv[1:]
 
+	// General help and version
 	switch command {
 	case "help", "-h", "--help":
 		fmt.Print(usage)
@@ -59,7 +59,7 @@ func run() int {
 		return 0
 	}
 
-	// Commands that take no flags still answer --help, and refuse anything else
+	// Input validation and answering --help for certain commands
 	switch command {
 	case "list", "ls", "status", "serve", "start", "stop", "restart":
 		if wantsHelp(args) {
@@ -154,14 +154,13 @@ func run() int {
 }
 
 // usageError is a failure in how the command was called, as opposed to what it tried to do.
-// cli.EmitError exits 2 for these so a calling agent can tell a typo from a failure without parsing.
+// cli.EmitError exits 2 for these.
 func usageError(format string, args ...any) *cli.Failure {
 	return cli.Failf(cli.CodeInvalidArgs, format, args...)
 }
 
-// emitStatus reports the state a command left behind. All lifecycle commands
-// answer with what `otata status` would say, so the caller sees the
-// resulting state instead of an acknowledgment.
+// emitStatus reports the state a command left behind.
+// It's a wrapper around package cli Emit methods.
 func emitStatus(a *app.App, command string) int {
 	res, err := a.Status()
 	if err != nil {
@@ -183,11 +182,11 @@ func wantsHelp(args []string) bool {
 // parseFlags runs a FlagSet over args.
 // --help prints flags to stdout and exits 0,
 // and positional arguments are refused because nothing here takes any.
-func parseFlags(fs *flag.FlagSet, command, synopsis string, args []string) (exit int, done bool) {
+func parseFlags(fs *flag.FlagSet, command, summary string, args []string) (exit int, done bool) {
 	fs.SetOutput(io.Discard) // we print usage ourselves
 	err := fs.Parse(args)
 	if err == flag.ErrHelp {
-		fmt.Printf("usage: otata %s\n\n", synopsis)
+		fmt.Printf("usage: otata %s\n\n", summary)
 		fs.VisitAll(func(f *flag.Flag) {
 			name, usage := flag.UnquoteUsage(f)
 			if name != "" {
@@ -209,7 +208,7 @@ func parseFlags(fs *flag.FlagSet, command, synopsis string, args []string) (exit
 }
 
 // globalFlags applies the flags that belong to no one command and returns the rest.
-// --json is accepted anywhere so callers don't need to know which position a flag parser expects.
+// It currently preprocesses the --json flag, which is accepted anywhere, and sets the global variable for it.
 func globalFlags(argv []string) []string {
 	rest := argv[:0:0]
 	for _, arg := range argv {
@@ -223,13 +222,13 @@ func globalFlags(argv []string) []string {
 }
 
 // progress prints a line a command reports while it works. It goes to stderr
-// so it can never corrupt the JSON an agent parses on stdout, and so
+// so it can never corrupt the JSON getting parsed on stdout, and so
 // `otata publish > out` still shows it.
 func progress(line string) { fmt.Fprintf(os.Stderr, "    %s\n", line) }
 
-// publishSynopsis has two forms because --platform is required for a build
+// publishSummary has two forms because --platform is required for a build
 // and read off the file for a prebuilt payload.
-const publishSynopsis = "publish --platform ios|android [--config Debug] [--scheme S] [--slug NAME] [--builder archive]\n" +
+const publishSummary = "publish --platform ios|android [--config Debug] [--scheme S] [--slug NAME] [--builder archive]\n" +
 	"       otata publish --artifact PATH [--slug NAME]"
 
 func publish(a *app.App, args []string) int {
@@ -242,7 +241,7 @@ func publish(a *app.App, args []string) int {
 	fs.StringVar(&opts.Slug, "slug", "", "publish under this name")
 	fs.StringVar(&opts.Artifact, "artifact", "", "publish an already-built .ipa or .apk; its platform is the file's")
 	fs.StringVar(&opts.Builder, "builder", "", "build (default, incremental) or archive")
-	if exit, done := parseFlags(fs, "publish", publishSynopsis, args); done {
+	if exit, done := parseFlags(fs, "publish", publishSummary, args); done {
 		return exit
 	}
 	// Validated in Publish, so a caller of the package gets the same refusal.
@@ -273,22 +272,22 @@ func doctor(a *app.App, args []string) int {
 	return 0
 }
 
-const transportSynopsis = "transport use <tailscale|manual> [--base-url URL] [--keep-prefix]"
+const transportSummary = "transport use <tailscale|manual> [--base-url URL] [--keep-prefix]"
 
 func transportCmd(a *app.App, args []string) int {
 	if wantsHelp(args) && (len(args) < 2 || args[0] != "use" || args[1] == "-h" || args[1] == "--help") {
-		fmt.Println("usage: otata " + transportSynopsis)
+		fmt.Println("usage: otata " + transportSummary)
 		return 0
 	}
 	if len(args) < 2 || args[0] != "use" {
-		return cli.EmitError("transport", usageError("usage: otata "+transportSynopsis))
+		return cli.EmitError("transport", usageError("usage: otata "+transportSummary))
 	}
 	name := args[1]
 	fs := flag.NewFlagSet("transport", flag.ContinueOnError)
 	baseURL := fs.String("base-url", "", "base URL your proxy serves (manual only)")
 	keepPrefix := fs.Bool("keep-prefix", false,
 		"your proxy forwards the base URL's path unchanged instead of stripping it (manual only)")
-	if exit, done := parseFlags(fs, "transport", transportSynopsis, args[2:]); done {
+	if exit, done := parseFlags(fs, "transport", transportSummary, args[2:]); done {
 		return exit
 	}
 

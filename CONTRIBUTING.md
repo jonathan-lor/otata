@@ -3,7 +3,7 @@
 otata is a relatively small Go project with no dependencies outside the standard library.
 This doc should give you everything you need to get started with contributing.
 
-Until otherwise noted, **the steps below are intended for macOS only.**
+Until otherwise noted, **the steps below are intended for macOS and Linux only.**
 
 ## Building
 
@@ -48,8 +48,8 @@ go test ./internal/server/ -v
 ```
 
 The suite passes on Linux as well as macOS. A test that shells out to a macOS
-tool (`ditto`, `plutil`, `pngcrush`) skips where the tool is absent rather
-than failing. Code that drives the tailscale transport is tested against the
+tool (`ditto`, `plutil`, `pngcrush`) will skip where the tool is absent instead
+of failing. Code that drives the tailscale transport is tested against the
 fake CLI in `internal/transport/transporttest`, which answers from canned
 JSON and counts its invocations; putting its directory on `PATH` is what
 makes the transport find it.

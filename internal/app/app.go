@@ -1,4 +1,4 @@
-// Package app wires everything together. It's the only place that knows about storage, transport, builder and render at the same time.
+// Package app brings everything together. It's the only place that knows about storage, transport, builder and render at the same time.
 package app
 
 import (
@@ -29,16 +29,11 @@ type App struct {
 	Store  *storage.Store
 
 	// transport is the selection Config describes, built once per process.
-	// A Tailscale value memoizes its CLI reads for its lifetime, so one
-	// instance per command is what keeps a command from asking tailscaled the
-	// same question once per caller. UseTransport replaces it, being the one
-	// thing that changes Config after Open.
 	transport    transport.Transport
 	transportSet bool
 
-	// sup is whatever keeps the background server alive on this OS. Made on
-	// first use by autostart(), so an App built by hand gets the platform's;
-	// a test hands in a fake.
+	// supervisor is the abstraction for how the background server is kept alive.
+	// launchd on macOS and the user's systemd on Linux.
 	sup supervisor
 	// bindWait, when set, replaces every wait for a loaded unit to bind the
 	// port. Tests set it so a unit that never binds is judged in milliseconds.
@@ -83,15 +78,14 @@ func (a *App) selectTransport() transport.Transport {
 	return a.transport
 }
 
-// setTransport installs a transport already built from Config, so what was
-// asked of it before it was installed is not asked again.
+// setTransport installs a transport already built from Config.
 func (a *App) setTransport(t transport.Transport) {
 	a.transport, a.transportSet = t, true
 }
 
 // transportFor is the one rule that turns a config into a transport. It is
-// separate from the App so a selection can be built from a config that is
-// not yet the App's, and judged by the same rule every later command applies.
+// separate from the App so a user selection can be built from a config that
+// doesn't yet belong to App. See UseTransport().
 func transportFor(cfg config.Config) transport.Transport {
 	switch cfg.Transport {
 	case "tailscale":
@@ -258,7 +252,7 @@ func Slugify(name string) string {
 // its directory name, and for every platform but iOS that name with the
 // platform appended, so a cross-platform project's builds sit side by side
 // (myapp and myapp-android) instead of overwriting each other. iOS keeps the
-// bare name: it is the default platform, and every existing store uses it.
+// bare name.
 func DefaultSlug(dir string, platform artifact.Platform) string {
 	slug := Slugify(filepath.Base(dir))
 	if platform != artifact.IOS {

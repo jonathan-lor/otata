@@ -1,12 +1,14 @@
 # otata
 
+Quickly install iOS builds over your own network, _wherever you are_!
+
+![otata banner](assets/banner.png)
+
 [![ci](https://github.com/jonathan-lor/otata/actions/workflows/ci.yml/badge.svg)](https://github.com/jonathan-lor/otata/actions/workflows/ci.yml)
 [![release](https://img.shields.io/github/v/release/jonathan-lor/otata)](https://github.com/jonathan-lor/otata/releases/latest)
 [![license](https://img.shields.io/github/license/jonathan-lor/otata)](LICENSE)
 
-otata is a tool for quickly installing iOS builds over your own network. It's a CLI designed for a coding agent to use during remote control sessions to get the latest build from your computer to your phone, wherever you are.
-
-Simply ask your favorite agent to publish with otata after making some changes, and then install from the provided URL!
+otata is a CLI for agents to get the latest build from your computer to your phone during remote sessions, allowing you to work on iOS apps from anywhere. Just ask your agent to publish with otata after making some changes, and then install with the provided URL!
 
 otata currently supports building SwiftUI, React Native, Flutter, and Kotlin Multiplatform projects on macOS and installing on iOS.
 Android and Linux/Windows/WSL support is a work in progress.
@@ -74,8 +76,8 @@ otata list                     # what is published
 otata doctor                   # verify the server, transport and every URL; --fix repairs first
 ```
 
-`--platform` is the one thing you must pass. `otata publish` discovers the rest: the workspace or project, an archiving scheme, the
-signing team, and the slug from the directory name. `--scheme` and `--slug` are for when it asks.
+`--platform` is the only required flag. `otata publish` discovers the rest from the directory name.
+
 `--config` defaults to `Release`, and a publish that falls back to it will tell you before the build starts.
 Publishing an already-built `.ipa` or `.apk` from any toolchain is `otata publish --artifact <path>`.
 
@@ -97,7 +99,7 @@ The [CLI reference](docs/cli-reference.md#error-codes) also lists every code and
 
 ## Current Limitations
 
-**iOS and macOS only (for now).** Android builds and support for Linux/Windows/WSL are planned but not yet implemented.
+**iOS and macOS only (for now).** Android builds and support for Linux/Windows/WSL is a work in progress.
 If you're only using a Mac to build, otata can be used from a non-Mac host via SSH.
 
 **Private transports only (for now).** A public transport would need an access guard

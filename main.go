@@ -16,7 +16,8 @@ import (
 
 const usage = `otata installs iOS builds on your phone over your own network
 
-  otata publish --platform ios|android [--config Debug] [--scheme S] [--slug NAME] [--builder archive]
+  otata publish --platform ios [--config Debug] [--scheme S] [--slug NAME] [--builder archive]
+  otata publish --platform android [--config Debug] [--module M] [--flavor F] [--slug NAME]
   otata publish --artifact PATH [--slug NAME]
                                 publish an already-built payload
   otata list                    what is published
@@ -226,9 +227,10 @@ func globalFlags(argv []string) []string {
 // `otata publish > out` still shows it.
 func progress(line string) { fmt.Fprintf(os.Stderr, "    %s\n", line) }
 
-// publishSummary has two forms because --platform is required for a build
-// and read off the file for a prebuilt payload.
-const publishSummary = "publish --platform ios|android [--config Debug] [--scheme S] [--slug NAME] [--builder archive]\n" +
+// publishSummary has three forms: each platform selects its build in its
+// own toolchain's terms, and a prebuilt payload says which platform it is.
+const publishSummary = "publish --platform ios [--config Debug] [--scheme S] [--slug NAME] [--builder archive]\n" +
+	"       otata publish --platform android [--config Debug] [--module M] [--flavor F] [--slug NAME]\n" +
 	"       otata publish --artifact PATH [--slug NAME]"
 
 func publish(a *app.App, args []string) int {
@@ -237,7 +239,9 @@ func publish(a *app.App, args []string) int {
 	var platform string
 	fs.StringVar(&platform, "platform", "", "what to build for: ios or android (required; --artifact reads it off the file)")
 	fs.StringVar(&opts.Config, "config", "", "build configuration (default "+app.DefaultConfig+")")
-	fs.StringVar(&opts.Scheme, "scheme", "", "scheme to build")
+	fs.StringVar(&opts.Scheme, "scheme", "", "Xcode scheme to build (iOS)")
+	fs.StringVar(&opts.Module, "module", "", "Gradle module to build, as :app (Android)")
+	fs.StringVar(&opts.Flavor, "flavor", "", "Gradle product flavor to build (Android)")
 	fs.StringVar(&opts.Slug, "slug", "", "publish under this name")
 	fs.StringVar(&opts.Artifact, "artifact", "", "publish an already-built .ipa or .apk; its platform is the file's")
 	fs.StringVar(&opts.Builder, "builder", "", "build (default, incremental) or archive")

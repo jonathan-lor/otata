@@ -4,8 +4,9 @@
 
 | Command | Does |
 | --- | --- |
-| `otata publish --platform ios\|android [--config Debug] [--scheme S] [--slug NAME] [--builder archive]` | Build and publish the project in the current directory |
-| `otata publish --artifact PATH [--slug NAME]` | Publish an already-built payload instead; the file says which platform |
+| `otata publish --platform ios [--config Debug] [--scheme S] [--slug NAME] [--builder archive]` | Build and publish the project in the current directory for iOS |
+| `otata publish --platform android [--config Debug] [--module M] [--flavor F] [--slug NAME]` | Build and publish the project in the current directory for Android |
+| `otata publish --artifact PATH [--slug NAME]` | Publish an already-built payload instead |
 | `otata list` | What is published (`otata ls` works too) |
 | `otata status` | Everything in one call |
 | `otata doctor [--fix]` | Verify the server, transport and every URL, report a signing deadline; `--fix` repairs first |
@@ -22,7 +23,8 @@
 ## publish
 
 ```sh
-otata publish --platform ios|android [--config Debug] [--scheme S] [--slug NAME] [--builder archive]
+otata publish --platform ios [--config Debug] [--scheme S] [--slug NAME] [--builder archive]
+otata publish --platform android [--config Debug] [--module M] [--flavor F] [--slug NAME]
 otata publish --artifact PATH [--slug NAME]
 ```
 
@@ -33,13 +35,17 @@ and one that disagrees with the file is refused.
 
 Discovery will fill in the rest: the workspace or project, a scheme that
 archives an app, the signing team, and the slug from the directory name.
-`--scheme` and `--slug` are for when it asks.
+`--scheme` and `--slug` are for when it asks. Each platform selects its build
+in its own toolchain's terms, `--scheme` on iOS and `--module` and `--flavor`
+on Android. An inapplicable flag meant for the other platform is refused.
 
 | Flag | Does |
 | --- | --- |
 | `--platform` | What to build for: `ios` or `android`. Required for a build; `--artifact` reads it off the file. Android has no builder yet, so a build for it is refused; an `.apk` is published with `--artifact` |
 | `--config` | Build configuration. Defaults to `Release`, and a publish that falls back to it says so before the build starts |
-| `--scheme` | The scheme to build, when discovery finds several candidates |
+| `--scheme` | The Xcode scheme to build, when discovery finds several candidates. iOS only |
+| `--module` | The Gradle module to build, as `:app`. Android only |
+| `--flavor` | The Gradle product flavor to build. Android only |
 | `--slug` | Publish under this name instead of the directory's |
 | `--artifact` | Publish an already-built `.ipa` or `.apk` from any toolchain, skipping the build entirely. Reading it needs the platform's tools: plutil on macOS for an `.ipa`, the SDK's build-tools (`ANDROID_HOME`) for an `.apk`, which must also verify, since Android will not install one that does not |
 | `--builder` | `build` (the default, incremental) or `archive` |

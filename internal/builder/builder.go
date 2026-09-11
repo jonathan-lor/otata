@@ -19,7 +19,13 @@ type Options struct {
 	// Config is the build configuration, Debug or Release. Required: the
 	// default is the caller's to choose and announce, not this package's.
 	Config string
-	Scheme string // optional override
+	// Scheme is the Xcode scheme to build and is iOS only. Module and
+	// Flavor are the Gradle module and product flavor and Android only. Each is
+	// optional, and the caller refuses the other platform's before a
+	// builder sees them.
+	Scheme string
+	Module string
+	Flavor string
 	Work   string // scratch space for archives and logs
 	Log    func(string)
 }

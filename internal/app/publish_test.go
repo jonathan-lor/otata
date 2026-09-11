@@ -224,3 +224,51 @@ func TestArtifactPublishReadsThePlatformOffTheFile(t *testing.T) {
 		}
 	}
 }
+
+// Each platform selects its build in its own toolchain's terms, and the other
+// platform's flag is refused rather than ignored: a --scheme on an Android
+// build or a --module on an iOS one would otherwise select nothing, silently.
+// The refusal names the flag, and arrives before anything is claimed.
+func TestPublishRefusesTheOtherPlatformsSelectionFlags(t *testing.T) {
+	selection := []string{"--scheme", "--module", "--flavor"}
+	cases := []struct {
+		name string
+		opts PublishOptions
+		flag string // named in the refusal, or "" when the flags are this platform's
+	}{
+		{"scheme on android", PublishOptions{Platform: artifact.Android, Scheme: "App"}, "--scheme"},
+		{"module on ios", PublishOptions{Platform: artifact.IOS, Module: ":app"}, "--module"},
+		{"flavor on ios", PublishOptions{Platform: artifact.IOS, Flavor: "free"}, "--flavor"},
+		{"scheme on ios", PublishOptions{Platform: artifact.IOS, Scheme: "App"}, ""},
+		{"module and flavor on android", PublishOptions{Platform: artifact.Android, Module: ":app", Flavor: "free"}, ""},
+	}
+	for _, c := range cases {
+		a := freshApp(t)
+		c.opts.Dir = t.TempDir()
+		_, err := a.Publish(c.opts, quiet)
+		f := cli.AsFailure(err)
+		if err == nil {
+			t.Errorf("%s: an empty directory published", c.name)
+			continue
+		}
+		if c.flag == "" {
+			// The flags passed when whatever refused the publish was not
+			// about them: an empty directory has no project to build.
+			for _, flag := range selection {
+				if strings.Contains(f.Message, flag) {
+					t.Errorf("%s: refused for %s: %q", c.name, flag, f.Message)
+				}
+			}
+			continue
+		}
+		if f.Code != cli.CodeInvalidArgs || !strings.Contains(f.Message, c.flag) {
+			t.Errorf("%s: code=%q message=%q, want %q naming %s", c.name, f.Code, f.Message, cli.CodeInvalidArgs, c.flag)
+		}
+		if _, err := os.Stat(a.Store.IndexPath()); err == nil {
+			t.Errorf("%s: a refused publish generated pages", c.name)
+		}
+		if markers, _ := a.Store.Building(); len(markers) != 0 {
+			t.Errorf("%s: a refused publish left a build marker: %v", c.name, markers)
+		}
+	}
+}

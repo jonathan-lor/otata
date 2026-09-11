@@ -1,14 +1,14 @@
 ---
 name: otata
-description: Publish the latest iOS build to the user's phone over the air. Use when the user wants to see, test, or install the current build on their device ("get this on my phone", "publish the build", "let me try it"). Runs on the user's Mac, directly or over SSH.
+description: Publish the latest iOS or Android build to the user's phone over the air. Use when the user wants to see, test, or install the current build on their device ("get this on my phone", "publish the build", "let me try it"). Runs on the user's Mac or Linux machine, directly or over SSH.
 ---
 
-# Publishing iOS builds with otata
+# Publishing builds with otata
 
 otata builds the project in the current directory, signs it, publishes it to a
-server on the user's Mac, and prints a URL. The user opens the URL on their
-phone and taps Install. Your job ends at handing over the URL; the install
-happens on the phone.
+server on the user's computer, and prints a URL. The user opens the URL on
+their phone and taps Install. Your job ends at handing over the URL; the
+install happens on the phone.
 
 ## The one command
 
@@ -63,7 +63,7 @@ stopped it.
 | `signing_failed` | On iOS, needs a human with Apple portal access; do not retry. On Android the APK is unsigned or does not verify: a debug build is signed, a release build needs a signingConfig |
 | `free_profile` | iOS refuses free-team builds over the air; a paid team is the only fix. Do not retry |
 | `server_down` | `otata doctor --fix`; if autostart was never set up, `otata autostart on` once |
-| `transport_down` | Machine-side (Tailscale logged out, or the route is public: Funnel on); `otata doctor` names it. Do not retry until it is fixed |
+| `transport_down` | Machine-side (Tailscale logged out, the route is public with Funnel on, or on Linux the user is not Tailscale's operator: `sudo tailscale set --operator=$USER`); `otata doctor` names it. Do not retry until it is fixed |
 | `no_transport` | Run the `otata transport use` command the hint names |
 | `slug_conflict` | Another path owns this name: pass `--slug`, or `otata forget <slug>` |
 | `build_in_progress` | Another publish holds the slug: wait; `doctor --fix` clears a marker whose process is gone |
@@ -79,42 +79,51 @@ stopped it.
 otata doctor --fix --json
 ```
 
-Doctor repairs what it can (launch agent, transport wiring, stale build
-markers, pages), then verifies every URL and exits non-zero with each failing
-check naming its remedy. Logs on the Mac:
+Doctor repairs what it can (the launch agent or systemd unit, transport
+wiring, stale build markers, pages), then verifies every URL and exits
+non-zero with each failing check naming its remedy. Logs on the machine:
 
 - `~/.otata/server.log` — server and access log
 - `~/.otata/build/<slug>/xcodebuild.log` — the build that failed;
   `gradle.log` there for an Android build
 
-## Not on the Mac?
+## Not on the machine that builds?
 
-otata runs only on the Mac; drive it over SSH from anywhere:
+otata runs on the machine that builds: a Mac for iOS, a Mac or a Linux
+machine for Android. Drive it over SSH from anywhere:
 
 ```sh
 ssh mac 'cd ~/path/to/MyApp && ~/.local/bin/otata publish --platform ios --json'
+ssh box 'cd ~/path/to/MyApp && ~/.local/bin/otata publish --platform android --json'
 ```
 
-- Spell the binary's full path: non-interactive zsh reads only `~/.zshenv`,
-  so `command not found` over SSH while otata works in a terminal on the Mac
-  is a PATH problem, not a broken install.
+- Spell the binary's full path: a non-interactive shell over SSH skips the
+  files where PATH edits live (zsh reads only `~/.zshenv`; a Linux `~/.bashrc`
+  usually returns early), so `command not found` over SSH while otata works
+  in a terminal there is a PATH problem, not a broken install.
 - The envelope, codes, and exit codes are unchanged.
 - An SSH connection that dies mid-build kills the publish (it cleans up like
   a Ctrl-C). On a flaky link, run it under `tmux` or `nohup`.
-- Keep the project at one path on the Mac: the same project at a new location
-  is refused with `slug_conflict`.
+- Keep the project at one path on that machine: the same project at a new
+  location is refused with `slug_conflict`.
+- An Android build over SSH needs the SDK in the command's environment:
+  `ANDROID_HOME` set in the shell the command gets, or `sdk.dir` in the
+  project's `local.properties`, which needs no shell at all.
 
 ## Rules
 
 - Never background the server as a workaround — no `otata serve &`, no
-  `nohup` spawn. The server runs under launchd (`otata autostart on`), and
-  `server_down` means `doctor --fix`, not a hand-rolled server. The exception
-  is a headless Mac with no console session, which cannot host the launch
-  agent: there `otata serve` inside a tmux session the user knows about is
-  the supported mode.
+  `nohup` spawn. The server runs under launchd on a Mac or the user's systemd
+  on Linux (`otata autostart on`), and `server_down` means `doctor --fix`, not
+  a hand-rolled server. The exception is a headless Mac with no console
+  session, which cannot host the launch agent: there `otata serve` inside a
+  tmux session the user knows about is the supported mode. Linux has no such
+  exception: a server that vanishes at logout wants `sudo loginctl
+  enable-linger $USER`, which the user runs once.
 - Never write into `~/.otata`; every mutation goes through the CLI.
 - The printed URL is for the user's phone. Hand it over rather than fetching
   it yourself; when in doubt, `otata doctor` verifies every URL.
-- After the user's signing identity changes, the first publish must happen
-  locally on the Mac (a keychain prompt needs **Always Allow**); a remote
-  publish under a new identity hangs mid-build instead.
+- On iOS, after the user's signing identity changes, the first publish must
+  happen locally on the Mac (a keychain prompt needs **Always Allow**); a
+  remote publish under a new identity hangs mid-build instead. Android
+  signing is a keystore file and never prompts.

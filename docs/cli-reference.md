@@ -33,26 +33,37 @@ builds for one platform can record the flag in its agent instructions. With
 `--artifact` the payload's extension specifies its platform, so the flag isn't needed there,
 and one that disagrees with the file is refused.
 
-Discovery will fill in the rest: the workspace or project, a scheme that
-archives an app, the signing team, and the slug from the directory name.
-`--scheme` and `--slug` are for when it asks. Each platform selects its build
-in its own toolchain's terms, `--scheme` on iOS and `--module` and `--flavor`
-on Android. An inapplicable flag meant for the other platform is refused.
+Discovery fills in the rest. On iOS: the workspace or project, a scheme that
+archives an app, and the signing team. On Android: the Gradle root, the
+application module and its product flavor, and the signing certificate. On
+both, the slug from the directory name, with `-android` appended for an
+Android build so a cross-platform project's two builds sit side by side.
+`--scheme`, `--module`, `--flavor` and `--slug` are for when it asks. Each
+platform selects its build in its own toolchain's terms. An inapplicable flag
+meant for the other platform is refused.
 
 | Flag | Does |
 | --- | --- |
-| `--platform` | What to build for: `ios` or `android`. Required for a build; `--artifact` reads it off the file. Android has no builder yet, so a build for it is refused; an `.apk` is published with `--artifact` |
-| `--config` | Build configuration. Defaults to `Release`, and a publish that falls back to it says so before the build starts |
+| `--platform` | What to build for: `ios` or `android`. Required for a build; `--artifact` reads it off the file |
+| `--config` | Build configuration. Defaults to `Release`, and a publish that falls back to it says so before the build starts. On Android it names the build type as Gradle spells it, `Debug` for `debug`, and a release build type with no signingConfig is refused before the build with `needs_setup`, since Android will not install the unsigned APK it would produce |
 | `--scheme` | The Xcode scheme to build, when discovery finds several candidates. iOS only |
-| `--module` | The Gradle module to build, as `:app`. Android only |
-| `--flavor` | The Gradle product flavor to build. Android only |
+| `--module` | The Gradle module to build, as `:app`, when the project has several application modules and none is `:app`. Android only |
+| `--flavor` | The Gradle product flavor to build, when the module defines several; with several flavor dimensions, the combination as Gradle names it, `freeArm`. Android only |
 | `--slug` | Publish under this name instead of the directory's |
 | `--artifact` | Publish an already-built `.ipa` or `.apk` from any toolchain, skipping the build entirely. Reading it needs the platform's tools: plutil on macOS for an `.ipa`, the SDK's build-tools (`ANDROID_HOME`) for an `.apk`, which must also verify, since Android will not install one that does not |
-| `--builder` | `build` (the default, incremental) or `archive` |
+| `--builder` | `build` (the default, incremental) or `archive`. iOS only |
 
 Publishes build incrementally by default. `--builder archive` uses `xcodebuild
 archive` + export instead, which rebuilds everything every time and will be
 noticeably slower. It does however produce a smaller payload. See [gotchas](gotchas.md).
+
+An Android publish runs the project's own Gradle wrapper: `assemble` for the
+selected variant, on its module, with the log at
+`~/.otata/build/<slug>/gradle.log`. It needs a JDK 17 or newer and the Android
+SDK, found through `ANDROID_HOME` or the project's `local.properties`, whose
+build-tools also read the APK afterwards. Anything missing is reported as
+`needs_setup` before Gradle runs. Flutter and React Native keep their Android
+project in `android/`, where discovery looks.
 
 ## transport use
 
@@ -114,8 +125,8 @@ it ran and failed, and 128 plus the signal number when a signal stopped it
 | Code | Means | What to do |
 | --- | --- | --- |
 | `no_project` | Nothing buildable here | Check the directory, or pass `--artifact` |
-| `ambiguous_scheme` | Several candidates | Re-run with `--scheme`; the candidates are in `details` |
-| `needs_setup` | A step the project's own toolchain owns has not been run | Run `details.command` in `details.dir`, then retry |
+| `ambiguous_scheme` | Several candidates for a choice discovery could not make: a scheme, an application module or a product flavor | Re-run with the flag in `details.flag`; the candidates are in `details.candidates` |
+| `needs_setup` | A step the project's own toolchain owns has not been run, or a setting its build needs is missing | Run `details.command` in `details.dir` when there is one, then retry; otherwise the hint names the setting |
 | `build_failed` | The toolchain returned non-zero | Read the log path in `details` |
 | `signing_failed` | Certificate, profile or device registration on iOS; an APK that is unsigned or does not verify on Android | Needs a human with Apple portal access, or a signed APK: a debug build, or a release signingConfig |
 | `free_profile` | Signed by a free personal team, which iOS will not install over the air | Sign with a paid team; nothing else fixes it |

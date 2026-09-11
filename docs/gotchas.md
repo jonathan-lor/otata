@@ -44,7 +44,7 @@ These are some surprises you might hit.
 ```sh
 otata doctor                        # verifies every URL; --fix repairs first
 tail -f ~/.otata/server.log         # server and access log
-tail -50 ~/.otata/build/<slug>/xcodebuild.log
+tail -50 ~/.otata/build/<slug>/xcodebuild.log   # gradle.log for an Android build
 tailscale serve status              # confirm the path is wired
 ```
 

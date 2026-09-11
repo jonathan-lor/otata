@@ -31,7 +31,7 @@ const usage = `otata installs iOS builds on your phone over your own network
   otata help                    this summary
 
 Options:
-  --json
+  --json                        machine-readable output
 
 'otata <command> --help' shows a command's flags.
 

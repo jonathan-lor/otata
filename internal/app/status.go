@@ -16,7 +16,7 @@ type StatusResult struct {
 	// Version is this binary's; ServerVersion is what the running server
 	// reported. They can differ when an upgrade replaced the binary on disk and
 	// the long-lived server still runs the old image.
-	//  ServerOutdated flags it so an agent doesn't need to compare strings.
+	// ServerOutdated flags it so an agent doesn't need to compare strings.
 	Version        string `json:"version"`
 	ServerVersion  string `json:"server_version,omitempty"`
 	ServerOutdated bool   `json:"server_outdated,omitempty"`

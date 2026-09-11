@@ -47,8 +47,9 @@ go test ./...              # everything
 go test ./internal/server/ -v
 ```
 
-The suite passes on Linux as well as macOS. A test that shells out to a macOS
-tool (`ditto`, `plutil`, `pngcrush`) will skip where the tool is absent instead
+The suite passes on Linux as well as macOS, and CI runs it on both, each
+also vetting the other's build. A test that shells out to a macOS tool
+(`ditto`, `plutil`, `pngcrush`) will skip where the tool is absent instead
 of failing. Code that drives the tailscale transport is tested against the
 fake CLI in `internal/transport/transporttest`, which answers from canned
 JSON and counts its invocations; putting its directory on `PATH` is what

@@ -9,7 +9,10 @@ permissions:
 
 jobs:
   test:
-    runs-on: macos-latest
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
         with:

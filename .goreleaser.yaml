@@ -1,6 +1,7 @@
-# Release pipeline: darwin-only tar.gz archives, signed and notarized by the
-# embedded quill (which is what lets the release job run on a Linux runner),
-# published as a GitHub Release and a cask in jonathan-lor/homebrew-tap.
+# Release pipeline: tar.gz archives for macOS and Linux. The macOS ones are
+# signed and notarized by the embedded quill (which is what lets the release
+# job run on a Linux runner) and published as a cask in
+# jonathan-lor/homebrew-tap; all of them go on the GitHub Release.
 #
 # Validate with `goreleaser check`; dry-run with
 # `goreleaser release --snapshot --clean` (signing stays off without the
@@ -9,8 +10,12 @@ version: 2
 
 project_name: otata
 
+# One build per platform, so the cask below can name the macOS archives
+# alone: Homebrew's cask DSL takes an on_linux block, but this cask's
+# uninstall and zap stanzas are launchd's, which mean nothing there.
 builds:
-  - env:
+  - id: darwin
+    env:
       - CGO_ENABLED=0
     goos:
       - darwin
@@ -24,6 +29,24 @@ builds:
     # default or released binaries report "dev".
     ldflags:
       - -s -w
+  - id: linux
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - arm64
+      - amd64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+
+archives:
+  - id: darwin
+    ids: [darwin]
+  - id: linux
+    ids: [linux]
 
 notarize:
   macos:
@@ -47,7 +70,8 @@ release:
     name: otata
 
 homebrew_casks:
-  - repository:
+  - ids: [darwin]
+    repository:
       owner: jonathan-lor
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"

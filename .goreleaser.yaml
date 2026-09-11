@@ -76,7 +76,7 @@ homebrew_casks:
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     homepage: https://github.com/jonathan-lor/otata
-    description: Over-the-air installer for iOS builds on your own network
+    description: Over-the-air installer for iOS and Android builds on your own network
     skip_upload: auto
     # brew upgrade runs the old cask's uninstall stanzas, so the launch agent
     # is booted out on upgrade and returns at next login or `otata start`.

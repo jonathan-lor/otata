@@ -13,7 +13,7 @@
 | `otata forget <slug>` | Drop one app and its payload |
 | `otata serve` | Run the file server in the foreground |
 | `otata start` / `stop` / `restart` | Server lifecycle |
-| `otata autostart on\|off` | Run the server under launchd: at login, restarted if it exits |
+| `otata autostart on\|off` | Run the server under launchd on a Mac or your own systemd on Linux |
 | `otata transport use <name>` | `tailscale` or `manual` |
 | `otata version` | Print the version (`--version` and `-V` work too) |
 | `otata help` | The usage summary |

@@ -1,4 +1,4 @@
-// Command otata installs iOS builds on your phone over your own network.
+// Command otata installs iOS and Android builds on your phone over your own network.
 package main
 
 import (
@@ -14,7 +14,7 @@ import (
 	"github.com/jonathan-lor/otata/internal/version"
 )
 
-const usage = `otata installs iOS builds on your phone over your own network
+const usage = `otata installs iOS and Android builds on your phone over your own network
 
   otata publish --platform ios [--config Debug] [--scheme S] [--slug NAME] [--builder archive]
   otata publish --platform android [--config Debug] [--module M] [--flavor F] [--slug NAME]

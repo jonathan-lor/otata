@@ -1,9 +1,8 @@
 # otata via SSH
 
-otata runs on the Mac, and any machine that can reach the Mac over SSH can use it.
-How your source code gets to the Mac is up to you because otata just reads whatever
-working tree it's pointed at. The examples write `mac` for the Mac's name
-in `~/.ssh/config`.
+otata can also be used over SSH! The likely use case for this is a Mac being used exclusively for building iOS apps, while being orchestrated by an agent on another host.
+How your source code gets there is up to you because otata just reads whatever working tree it's pointed at. 
+The examples write `mac` for the builder's name in `~/.ssh/config`.
 
 ```
 agent's machine      edits source; runs no otata
@@ -15,24 +14,25 @@ agent's machine      edits source; runs no otata
 
 The phone should talk directly to the mac in this setup, so the machine running the agent needs no otata install. The Mac keeps the same transport as when publishing locally.
 
-Serving a .ipa from a non-macOS machine is technically possible today by building otata from source on your desired machine and using `--artifact`, but official support will arrive when Linux/Windows/WSL support does.
-
 ## Publishing
 
 ```sh
 ssh mac 'cd ~/path/to/MyApp && ~/.local/bin/otata publish --platform ios --json'
+ssh box 'cd ~/path/to/MyApp && ~/.local/bin/otata publish --platform android --json'
 ```
 
-Spell the binary's full path, or export PATH in `~/.zshenv` on the Mac.
-Non-interactive zsh reads only `~/.zshenv`, not the `~/.zprofile` or
-`~/.zshrc` where installers put PATH edits. `command not found` over SSH
-while `otata` works in a terminal on the Mac is this, not a broken install.
+Spell the binary's full path. A non-interactive shell over SSH reads few of
+the files where installers put PATH edits: zsh on a Mac reads only
+`~/.zshenv`, not `~/.zprofile` or `~/.zshrc`, and a Linux `~/.bashrc`
+usually returns before its PATH lines when the shell is not interactive.
+`command not found` over SSH while `otata` works in a terminal is this, not
+a broken install.
 
 An SSH connection that dies mid-build will kill the publish. On an unstable connection, run otata under `tmux` or `nohup`.
 
 Each publish records the commit, branch and dirty flag of the working tree
-*on the Mac*, however the source got there. Keep the project at one path on
-the Mac. The same project at a new location is refused with `slug_conflict`.
+*on the builder*, however the source got there. Keep the project at one path
+there. The same project at a new location is refused with `slug_conflict`.
 
 ## Initial setup on the Mac
 
@@ -72,3 +72,23 @@ A Mac being used only over SSH needs four substitutions:
 A project under `~/Documents`, `~/Desktop` or `~/Downloads` is unreadable
 over SSH until remote users are allowed full disk access (System Settings >
 General > Sharing > Remote Login).
+
+## On Linux
+
+A Linux builder has no console session to keep alive and no keychain to
+unlock, and needs two things instead:
+
+- **Lingering.** A user's systemd, and the otata unit under it, runs only
+  while that user has a session, an SSH one included, and stops at the last
+  logout. `sudo loginctl enable-linger $USER` once keeps it running with no
+  session, and brings the server back after a reboot before anyone logs in.
+- **The Tailscale operator.** `tailscale serve` is refused to anyone but
+  root or the operator, so `sudo tailscale set --operator=$USER` once.
+  tailscaled itself is a system service, up whenever the machine is, so
+  there is no login-item equivalent to tick.
+
+An Android build is signed by a keystore file, the debug one generated on
+first use, so nothing prompts during a remote publish. The SDK and JDK the
+build needs are environment, not session: `ANDROID_HOME` has to be set for
+the SSH command's shell, or written as `sdk.dir` in the project's
+`local.properties`, which does not depend on the shell at all.

@@ -25,7 +25,7 @@
       {{end}}
       <dl style="margin:1.25rem 0 0">
         <dt>Built</dt><dd>{{template "built" .Built}}</dd>
-        <dt>Bundle</dt><dd>{{.BundleID}}</dd>
+        <dt>{{if eq .Platform "android"}}Package{{else}}Bundle{{end}}</dt><dd>{{.BundleID}}</dd>
         <dt>Commit</dt><dd>{{.Commit}}{{if .Dirty}} <span class="dirty">+dirty</span>{{end}}</dd>
         <dt>Branch</dt><dd>{{.Branch}}</dd>
         <dt>Size</dt><dd>{{.Size}}</dd>

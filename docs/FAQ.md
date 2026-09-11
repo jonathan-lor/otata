@@ -15,6 +15,21 @@ phone (on the tailnet)
                     └── ~/.otata/public/<slug>/
 ```
 
+## How does the Android install work?
+
+The app's page links the `.apk` itself. The browser
+downloads it, and tapping the download hands it to Android's package
+installer. The first time, Android asks to allow installs from that browser.
+
+Android identifies an installed app by its package name and its signing
+certificate. A build signed by the same certificate replaces the installed
+one in place; a build signed by any other is refused until the installed
+copy is uninstalled. The debug keystore is one such certificate, generated
+per machine, so debug builds from two computers cannot replace each other
+unless `~/.android/debug.keystore` is copied between them. otata verifies
+the signature before serving an APK, because an unsigned one, which a release
+build without a `signingConfig` produces, would fail on every tap.
+
 ## Is using `itms-services://` against Apple's rules?
 
 No. The scheme installs any non-App-Store build, not just in-house
@@ -113,14 +128,16 @@ Under `--json`, unhealthy is `ok: false` with the `unhealthy` code, and
 `data.checks` still carries every check.
 
 `otata doctor --fix` is what you should reach for remotely and after a reboot.
-It repairs first (reloads the launch agent, wires the transport, clears stale
-markers, regenerates the pages, restarts a server serving a `public/` since
-recreated), then runs the same checks, so the exit code reports what is
-still broken. It will not replace a server belonging to a different
-`OTATA_ROOT`. `otata restart` does that explicitly.
+It repairs first (reloads the launch agent or systemd unit, wires the
+transport, clears stale markers, regenerates the pages, restarts a server
+serving a `public/` since recreated), then runs the same checks, so the exit
+code reports what is still broken. It will not replace a server belonging to
+a different `OTATA_ROOT`. `otata restart` does that explicitly.
 
-A build stops being installable when its profile or certificate expires,
+An iOS build stops being installable when its profile or certificate expires,
 whichever is earlier. `doctor` warns inside 30 days and fails past the deadline.
+An Android build's certificate is nominally good for decades, so `doctor`
+names the signer and counts nothing down.
 
 ```sh
 $ otata doctor
@@ -131,21 +148,25 @@ $ otata doctor
 
 ## When is the server up?
 
-Only while the Mac is awake and logged in. It runs under launchd: `otata
-autostart on` installs the launch agent once. It returns at login and
-restarts if it exits. `otata stop` unloads it but leaves it installed (`otata status`
-says so); `otata start`, `otata publish` and `otata doctor --fix` bring it back through
-launchd, and with no agent installed they refuse and name the command. The
+Only while the computer is awake and you are logged in. It runs under
+launchd on a Mac and under your own systemd on Linux: `otata autostart on`
+installs the unit once. It returns at login and restarts if it exits.
+`otata stop` unloads it but leaves it installed (`otata status` says so);
+`otata start`, `otata publish` and `otata doctor --fix` bring it back through
+the manager, and with no unit installed they refuse and name the command. The
 only other server is `otata serve` in a foreground terminal, alive as long
 as the terminal.
 
-One agent exists per user, embedding the `OTATA_ROOT`, `OTATA_PORT` and
+One unit exists per user, embedding the `OTATA_ROOT`, `OTATA_PORT` and
 `OTATA_PATH` it was installed with: a shell with a scratch root sees
 `autostart off`, cannot stop it, and is refused `autostart on`. Nothing
-returns before login: FileVault keeps the volume encrypted until someone
-types the password. What to set up before leaving the Mac — Tailscale at
-login, sleep, the keychain prompt — is in
-[otata-via-ssh.md](otata-via-ssh.md#initial-setup-on-the-mac).
+returns before login. On a Mac, FileVault keeps the volume encrypted until
+someone types the password. On Linux, a user's systemd starts at that user's
+first login, an SSH session included, and stops at the last logout, taking
+the server with it, unless `loginctl enable-linger` says otherwise. What to
+set up before leaving the machine — Tailscale at login, sleep, the keychain
+prompt, lingering — is in [otata-via-ssh.md](otata-via-ssh.md#initial-setup-on-the-mac)
+and its [Linux section](otata-via-ssh.md#on-linux).
 
 ## What's in `~/.otata`?
 
@@ -155,7 +176,7 @@ login, sleep, the keychain prompt — is in
 | `state/` | One record per app, naming local paths, and the marker of a build in flight |
 | `build/` | Archives, exports and the build log, per app |
 | `tmp/` | Where publishing stages a file before renaming it into `public/`, so a client can never fetch a half-written one |
-| `bin/` | A copy of the otata binary, present only when the installed one sits where launchd cannot read it |
+| `bin/` | A copy of the otata binary, present only when the installed one sits where the service manager cannot run it: a TCC-protected directory on a Mac, a path systemd refuses on Linux |
 | `config.json` | The port, serve path and selected transport |
 | `server.log` | The background server's own log and its access log |
 
@@ -167,4 +188,3 @@ Most notably, the required app archive for these paths *always* recompiles every
 For a real nine-target app, archiving took ~100s while incremental rebuild took ~4s.
 
 Of course, YMMV depending on your specific circumstances, so benchmarking the speed difference yourself is encouraged!
-

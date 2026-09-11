@@ -22,8 +22,6 @@ type TransportSelection struct {
 // changed is restarted, and every page and manifest is regenerated against the
 // new base URL. progress receives the warnings a caller should see but that
 // do not fail the command.
-//
-// UseTransport sets the
 func (a *App) UseTransport(sel TransportSelection, progress func(string)) error {
 	// Everything gets validated before anything is changed.
 	var manual *config.Manual

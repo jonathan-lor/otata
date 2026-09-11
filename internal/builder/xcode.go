@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/jonathan-lor/otata/internal/artifact"
 )
@@ -68,46 +67,6 @@ func projectArgs(container string) []string {
 	return []string{"-project", container}
 }
 
-// SigningError distinguishes a failure a human must fix in Apple's portal from
-// one the code can fix. an agent escalates the first and retries the second.
-//
-// Hint is the remedy for the phrase that matched, not for signing in general.
-// One hint for all of them sent a project with no team selected to the portal,
-// where there is nothing to do.
-type SigningError struct {
-	Detail string
-	Hint   string
-}
-
-func (e *SigningError) Error() string { return "code signing failed: " + e.Detail }
-
-// SetupError reports a step the project's own toolchain must run before
-// xcodebuild can archive: pods installed, an xcconfig generated, a JDK for a
-// Gradle phase. Not a build failure: the code is fine and the log holds nothing
-// to act on. Not "no project" either. One command fixes it, so the command is
-// carried instead of described.
-type SetupError struct {
-	Detail  string // what is missing
-	Hint    string // what to do about it, when no single command says it
-	Command string // the command that fixes it, when one does
-	Dir     string // where to run it, empty when the log cannot say
-}
-
-func (e *SetupError) Error() string { return e.Detail }
-
-// diagnosis pairs a phrase a failing build prints with the remedy for it.
-type diagnosis struct {
-	phrase string
-	// signing marks what only a human with Xcode or portal access can resolve,
-	// and hint is its remedy. A signing failure states itself, so the matched
-	// phrase is its detail.
-	signing bool
-	hint    string
-	// setup is the step a caller can run and then retry, for the rest, which
-	// is the whole reason the two are different codes.
-	setup SetupError
-}
-
 // flutterConfigMissing is Flutter's one setup step, stated once for the
 // pre-check and for the two log phrases that mean the same thing.
 var flutterConfigMissing = SetupError{
@@ -116,16 +75,12 @@ var flutterConfigMissing = SetupError{
 	Hint:    "that xcconfig is generated, not committed, so a fresh clone never has it",
 }
 
-/*
-diagnoses is scanned by position in the log, not in the order written here.
-Whichever phrase appears FIRST in the build output wins.
-
-That matters for cross-platform projects. A fresh checkout fails for two
-reasons at once (the framework's setup step has never run, and the template
-ships no development team), so a table-ordered scan reported signing and sent
-the caller to Apple's portal for something 'pod install' fixes.
-*/
-var diagnoses = []diagnosis{
+// xcodeDiagnoses is what an xcodebuild log can say that has a remedy: the
+// signing failures only a human with Xcode or portal access resolves, each
+// with its own hint, and the setup steps of the frameworks that wrap Xcode.
+// A Kotlin Multiplatform archive runs Gradle inside xcodebuild, so its log
+// is scanned for gradleDiagnoses too: see job.failure.
+var xcodeDiagnoses = []diagnosis{
 	// Signing. Each of these has a different remedy, which is why each carries its own hint
 	{phrase: "requires a development team", signing: true,
 		hint: "select a team in Xcode under Signing & Capabilities, or set DEVELOPMENT_TEAM in the target's build settings; cross-platform templates usually read it from an xcconfig instead (Kotlin Multiplatform: TEAM_ID in iosApp/Configuration/Config.xcconfig)"},
@@ -158,66 +113,18 @@ var diagnoses = []diagnosis{
 		Detail:  "a build configuration file the project references is missing",
 		Command: "pod install",
 		Hint:    "in a CocoaPods project that file is written by the install"}},
-	{phrase: "Unable to locate a Java Runtime", setup: SetupError{
-		Detail: "this build runs Gradle, and no JDK is installed",
-		Hint:   "install a JDK 17 or newer"}},
-	{phrase: "JAVA_HOME is not set", setup: SetupError{
-		Detail: "this build runs Gradle, and no JDK is on PATH",
-		Hint:   "install a JDK 17 or newer, or set JAVA_HOME"}},
-	{phrase: "SDK location not found", setup: SetupError{
-		Detail: "the Gradle build has an Android target and no Android SDK is configured",
-		Hint:   "install the Android SDK and set ANDROID_HOME, or write sdk.dir into local.properties"}},
 }
 
-// classifyBuildFailure reads the tail of the build log and names what failed.
-// A build that was cancelled failed because it was told to, and its log says
-// nothing about the code, so the cancellation is reported instead.
-func classifyBuildFailure(ctx context.Context, logPath, fallback string) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	raw, err := os.ReadFile(logPath)
-	if err != nil {
-		return fmt.Errorf("%s", fallback)
-	}
-	text := string(raw)
-	if len(text) > 200_000 {
-		text = text[len(text)-200_000:] // the failure is at the end
-	}
-	return diagnose(text, fallback)
-}
-
-// diagnose is the log-reading half, split out so it can be tested against real
-// build output without a build.
-func diagnose(text, fallback string) error {
-	best := -1
-	var match diagnosis
-	for _, d := range diagnoses {
-		i := strings.Index(text, d.phrase)
-		if i < 0 || (best >= 0 && i >= best) {
-			continue
-		}
-		best, match = i, d
-	}
-	if best < 0 {
-		return fmt.Errorf("%s", fallback)
-	}
-	if match.signing {
-		return &SigningError{Detail: match.phrase, Hint: match.hint}
-	}
-	setup := match.setup
-	return &setup
-}
-
-// AmbiguousScheme carries the candidates so a caller can choose without re-running discovery.
-type AmbiguousScheme struct {
-	Project    string
+// Ambiguous reports a choice discovery could not make: several candidates
+// and none the rule prefers. It carries them, and the flag that makes the
+// choice, so a caller can choose without re-running discovery.
+type Ambiguous struct {
+	Detail     string // what could not be chosen, as the message
+	Flag       string // the flag that chooses: --scheme, --module or --flavor
 	Candidates []string
 }
 
-func (e *AmbiguousScheme) Error() string {
-	return fmt.Sprintf("several schemes and none named after %s", filepath.Base(e.Project))
-}
+func (e *Ambiguous) Error() string { return e.Detail }
 
 // Schemes lists what xcodebuild reports, narrowed to schemes that actually archive an app.
 func (x *Xcode) Schemes(container string) ([]string, error) {
@@ -276,7 +183,10 @@ func (x *Xcode) ResolveScheme(container, override string) (string, error) {
 	if len(names) == 1 {
 		return names[0], nil
 	}
-	return "", &AmbiguousScheme{Project: container, Candidates: names}
+	return "", &Ambiguous{
+		Detail: fmt.Sprintf("several schemes and none named after %s", filepath.Base(container)),
+		Flag:   "--scheme", Candidates: names,
+	}
 }
 
 type schemeFile struct {
@@ -421,6 +331,12 @@ func (j *job) result(payload string) Result {
 	return Result{PayloadPath: payload, Platform: artifact.IOS, Config: j.config, LogPath: j.logPath}
 }
 
+// failure names what went wrong from the log: Xcode's own phrases and
+// Gradle's, since a Kotlin Multiplatform archive runs Gradle inside xcodebuild.
+func (j *job) failure(ctx context.Context, fallback string) error {
+	return classifyBuildFailure(ctx, j.logPath, fallback, xcodeDiagnoses, gradleDiagnoses)
+}
+
 func (x *Xcode) Build(ctx context.Context, opts Options) (Result, error) {
 	j, err := x.prepare(opts)
 	if err != nil {
@@ -436,7 +352,7 @@ func (x *Xcode) Build(ctx context.Context, opts Options) (Result, error) {
 
 	opts.logf("archiving %s (%s)", j.scheme, j.config)
 	if err := runLogged(ctx, j.log, "xcodebuild", j.args("archive", "-archivePath", archive)...); err != nil {
-		return failed, classifyBuildFailure(ctx, j.logPath, "archive failed")
+		return failed, j.failure(ctx, "archive failed")
 	}
 
 	team, err := archiveTeam(archive)
@@ -455,7 +371,7 @@ func (x *Xcode) Build(ctx context.Context, opts Options) (Result, error) {
 		"-exportPath", export,
 		"-allowProvisioningUpdates",
 	); err != nil {
-		return failed, classifyBuildFailure(ctx, j.logPath, "export failed")
+		return failed, j.failure(ctx, "export failed")
 	}
 
 	ipa := firstMatch(export, ".ipa")
@@ -463,27 +379,6 @@ func (x *Xcode) Build(ctx context.Context, opts Options) (Result, error) {
 		return failed, fmt.Errorf("no .ipa produced in %s", export)
 	}
 	return j.result(ipa), nil
-}
-
-// runLogged runs a toolchain command with its output in log. The command gets
-// a process group of its own, and cancelling ctx signals that whole group:
-// xcodebuild fans out into clang, swift-frontend and script phases, and
-// killing only the parent left those writing into the work directory after
-// the publish that started them was gone. Cancellation is reported as
-// ctx.Err(), whatever the killed process's exit looked like.
-func runLogged(ctx context.Context, log *os.File, name string, args ...string) error {
-	cmd := exec.CommandContext(ctx, name, args...)
-	cmd.Stdout = log
-	cmd.Stderr = log
-	ownProcessGroup(cmd)
-	// After the group is signalled, a parent that has not exited by then is
-	// killed outright rather than waited on forever.
-	cmd.WaitDelay = 10 * time.Second
-	err := cmd.Run()
-	if err != nil && ctx.Err() != nil {
-		return ctx.Err()
-	}
-	return err
 }
 
 // archiveTeam reads the signing team out of the archive, so nothing is

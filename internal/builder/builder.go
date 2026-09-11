@@ -8,18 +8,29 @@ package builder
 import (
 	"context"
 	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"time"
 
 	"github.com/jonathan-lor/otata/internal/artifact"
 )
 
 type Options struct {
 	// Container is the buildable thing Detect found: the workspace or project
-	// for Xcode. Build is handed it rather than looking again.
+	// for Xcode, the Gradle root for Android. Build is handed it rather than
+	// looking again.
 	Container string
 	// Config is the build configuration, Debug or Release. Required: the
 	// default is the caller's to choose and announce, not this package's.
 	Config string
-	Scheme string // optional override
+	// Scheme is the Xcode scheme to build and is iOS only. Module and
+	// Flavor are the Gradle module and product flavor and Android only. Each is
+	// optional, and the caller refuses the other platform's before a
+	// builder sees them.
+	Scheme string
+	Module string
+	Flavor string
 	Work   string // scratch space for archives and logs
 	Log    func(string)
 }
@@ -57,8 +68,41 @@ func For(platform artifact.Platform, mode string) (Builder, error) {
 			return &Xcode{}, nil
 		}
 		return nil, fmt.Errorf("unknown builder %q; --builder takes archive or build", mode)
+	case artifact.Android:
+		switch mode {
+		case "", "build":
+			return &Gradle{}, nil
+		}
+		return nil, fmt.Errorf("unknown builder %q for an Android build; --builder archive is Xcode's", mode)
 	}
 	return nil, fmt.Errorf("%s builds are not supported yet.", platform)
+}
+
+// run runs a toolchain command with its output in the given writers, from
+// dir when one is given. The command gets a process group of its own, and
+// cancelling ctx signals that whole group: xcodebuild fans out into clang,
+// swift-frontend and script phases, and killing only the parent left those
+// writing into the work directory after the publish that started them was
+// gone. Cancellation is reported as ctx.Err(), whatever the killed
+// process's exit looked like.
+func run(ctx context.Context, stdout, stderr io.Writer, dir, name string, args ...string) error {
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Dir = dir
+	cmd.Stdout, cmd.Stderr = stdout, stderr
+	ownProcessGroup(cmd)
+	// After the group is signalled, a parent that has not exited by then is
+	// killed outright rather than waited on forever.
+	cmd.WaitDelay = 10 * time.Second
+	err := cmd.Run()
+	if err != nil && ctx.Err() != nil {
+		return ctx.Err()
+	}
+	return err
+}
+
+// runLogged runs a toolchain command with both its streams in log.
+func runLogged(ctx context.Context, log *os.File, name string, args ...string) error {
+	return run(ctx, log, log, "", name, args...)
 }
 
 func (o Options) logf(format string, args ...any) {

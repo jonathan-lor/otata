@@ -22,9 +22,14 @@ import (
 )
 
 type PublishOptions struct {
-	Dir      string
-	Config   string
+	Dir    string
+	Config string
+	// Scheme selects the build on iOS, the Xcode scheme; Module and Flavor
+	// select it on Android, the Gradle module and product flavor. Each is
+	// optional, and the other platform's is refused rather than ignored.
 	Scheme   string
+	Module   string
+	Flavor   string
 	Slug     string
 	Artifact string
 	Builder  string // "" or "build" for the incremental build path, "archive" for the archive+export path
@@ -186,6 +191,31 @@ func (a *App) claimBuild(b artifact.Building) error {
 	return cli.Failf(cli.CodeInternal, "could not claim the build marker for %q", b.Slug)
 }
 
+// selectionFlags refuses the other platform's selection flags. Each platform
+// selects a build in its own toolchain's terms, an Xcode scheme or a Gradle
+// module and product flavor, and a flag that names the wrong one is worth
+// stopping on: ignored, it would select nothing, and the build that ran
+// would not be the one asked for.
+func selectionFlags(platform artifact.Platform, opts PublishOptions) error {
+	switch platform {
+	case artifact.IOS:
+		flag, what := "--module", "module"
+		if opts.Module == "" {
+			flag, what = "--flavor", "product flavor"
+		}
+		if opts.Module != "" || opts.Flavor != "" {
+			return cli.Failf(cli.CodeInvalidArgs, "%s names a Gradle %s, and this is an iOS build", flag, what).
+				WithHint("an iOS build is selected with --scheme")
+		}
+	case artifact.Android:
+		if opts.Scheme != "" {
+			return cli.Fail(cli.CodeInvalidArgs, "--scheme names an Xcode scheme, and this is an Android build").
+				WithHint("an Android build is selected with --module and --flavor")
+		}
+	}
+	return nil
+}
+
 // setupHint states the remedy as something to run, because that is what the
 // caller does next: an agent literally, a human by pasting it.
 func setupHint(e *builder.SetupError) string {
@@ -275,6 +305,9 @@ func (a *App) Publish(opts PublishOptions, progress func(string)) (*PublishResul
 			return nil, cli.Fail(cli.CodeInvalidArgs, "no --platform given").
 				WithHint("pass --platform ios or --platform android.")
 		}
+		if err := selectionFlags(platform, opts); err != nil {
+			return nil, err
+		}
 		var err error
 		if b, err = builder.For(platform, opts.Builder); err != nil {
 			return nil, cli.Failf(cli.CodeInvalidArgs, "%v", err)
@@ -348,7 +381,8 @@ func (a *App) Publish(opts PublishOptions, progress func(string)) (*PublishResul
 	// A prebuilt payload was checked up front; only a build runs here.
 	if opts.Artifact == "" {
 		built, err = b.Build(ctx, builder.Options{
-			Container: container, Config: config, Scheme: opts.Scheme,
+			Container: container, Config: config,
+			Scheme: opts.Scheme, Module: opts.Module, Flavor: opts.Flavor,
 			Work: a.Store.BuildDir(slug),
 			Log:  progress,
 		})
@@ -362,9 +396,10 @@ func (a *App) Publish(opts PublishOptions, progress func(string)) (*PublishResul
 			WithExit(signalExit(sig))
 	}
 	if err != nil {
-		if amb, ok := errors.AsType[*builder.AmbiguousScheme](err); ok {
+		if amb, ok := errors.AsType[*builder.Ambiguous](err); ok {
 			return nil, cli.Failf(cli.CodeAmbiguousScheme, "%v", amb).
-				WithHint("re-run with --scheme").WithDetails(map[string]any{"candidates": amb.Candidates})
+				WithHint("re-run with " + amb.Flag).
+				WithDetails(map[string]any{"candidates": amb.Candidates, "flag": amb.Flag})
 		}
 		// A prerequisite of the project's own toolchain is not a build failure:
 		// the code is fine, one command fixes it, and an agent can run that

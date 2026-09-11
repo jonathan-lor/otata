@@ -14,12 +14,12 @@ happens on the phone.
 
 ```sh
 cd /path/to/MyApp        # the project root
-otata publish --platform ios --json
+otata publish --platform ios --json       # or --platform android
 ```
 
 - `--platform` is required: `ios` or `android`. Nothing is discovered, because
   a Mac builds for both. A project that always builds for one platform records
-  the flag in its agent instructions. Android has no builder yet and is refused.
+  the flag in its agent instructions.
 - `--json` is accepted anywhere on any otata command. Success and failure both
   print one JSON envelope on stdout; progress goes to stderr.
 - A publish is synchronous and a build can take minutes. Give it a generous
@@ -27,6 +27,16 @@ otata publish --platform ios --json
 - `--config Debug` builds much faster than the default Release when the user
   just wants to see a change — except on Flutter, where a Debug build cannot
   launch from the home screen: use `--config Profile` there.
+- An Android publish runs the project's Gradle wrapper and needs a JDK 17 or
+  newer and the Android SDK (`ANDROID_HOME`, or `sdk.dir` in the project's
+  `local.properties`); whatever is missing comes back as `needs_setup` before
+  Gradle runs. The build is selected with `--module` (the Gradle module,
+  `:app` by default) and `--flavor` (the product flavor, when the module has
+  several); `--scheme` is iOS's and is refused here. The default `Release` is
+  refused with `needs_setup` on a module whose release build type has no
+  signingConfig, because Android will not install an unsigned APK: use
+  `--config Debug`, which the debug keystore signs, unless the user has set
+  up release signing.
 - `otata publish --artifact path/to/App.ipa` publishes an already-built .ipa
   or .apk from any toolchain. The file says which platform it is, so
   `--platform` is not needed there. An .apk needs the Android SDK's
@@ -47,8 +57,8 @@ stopped it.
 | `error.code` | What to do |
 | --- | --- |
 | `no_project` | Nothing buildable here: check the directory, or pass `--artifact` |
-| `ambiguous_scheme` | Re-run with `--scheme`; the candidates are in `details` |
-| `needs_setup` | Run `details.command` in `details.dir`, then retry |
+| `ambiguous_scheme` | Re-run with the flag in `details.flag` (`--scheme`, `--module` or `--flavor`); the candidates are in `details.candidates` |
+| `needs_setup` | Run `details.command` in `details.dir`, then retry; with no command, the hint names the setting to fix |
 | `build_failed` | Read the log at the path in `details` |
 | `signing_failed` | On iOS, needs a human with Apple portal access; do not retry. On Android the APK is unsigned or does not verify: a debug build is signed, a release build needs a signingConfig |
 | `free_profile` | iOS refuses free-team builds over the air; a paid team is the only fix. Do not retry |
@@ -74,7 +84,8 @@ markers, pages), then verifies every URL and exits non-zero with each failing
 check naming its remedy. Logs on the Mac:
 
 - `~/.otata/server.log` — server and access log
-- `~/.otata/build/<slug>/xcodebuild.log` — the build that failed
+- `~/.otata/build/<slug>/xcodebuild.log` — the build that failed;
+  `gradle.log` there for an Android build
 
 ## Not on the Mac?
 

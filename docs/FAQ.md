@@ -39,16 +39,25 @@ agreement, which otata does not involve.
 - **Platform**: never discovered. `--platform ios|android` is required, because a
   Mac builds for both and a default there would be a guess. With `--artifact`
   the payload's extension says which platform it is.
-- **Project**: the single `.xcworkspace` in the current directory, else the
-  single `.xcodeproj`; `ios/`, `iosApp/` and `apps/ios/` are searched too.
+- **Project**: on iOS, the single `.xcworkspace` in the current directory,
+  else the single `.xcodeproj`; `ios/`, `iosApp/` and `apps/ios/` are searched
+  too. On Android, the Gradle root: the directory holding
+  `settings.gradle(.kts)`, at the top or in `android/`.
 - **Scheme**: only schemes that archive an app count — each `.xcscheme` is
   read for a `.app` buildable marked `buildForArchiving="YES"`, which drops
   package schemes. It prefers a scheme named after the project, else a lone
   scheme, else it asks for `--scheme` and lists the candidates.
-- **Team**: whichever automatic signing chose, read off the payload's
-  profile; `list` and `status` name it.
-- **Slug**: the directory name; a slug another project owns is refused, not
-  overwritten.
+- **Module and flavor** (Android): the application module named with
+  `--module`, else the lone one, else `:app`; the product flavor named with
+  `--flavor`, else the lone one, else none where the module defines none.
+  Anything else asks and lists the candidates. Gradle itself is asked,
+  through an init script, so build scripts, convention plugins and version
+  catalogs are never parsed.
+- **Team** (iOS): whichever automatic signing chose, read off the payload's
+  profile; `list` and `status` name it. On Android the equivalent is the
+  signing certificate, read off the APK and verified.
+- **Slug**: the directory name, with `-android` appended for an Android
+  build; a slug another project owns is refused, not overwritten.
 
 ## What does a cross-platform project need before its first publish?
 
@@ -58,6 +67,12 @@ like a native app. Missing prerequisites are reported before the archive as
 `needs_setup` with the command to run. otata has been verified on Xcode 26.2 with Flutter
 3.47, React Native 0.87 and the JetBrains KMP template. The iOS half of a
 KMP project needs no Android SDK.
+
+Their Android projects build with `--platform android` by the same rule:
+Flutter's and React Native's in `android/`, KMP's at the root. Before Gradle
+runs, a Flutter project without `flutter.sdk` in `android/local.properties`
+is told to run `flutter pub get`, and a React Native project without
+`node_modules` to run `npm install`.
 
 | Framework | Needed before the first publish | Worth knowing |
 | --- | --- | --- |

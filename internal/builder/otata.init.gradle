@@ -1,0 +1,31 @@
+// otata's listing of an Android project: one line per application module,
+// one per variant, tab-separated, for the builder to parse. Written into
+// otata's work directory and handed to Gradle with --init-script, so the
+// project itself is not touched. It answers what xcodebuild -list answers
+// for an Xcode project. Gradle has no such command, and the answer lives in
+// build scripts, convention plugins and version catalogs that only Gradle
+// can evaluate, so Gradle is asked.
+allprojects {
+    plugins.withId("com.android.application") {
+        def p = project
+        // After evaluation, because the build script may relocate the
+        // build directory below its plugins block.
+        p.afterEvaluate {
+            println("otata-module\t" + p.path + "\t" + p.layout.buildDirectory.get().asFile)
+        }
+        p.androidComponents.onVariants(p.androidComponents.selector().all()) { v ->
+            // Whether the variant will be signed, known before a build: a
+            // release build type ships with no signingConfig, and Android
+            // will not install the unsigned APK that produces. hasConfig is
+            // the plugin's own method rather than its published API, so a
+            // plugin without it reports nothing here, and the APK is
+            // verified after the build instead.
+            def signed = ""
+            try {
+                signed = v.signingConfig.hasConfig() ? "signed" : "unsigned"
+            } catch (Throwable ignored) {
+            }
+            println("otata-variant\t" + p.path + "\t" + v.name + "\t" + (v.flavorName ?: "") + "\t" + (v.buildType ?: "") + "\t" + signed)
+        }
+    }
+}

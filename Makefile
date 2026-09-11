@@ -8,9 +8,9 @@ BIN_DIR := $(HOME)/.local/bin
 build: ## Compile for this machine into bin/
 	go build -o bin/$(BINARY) .
 
-## install copies instead of symlinking on purpose. launchd cannot execute a
-## launchd can't run a binary in a TCC-protected directory like ~/Documents
-## and it fails by hanging in dyld instead of erroring which is very hard to diagnose.
+## install copies instead of symlinking on purpose. launchd can't run a binary
+## in a TCC-protected directory like ~/Documents, and it fails by hanging in
+## dyld instead of erroring, which is very hard to diagnose.
 ## Write beside the target and rename into place. Overwriting a currently running
 ## binary corrupts its mapped image and macOS kills the process with SIGKILL.
 ## Rename swaps the directory entry and leaves the running inode alone.

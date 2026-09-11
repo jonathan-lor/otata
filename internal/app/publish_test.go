@@ -146,22 +146,23 @@ func TestSignalExit(t *testing.T) {
 }
 
 // What to build for is never discovered: a build without --platform is
-// refused, an unknown platform is named, and a platform with no builder yet
-// says so. All three are the caller's to fix, so they exit 2, and all three
-// arrive before anything is claimed, wired or written.
+// refused, an unknown platform is named, and a builder mode the platform
+// does not have is refused too. All three are the caller's to fix, so they
+// exit 2, and all three arrive before anything is claimed, wired or written.
 func TestPublishRequiresAKnownPlatformToBuild(t *testing.T) {
 	cases := []struct {
 		name     string
 		platform artifact.Platform
+		builder  string
 		want     string // in the message or the hint
 	}{
-		{"none", "", "--platform"},
-		{"unknown", "windows", `"windows"`},
-		{"no builder yet", artifact.Android, "not supported yet"},
+		{"none", "", "", "--platform"},
+		{"unknown", "windows", "", `"windows"`},
+		{"archive on android", artifact.Android, "archive", `"archive"`},
 	}
 	for _, c := range cases {
 		a := freshApp(t)
-		_, err := a.Publish(PublishOptions{Dir: t.TempDir(), Platform: c.platform}, quiet)
+		_, err := a.Publish(PublishOptions{Dir: t.TempDir(), Platform: c.platform, Builder: c.builder}, quiet)
 		f := cli.AsFailure(err)
 		if err == nil || f.Code != cli.CodeInvalidArgs {
 			t.Errorf("%s: err=%v code=%q, want %q", c.name, err, f.Code, cli.CodeInvalidArgs)

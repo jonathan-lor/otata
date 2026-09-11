@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/jonathan-lor/otata/internal/artifact"
 )
@@ -116,15 +115,16 @@ var xcodeDiagnoses = []diagnosis{
 		Hint:    "in a CocoaPods project that file is written by the install"}},
 }
 
-// AmbiguousScheme carries the candidates so a caller can choose without re-running discovery.
-type AmbiguousScheme struct {
-	Project    string
+// Ambiguous reports a choice discovery could not make: several candidates
+// and none the rule prefers. It carries them, and the flag that makes the
+// choice, so a caller can choose without re-running discovery.
+type Ambiguous struct {
+	Detail     string // what could not be chosen, as the message
+	Flag       string // the flag that chooses: --scheme, --module or --flavor
 	Candidates []string
 }
 
-func (e *AmbiguousScheme) Error() string {
-	return fmt.Sprintf("several schemes and none named after %s", filepath.Base(e.Project))
-}
+func (e *Ambiguous) Error() string { return e.Detail }
 
 // Schemes lists what xcodebuild reports, narrowed to schemes that actually archive an app.
 func (x *Xcode) Schemes(container string) ([]string, error) {
@@ -183,7 +183,10 @@ func (x *Xcode) ResolveScheme(container, override string) (string, error) {
 	if len(names) == 1 {
 		return names[0], nil
 	}
-	return "", &AmbiguousScheme{Project: container, Candidates: names}
+	return "", &Ambiguous{
+		Detail: fmt.Sprintf("several schemes and none named after %s", filepath.Base(container)),
+		Flag:   "--scheme", Candidates: names,
+	}
 }
 
 type schemeFile struct {
@@ -376,27 +379,6 @@ func (x *Xcode) Build(ctx context.Context, opts Options) (Result, error) {
 		return failed, fmt.Errorf("no .ipa produced in %s", export)
 	}
 	return j.result(ipa), nil
-}
-
-// runLogged runs a toolchain command with its output in log. The command gets
-// a process group of its own, and cancelling ctx signals that whole group:
-// xcodebuild fans out into clang, swift-frontend and script phases, and
-// killing only the parent left those writing into the work directory after
-// the publish that started them was gone. Cancellation is reported as
-// ctx.Err(), whatever the killed process's exit looked like.
-func runLogged(ctx context.Context, log *os.File, name string, args ...string) error {
-	cmd := exec.CommandContext(ctx, name, args...)
-	cmd.Stdout = log
-	cmd.Stderr = log
-	ownProcessGroup(cmd)
-	// After the group is signalled, a parent that has not exited by then is
-	// killed outright rather than waited on forever.
-	cmd.WaitDelay = 10 * time.Second
-	err := cmd.Run()
-	if err != nil && ctx.Err() != nil {
-		return ctx.Err()
-	}
-	return err
 }
 
 // archiveTeam reads the signing team out of the archive, so nothing is

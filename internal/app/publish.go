@@ -396,9 +396,10 @@ func (a *App) Publish(opts PublishOptions, progress func(string)) (*PublishResul
 			WithExit(signalExit(sig))
 	}
 	if err != nil {
-		if amb, ok := errors.AsType[*builder.AmbiguousScheme](err); ok {
+		if amb, ok := errors.AsType[*builder.Ambiguous](err); ok {
 			return nil, cli.Failf(cli.CodeAmbiguousScheme, "%v", amb).
-				WithHint("re-run with --scheme").WithDetails(map[string]any{"candidates": amb.Candidates})
+				WithHint("re-run with " + amb.Flag).
+				WithDetails(map[string]any{"candidates": amb.Candidates, "flag": amb.Flag})
 		}
 		// A prerequisite of the project's own toolchain is not a build failure:
 		// the code is fine, one command fixes it, and an agent can run that

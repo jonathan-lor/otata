@@ -9,8 +9,8 @@ import (
 )
 
 // For is the one place a platform's builders are chosen, so its table is
-// pinned: the two iOS modes by name, a typo refused, and a platform with no
-// builder refused rather than handed the wrong one.
+// pinned: the two iOS modes by name, Android's one, a typo refused, and a
+// platform with no builder refused rather than handed the wrong one.
 func TestForSelectsTheBuilderByPlatformAndMode(t *testing.T) {
 	if b, err := For(artifact.IOS, ""); err != nil {
 		t.Errorf("default mode: %v", err)
@@ -30,7 +30,15 @@ func TestForSelectsTheBuilderByPlatformAndMode(t *testing.T) {
 	if _, err := For(artifact.IOS, "bogus"); err == nil {
 		t.Error("an unknown mode was accepted")
 	}
-	if _, err := For(artifact.Android, ""); err == nil {
+	if b, err := For(artifact.Android, ""); err != nil {
+		t.Errorf("android: %v", err)
+	} else if _, ok := b.(*Gradle); !ok {
+		t.Errorf("android is %T, want *Gradle", b)
+	}
+	if _, err := For(artifact.Android, "archive"); err == nil {
+		t.Error("Xcode's archive mode was accepted for Android")
+	}
+	if _, err := For(artifact.Platform("windows"), ""); err == nil {
 		t.Error("a platform with no builder was handed one")
 	}
 }

@@ -50,15 +50,45 @@ type diagnosis struct {
 // Gradle build is what an Android publish runs, and what a Kotlin
 // Multiplatform archive runs inside xcodebuild.
 var gradleDiagnoses = []diagnosis{
-	{phrase: "Unable to locate a Java Runtime", setup: SetupError{
-		Detail: "this build runs Gradle, and no JDK is installed",
-		Hint:   "install a JDK 17 or newer"}},
-	{phrase: "JAVA_HOME is not set", setup: SetupError{
-		Detail: "this build runs Gradle, and no JDK is on PATH",
-		Hint:   "install a JDK 17 or newer, or set JAVA_HOME"}},
-	{phrase: "SDK location not found", setup: SetupError{
-		Detail: "the Gradle build has an Android target and no Android SDK is configured",
-		Hint:   "install the Android SDK and set ANDROID_HOME, or write sdk.dir into local.properties"}},
+	// The JDK, as macOS's java stub and the wrapper script report its absence.
+	{phrase: "Unable to locate a Java Runtime", setup: jdkMissing},
+	{phrase: "JAVA_HOME is not set", setup: jdkMissing},
+	{phrase: "JAVA_HOME is set to an invalid directory", setup: SetupError{
+		Detail: "JAVA_HOME points at a directory with no JDK",
+		Hint:   "point JAVA_HOME at a JDK 17 or newer, or unset it to use the java on PATH"}},
+	{phrase: "Android Gradle plugin requires Java", setup: SetupError{
+		Detail: "the Android Gradle plugin needs a newer JDK than the one running Gradle",
+		Hint:   "install a JDK 17 or newer and point JAVA_HOME at it"}},
+	{phrase: "Unsupported class file major version", setup: SetupError{
+		Detail: "the project's Gradle version does not run on the installed JDK, which is newer than it knows",
+		Hint:   "point JAVA_HOME at the JDK the project expects, or upgrade the wrapper in gradle/wrapper/gradle-wrapper.properties"}},
+
+	// The SDK.
+	{phrase: "SDK location not found", setup: sdkMissing},
+	{phrase: "as some licences have not been accepted", setup: SetupError{
+		Detail:  "the build needs Android SDK packages whose licenses have not been accepted",
+		Command: "sdkmanager --licenses",
+		Hint:    "the tool is under the SDK's cmdline-tools/latest/bin; Android Studio's SDK Manager does the same"}},
+
+	// The plugin. Its variant API is how the listing is asked, and it
+	// arrived in 7.0.
+	{phrase: "Could not get unknown property 'androidComponents'", setup: SetupError{
+		Detail: "the project's Android Gradle plugin is older than 7.0, whose variant API is how otata lists a project's modules",
+		Hint:   "upgrade the plugin to com.android.tools.build:gradle 7.0 or newer"}},
+
+	// Signing, on Android, is a setup step and not portal work: a config
+	// names a keystore, and a machine has it or does not.
+	{phrase: "not found for signing config", setup: SetupError{
+		Detail: "the signing config names a keystore that is not on this machine",
+		Hint:   "put the keystore where the module's build script expects it, or build with --config Debug"}},
+	{phrase: "is missing required property", setup: SetupError{
+		Detail: "the signing config is incomplete",
+		Hint:   "the module's build script names the missing property; set it, or build with --config Debug"}},
+
+	// Flutter's settings script, in its two templates, without the SDK
+	// location that every flutter command writes into local.properties.
+	{phrase: "flutter.sdk not set in local.properties", setup: flutterSDKMissing},
+	{phrase: "Define location with flutter.sdk in the local.properties file", setup: flutterSDKMissing},
 }
 
 // classifyBuildFailure reads the tail of the build log and names what failed.

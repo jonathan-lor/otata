@@ -21,7 +21,7 @@ ios/OtataRN.xcodeproj: error: Signing for "OtataRN" requires a development team.
 // sent the caller to Apple's developer portal, which fixes nothing. The build
 // is one 'pod install' away from working.
 func TestDiagnosisPrefersTheEarlierFailure(t *testing.T) {
-	err := diagnose(freshReactNativeLog, "archive failed")
+	err := xcodeDiagnose(freshReactNativeLog)
 	setup, ok := errors.AsType[*SetupError](err)
 	if !ok {
 		t.Fatalf("got %T (%v), want *SetupError", err, err)
@@ -38,7 +38,7 @@ func TestSigningIsStillReportedWhenItIsFirst(t *testing.T) {
 	if after == "" {
 		after = freshReactNativeLog[strings.Index(freshReactNativeLog, "ios/OtataRN.xcodeproj: error: Signing"):]
 	}
-	err := diagnose(after, "archive failed")
+	err := xcodeDiagnose(after)
 	if _, ok := errors.AsType[*SigningError](err); !ok {
 		t.Fatalf("got %T (%v), want *SigningError", err, err)
 	}
@@ -60,9 +60,14 @@ func TestSigningHintsDifferByCause(t *testing.T) {
 	}
 }
 
+// xcodeDiagnose scans a log as the Xcode builder does.
+func xcodeDiagnose(text string) error {
+	return diagnose(text, "archive failed", xcodeDiagnoses, gradleDiagnoses)
+}
+
 func hintFor(t *testing.T, log string) string {
 	t.Helper()
-	signing, ok := errors.AsType[*SigningError](diagnose(log, "archive failed"))
+	signing, ok := errors.AsType[*SigningError](xcodeDiagnose(log))
 	if !ok {
 		t.Fatalf("%q was not classified as signing", log)
 	}
@@ -71,7 +76,7 @@ func hintFor(t *testing.T, log string) string {
 
 // An unrecognized failure must stay unrecognized.
 func TestUnknownFailureKeepsTheFallback(t *testing.T) {
-	err := diagnose("error: use of undeclared identifier 'foo'", "archive failed")
+	err := xcodeDiagnose("error: use of undeclared identifier 'foo'")
 	_, isSigning := errors.AsType[*SigningError](err)
 	_, isSetup := errors.AsType[*SetupError](err)
 	if isSigning || isSetup {
@@ -163,7 +168,7 @@ func TestFlutterSetupIsStatedOnce(t *testing.T) {
 		"flutter_tools/bin/xcode_backend.sh: No such file or directory",
 		"Flutter/Generated.xcconfig must exist",
 	} {
-		setup, ok := errors.AsType[*SetupError](diagnose(phrase, "archive failed"))
+		setup, ok := errors.AsType[*SetupError](xcodeDiagnose(phrase))
 		if !ok {
 			t.Fatalf("%q was not classified as setup", phrase)
 		}
@@ -210,7 +215,7 @@ Please visit http://www.java.com for information on installing Java.
 ** ARCHIVE FAILED **`
 
 func TestGradleWithoutAJDKIsSetupNotBuildFailure(t *testing.T) {
-	setup, ok := errors.AsType[*SetupError](diagnose(noJDKLog, "archive failed"))
+	setup, ok := errors.AsType[*SetupError](xcodeDiagnose(noJDKLog))
 	if !ok {
 		t.Fatal("a missing JDK was not reported as setup")
 	}

@@ -28,7 +28,7 @@ func (x *XcodeBuild) Build(ctx context.Context, opts Options) (Result, error) {
 
 	opts.logf("building %s (%s, incremental)", j.scheme, j.config)
 	if err := runLogged(ctx, j.log, "xcodebuild", j.args("build")...); err != nil {
-		return failed, classifyBuildFailure(ctx, j.logPath, "build failed")
+		return failed, j.failure(ctx, "build failed")
 	}
 
 	app, err := builtApp(ctx, j.container, j.scheme, j.config)

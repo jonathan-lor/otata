@@ -24,9 +24,9 @@ otata publish --platform android
 
 ## Requirements
 
-Whichever platform you build for, your phone needs **a way to reach the computer**: [Tailscale](https://tailscale.com) is the recommended solution and is free for personal use, and bringing [your own HTTPS proxy](docs/manual-transports.md) works too. iOS additionally requires HTTPS with a publicly trusted certificate, which both provide.
+Whichever platform you build for, your phone needs **a way to reach the computer**: [Tailscale](https://tailscale.com) is the recommended solution for this (since iOS requires HTTPS with a publicly trusted certificate) and is free for personal use, and bringing [your own HTTPS proxy](docs/manual-transports.md) works too.
 
-Building for iOS has the following requirements:
+**Building for iOS has the following requirements:**
 
 - **A Mac with Xcode.** Apple doesn't allow iOS builds anywhere else (without breaking TOS). If you use a different host machine and only use the Mac to build, otata can be used [over SSH](docs/otata-via-ssh.md).
 - **A paid Apple Developer account** ($99/year), with your iOS device registered to
@@ -34,12 +34,12 @@ Building for iOS has the following requirements:
   the air,** so `otata publish` will follow suit and refuse as well.
 - **Developer Mode on the phone**: Settings -> Privacy & Security -> Developer Mode.
 
-The assumption is that if you're committed enough to need otata for remote work with agents, you probably plan to actually ship to the App Store, in which case you'd own or be a part of a paid Apple developer team anyways. ;)
+(The assumption is that if you're committed enough to need otata for remote work with agents, you probably plan to actually ship to the App Store, in which case you'd own or be a part of a paid Apple developer team anyways.)
 
-Building for Android has the following requirements:
+**Building for Android has the following requirements:**
 
 - **A JDK 17 or newer and the Android SDK**, on a Mac or a Linux machine, with `ANDROID_HOME` set or `sdk.dir` in the project's `local.properties`. The project's Gradle wrapper does the building, and the SDK's build-tools read the APK afterwards.
-- **A signed build.** A debug build is signed by the debug keystore every machine has; a release build needs a `signingConfig` in the module, since Android will not install an unsigned APK. `otata publish` refuses before building rather than after.
+- **A signed build.** A debug build is signed by the debug keystore every machine has and a release build needs a `signingConfig` in the module, since Android won't install an unsigned APK.
 - **Allowing installs from your browser.**
 
 ## Install
@@ -48,8 +48,7 @@ Building for Android has the following requirements:
 
 This install will assume that you've chosen to use Tailscale. You should also reference the more detailed step-by-step guide in [Getting started](docs/getting-started.md). 
 
-Install Tailscale on your computer ([Mac](https://tailscale.com/docs/install/mac), [Linux](https://tailscale.com/docs/install/linux)) and your phone ([iPhone](https://tailscale.com/docs/install/ios), [Android](https://tailscale.com/docs/install/android)), sign into the same account on both,
-and turn on HTTPS certificates and MagicDNS in the [admin console](https://login.tailscale.com/admin/dns) under DNS. 
+First, install Tailscale on your computer ([Mac](https://tailscale.com/docs/install/mac), [Linux](https://tailscale.com/docs/install/linux)) and phone ([iPhone](https://tailscale.com/docs/install/ios), [Android](https://tailscale.com/docs/install/android)). Sign into the same account on both, and turn on HTTPS certificates and MagicDNS in the [admin console](https://login.tailscale.com/admin/dns) under DNS. 
 
 Then, install otata:
 
@@ -111,7 +110,7 @@ The [CLI reference](docs/cli-reference.md#error-codes) also lists every code and
 
 ## Current Limitations
 
-**macOS and Linux only.** Windows is not supported, and WSL is untested.
+**macOS and Linux only.** Windows is not yet supported, and WSL is untested.
 
 **Private transports only (for now).** A public transport would need an access guard
 before it's safe, and none is implemented yet.

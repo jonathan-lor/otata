@@ -47,13 +47,9 @@ go test ./...              # everything
 go test ./internal/server/ -v
 ```
 
-The suite passes on Linux as well as macOS, and CI runs it on both, each
-also vetting the other's build. A test that shells out to a macOS tool
-(`ditto`, `plutil`, `pngcrush`) will skip where the tool is absent instead
-of failing. Code that drives the tailscale transport is tested against the
-fake CLI in `internal/transport/transporttest`, which answers from canned
-JSON and counts its invocations; putting its directory on `PATH` is what
-makes the transport find it.
+CI runs the suite on both macOS and Linux and a test that depends on a macOS tool (`ditto`, `plutil`, `pngcrush`) will skip if the tool is absent.
+
+Code that uses the tailscale transport is tested against the fake CLI in `internal/transport/transporttest`. Putting its directory on `PATH` lets the transport find it.
 
 Five `*_manual_test.go` files run against real local projects and artifacts
 and **skip unless told where they are**, so the test suite stays hermetic on
@@ -79,5 +75,5 @@ flavors. The APK readers need the SDK's build-tools through `ANDROID_HOME` too.
   write. The server reads the tree the publisher is writing.
 - **Values interpolated into a plist go through `xmlText`.** Manifests, the
   launch agent and export options are assembled by hand from untrusted values.
-  The systemd unit has its own quoting rules, kept beside it in
+  The systemd unit has its own quoting rules kept beside it in
   `internal/app/supervisor_linux.go`.

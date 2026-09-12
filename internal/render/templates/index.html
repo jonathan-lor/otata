@@ -59,7 +59,7 @@
     <div class="note">
       {{if .AnyIOS}}<p><strong>Developer Mode must be on</strong> for development-signed builds: Settings &rsaquo; Privacy &amp; Security &rsaquo; Developer Mode. Turning it on reboots the phone.</p>{{end}}
       {{if .AnyAndroid}}<p><strong>Android asks once to allow installs from this browser.</strong> Tap the downloaded file if nothing opens on its own.</p>{{end}}
-      <p>If an install fails, delete any existing copy of that app first: a differently-signed build cannot replace it.</p>
+      <p>If an install fails, delete any existing copy of that app first. A differently signed build cannot replace it.</p>
     </div>
   </div>
 {{if not .Empty}}{{template "agescript" .}}{{end}}

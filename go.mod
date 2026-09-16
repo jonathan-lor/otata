@@ -1,3 +1,3 @@
 module github.com/jonathan-lor/otata
 
-go 1.26.1
+go 1.26.0

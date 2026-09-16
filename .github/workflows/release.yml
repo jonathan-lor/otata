@@ -20,7 +20,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-go@v7
         with:
-          go-version-file: go.mod
+          go-version: stable
       - run: go vet ./...
       - run: go test ./...
       - name: assert the binary reports the tag
@@ -38,7 +38,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-go@v7
         with:
-          go-version-file: go.mod
+          go-version: stable
       - uses: goreleaser/goreleaser-action@v7
         with:
           version: "~> v2"
@@ -51,7 +51,7 @@ jobs:
           MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
           MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
           MACOS_NOTARY_KEY: ${{ secrets.MACOS_NOTARY_KEY }}
-      # Runs after publish, so a failure here cannot retract the release.
+      # Runs after publish, so failing doesn't retract the release.
       - name: assert released binaries are stamped with the tag
         run: |
           bins=$(find dist -type f -name otata)

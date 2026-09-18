@@ -60,3 +60,25 @@ jobs:
             ver=$(go version -m "$bin" | awk '$1 == "mod" { print $3 }')
             test "$ver" = "$GITHUB_REF_NAME"
           done
+
+  # This runs after publish, so failing won't retract the release.
+  # spctl needs macOS and asks Apple for the notarization ticket, which is the Gatekeeper verdict the cask relies on, so a skipped or broken signing step will show here
+  gatekeeper:
+    needs: release
+    runs-on: macos-latest
+    steps:
+      - name: assert released macOS binaries are notarized
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+            --pattern '*_darwin_*.tar.gz' --dir "$RUNNER_TEMP/assets"
+          for tgz in "$RUNNER_TEMP"/assets/*.tar.gz; do
+            dir="${tgz%.tar.gz}"
+            mkdir -p "$dir"
+            tar -xzf "$tgz" -C "$dir"
+            codesign --verify --strict --verbose=2 "$dir/otata"
+            verdict=$(spctl -a -vv -t install "$dir/otata" 2>&1)
+            echo "$verdict"
+            grep -q 'source=Notarized Developer ID' <<< "$verdict"
+          done

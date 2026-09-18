@@ -1,8 +1,6 @@
-# Release pipeline: tar.gz archives for macOS and Linux. The macOS ones are
-# signed and notarized by the embedded quill (which is what lets the release
-# job run on a Linux runner) and published as a cask in
-# jonathan-lor/homebrew-tap; all of them go on the GitHub Release.
-#
+# Release pipeline of tar.gz archives for macOS and Linux.
+# (macOS archives are also signed, notarized, and published as a cask in jonathan-lor/homebrew-tap)
+
 # Validate with `goreleaser check`; dry-run with
 # `goreleaser release --snapshot --clean` (signing stays off without the
 # MACOS_* environment variables).
@@ -50,7 +48,9 @@ archives:
 
 notarize:
   macos:
-    - enabled: '{{ isEnvSet "MACOS_SIGN_P12" }}'
+    # ids selects builds; the default is the project name, which no build here uses.
+    - ids: [darwin]
+      enabled: '{{ isEnvSet "MACOS_SIGN_P12" }}'
       sign:
         certificate: "{{ .Env.MACOS_SIGN_P12 }}"
         password: "{{ .Env.MACOS_SIGN_PASSWORD }}"

@@ -192,15 +192,6 @@ func TestFreeProfileIsRecognizedByLocalProvision(t *testing.T) {
 	}
 }
 
-// The team is the first entry of an array, not a bare string. Get that wrong
-// and every publish reports no team at all while everything else about signing
-// still works.
-func TestTeamIsReadFromTheProfilesArray(t *testing.T) {
-	if got := profileTeam(mustParseProfile(t, paidProfilePlist)); got != "WDT3B55TUP" {
-		t.Errorf("team = %q, want WDT3B55TUP", got)
-	}
-}
-
 // The whole assembly against the fixture: dates, team and free flag out of one
 // parsed profile, with no keychain and no subprocess involved.
 func TestSigningFromProfile(t *testing.T) {

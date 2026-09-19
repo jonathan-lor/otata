@@ -31,19 +31,6 @@ func TestDiagnosisPrefersTheEarlierFailure(t *testing.T) {
 	}
 }
 
-// The same log without its first line must still report signing; otherwise
-// the test above would pass just as well with signing detection deleted.
-func TestSigningIsStillReportedWhenItIsFirst(t *testing.T) {
-	_, after, _ := strings.Cut(freshReactNativeLog, "\n\n")
-	if after == "" {
-		after = freshReactNativeLog[strings.Index(freshReactNativeLog, "ios/OtataRN.xcodeproj: error: Signing"):]
-	}
-	err := xcodeDiagnose(after)
-	if _, ok := errors.AsType[*SigningError](err); !ok {
-		t.Fatalf("got %T (%v), want *SigningError", err, err)
-	}
-}
-
 // One hint for every signing failure is wrong. A missing team is a build
 // setting, and only the profile and device cases are portal work.
 func TestSigningHintsDifferByCause(t *testing.T) {

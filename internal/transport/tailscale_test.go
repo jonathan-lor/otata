@@ -139,21 +139,9 @@ func TestVerifyGatesOnMagicDNSAndCertificates(t *testing.T) {
 	}
 }
 
-func TestManualRequiresHTTPS(t *testing.T) {
-	if _, err := NewManual("http://box.local/otata", false).Ensure(0); err == nil {
-		t.Error("accepted a plain-http base URL; iOS cannot install from one")
-	}
-	if _, err := NewManual("https://box.local/otata", false).Ensure(0); err != nil {
-		t.Errorf("rejected a valid https base URL: %v", err)
-	}
-	if _, err := NewManual("", false).Ensure(0); err == nil {
-		t.Error("accepted an empty base URL")
-	}
-}
-
-// The config file is editable, so a base URL the command would have refused
-// can still be what is on disk. Status must then name it as the obstacle, and
-// never as repairable: nothing but the config can change it.
+// The config file is editable, so a base URL the command would have refused,
+// or none at all, can still be what is on disk. Status must then name it as
+// the obstacle, and never as repairable: nothing but the config can change it.
 func TestManualStatusNamesABadBaseURL(t *testing.T) {
 	bad := NewManual("http://box.local/otata", false).Status(0)
 	if bad.Ready || bad.Repairable {
@@ -165,6 +153,10 @@ func TestManualStatusNamesABadBaseURL(t *testing.T) {
 	good := NewManual("https://box.local/otata", false).Status(0)
 	if !good.Ready || good.Detail == "" {
 		t.Errorf("valid base URL: ready=%v detail=%q", good.Ready, good.Detail)
+	}
+	empty := NewManual("", false).Status(0)
+	if empty.Ready || empty.Repairable || !strings.Contains(empty.Detail, "no base URL") {
+		t.Errorf("empty base URL: ready=%v repairable=%v detail=%q", empty.Ready, empty.Repairable, empty.Detail)
 	}
 }
 

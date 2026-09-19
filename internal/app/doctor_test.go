@@ -243,54 +243,10 @@ func TestDoctorReportsTheTransportObstacleNotWiring(t *testing.T) {
 	}
 }
 
-// The URL probes fly concurrently but the report must read as it always has:
-// the index, then each app's manifest, payload and signing, newest app first.
-func TestDoctorReportsChecksInOrderHoweverProbesLand(t *testing.T) {
-	root := t.TempDir()
-	store, err := storage.Open(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	a := &App{Root: root, Store: store, Config: config.Config{
-		ServePath: "/otata",
-		Transport: "manual",
-		Manual: &config.Manual{
-			// Port 1 answers nothing, so every URL probe fails fast without
-			// leaving the machine; the order they report in is what is under test.
-			BaseURL:    "https://127.0.0.1:1/otata",
-			KeepPrefix: true,
-		},
-	}}
-
-	// Two published records. Their payload files are absent on purpose.
-	// The signing check has nothing to read and stays silent.
-	now := time.Now()
-	for slug, built := range map[string]time.Time{"older": now.Add(-time.Hour), "newer": now} {
-		if err := store.PutRecord(artifact.Record{Slug: slug, PayloadName: "App.ipa", BuiltAt: built}); err != nil {
-			t.Fatal(err)
-		}
-	}
-	serveThisRoot(t, a)
-
-	res, err := a.Doctor(false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var names []string
-	for _, c := range res.Checks {
-		names = append(names, c.Name)
-	}
-	want := []string{"index", "newer manifest", "newer payload", "older manifest", "older payload"}
-	if !slices.Equal(names, want) {
-		t.Errorf("checks = %v, want %v", names, want)
-	}
-	if res.Healthy {
-		t.Error("probes against a dead port reported healthy")
-	}
-}
-
-// An Android app has no manifest to answer, so doctor probes its payload
-// alone, and the report still reads app by app whatever each one has.
+// The URL probes fly concurrently but the report reads as it always has: the
+// index, then each app's manifest and payload, newest app first. An Android
+// app has no manifest to answer, so doctor probes its payload alone, and the
+// report still reads app by app whatever each one has.
 func TestDoctorProbesNoManifestForAndroid(t *testing.T) {
 	a := freshApp(t)
 	a.Config.ServePath, a.Config.Transport = "/otata", "manual"
@@ -318,6 +274,9 @@ func TestDoctorProbesNoManifestForAndroid(t *testing.T) {
 	want := []string{"index", "droid payload", "iosapp manifest", "iosapp payload"}
 	if !slices.Equal(names, want) {
 		t.Errorf("checks = %v, want %v", names, want)
+	}
+	if res.Healthy {
+		t.Error("probes against a dead port reported healthy")
 	}
 }
 

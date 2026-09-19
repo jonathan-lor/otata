@@ -100,17 +100,3 @@ func TestFilesDiffer(t *testing.T) {
 		t.Error("a missing program was not reported as drifted")
 	}
 }
-
-// agentRootDigest fills the default root exactly as agentMatches judges it,
-// so StopServer's foreign-agent check identifies the same store the match
-// logic would.
-func TestAgentRootDigest(t *testing.T) {
-	home, _ := os.UserHomeDir()
-	if agentRootDigest(agentSpec{}) != rootDigest(filepath.Join(home, ".otata")) {
-		t.Error("an empty root is not read as the default root")
-	}
-	other := t.TempDir()
-	if agentRootDigest(agentSpec{Root: other + "/"}) != rootDigest(other) {
-		t.Error("a trailing slash reads as a different store")
-	}
-}

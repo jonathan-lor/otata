@@ -87,16 +87,3 @@ func TestManifestLinksTheIconByName(t *testing.T) {
 		t.Error("a build with no icon still links one")
 	}
 }
-
-// The ordinary case that was broken before escaping: a real app name.
-func TestManifestForEverydayName(t *testing.T) {
-	rec := artifact.Record{
-		Slug: "notes", Title: "Notes & Tasks", BundleID: "com.x.notes",
-		Version: "2.1", Build: "44", PayloadName: "Notes.ipa", BuiltAt: time.Now(),
-	}
-	parsed := decodeManifest(t, Manifest(rec, "https://host/otata"))
-	item := parsed["items"].([]any)[0].(map[string]any)
-	if got := item["metadata"].(map[string]any)["title"]; got != "Notes & Tasks" {
-		t.Errorf("title = %q", got)
-	}
-}

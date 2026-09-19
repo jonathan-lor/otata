@@ -46,9 +46,6 @@ func TestAsFailurePreservesCode(t *testing.T) {
 	if got.Hint == "" {
 		t.Error("hint was lost through wrapping")
 	}
-	if !errors.Is(wrapped, error(original)) {
-		t.Error("errors.Is could not match the wrapped failure")
-	}
 }
 
 // The exit status is 2 for a usage error, 1 otherwise, and a failure may

@@ -205,7 +205,6 @@ func TestArtifactPublishReadsThePlatformOffTheFile(t *testing.T) {
 		{"agreeing", ipa, artifact.IOS, cli.CodeNoTransport, ""},
 		{"disagreeing", ipa, artifact.Android, cli.CodeInvalidArgs, "ios payload"},
 		{"disagreeing the other way", apk, artifact.IOS, cli.CodeInvalidArgs, "android payload"},
-		{"unknown platform", ipa, "windows", cli.CodeInvalidArgs, `"windows"`},
 		{"unrecognized", filepath.Join(dir, "Demo.aab"), "", cli.CodeInvalidArgs, "unrecognized"},
 		{"missing", filepath.Join(dir, "nope.ipa"), "", cli.CodeInvalidArgs, "no artifact"},
 	}

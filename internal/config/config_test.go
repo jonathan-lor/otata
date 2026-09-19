@@ -2,7 +2,6 @@ package config
 
 import (
 	"os"
-	"path/filepath"
 	"testing"
 )
 
@@ -45,29 +44,17 @@ func TestInvalidPortIsReported(t *testing.T) {
 	}
 }
 
-// A torn config makes every command fail, including doctor --fix.
-func TestSaveIsAtomic(t *testing.T) {
+// The config is the user's alone. The staging and the rename are
+// atomicfile's, tested there; the mode is this package's to choose.
+func TestSaveIsPrivate(t *testing.T) {
 	root := t.TempDir()
 	if err := Save(root, Config{Port: 1, ServePath: "/a"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := Save(root, Config{Port: 2, ServePath: "/bbbbbbbbbbbbbbbb"}); err != nil {
+	info, err := os.Stat(Path(root))
+	if err != nil {
 		t.Fatal(err)
 	}
-	c, err := LoadFile(root)
-	if err != nil {
-		t.Fatalf("config unreadable after rewrite: %v", err)
-	}
-	if c.Port != 2 {
-		t.Errorf("port = %d, want 2", c.Port)
-	}
-	entries, _ := os.ReadDir(root)
-	for _, e := range entries {
-		if e.Name() != "config.json" {
-			t.Errorf("left a stray file behind: %s", e.Name())
-		}
-	}
-	info, _ := os.Stat(filepath.Join(root, "config.json"))
 	if info.Mode().Perm() != 0o600 {
 		t.Errorf("mode = %v, want 0600", info.Mode().Perm())
 	}

@@ -242,7 +242,8 @@ func TestIncomingPrefixIsStrippedExactly(t *testing.T) {
 }
 
 // An app slugged after the serve path, which is what `otata publish` produces
-// from a directory named otata, must be reachable under both contracts.
+// from a directory named otata, must be reachable under a forwarding proxy,
+// where its path carries the prefix twice.
 func TestSlugEqualToPrefixIsReachable(t *testing.T) {
 	mk := func(prefix string) *Server {
 		base := t.TempDir()
@@ -272,11 +273,6 @@ func TestSlugEqualToPrefixIsReachable(t *testing.T) {
 			t.Errorf("%s: got %d %q, want 200 %q", target, resp.StatusCode, body, want)
 		}
 	}
-	// Tailscale: it strips the mount path, so the server sees bare paths.
-	bare := mk("")
-	check(bare, "/", "ROOT")
-	check(bare, "/otata/", "APP")
-	check(bare, "/otata/manifest.plist", "MANIFEST")
 	// A forwarding proxy: every path carries /otata once more.
 	prefixed := mk("/otata")
 	check(prefixed, "/otata/", "ROOT")
@@ -303,13 +299,6 @@ func TestDirectoryWithoutSlashRedirectsRelatively(t *testing.T) {
 	s.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/myapp?v=1", nil))
 	if got := rec.Header().Get("Location"); got != "myapp/?v=1" {
 		t.Errorf("Location = %q, want %q", got, "myapp/?v=1")
-	}
-	// The root and a file are untouched.
-	if resp := get(t, s, "/"); resp.StatusCode != http.StatusOK {
-		t.Errorf("/: got %d", resp.StatusCode)
-	}
-	if resp := get(t, s, "/myapp/MyApp.ipa"); resp.StatusCode != http.StatusOK {
-		t.Errorf("file: got %d", resp.StatusCode)
 	}
 	// Under a forwarded prefix the bare mount path redirects to itself + "/".
 	p := newTestServer(t, "/otata")

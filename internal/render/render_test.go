@@ -52,7 +52,7 @@ func TestEscape(t *testing.T) {
 
 // An Android app installs by fetching the payload, so its link is the payload
 // itself with the same cache key, with no itms-services scheme and no manifest
-// anywhere on the page, and the page's advice is Android's rather than iOS's.
+// anywhere on the page. The platform remains named for accessibility.
 func TestAndroidInstallsByDirectDownload(t *testing.T) {
 	r := rec()
 	r.Platform, r.PayloadName = artifact.Android, "MyApp.apk"
@@ -71,27 +71,9 @@ func TestAndroidInstallsByDirectDownload(t *testing.T) {
 		if strings.Contains(body, "itms-services") || strings.Contains(body, "manifest.plist") {
 			t.Errorf("the %s page refers to a manifest an Android app does not have", name)
 		}
-		if strings.Contains(body, "Developer Mode") {
-			t.Errorf("the %s page gives iOS advice for an Android app", name)
-		}
-		if !strings.Contains(body, "allow installs") {
-			t.Errorf("the %s page gives no Android install advice", name)
-		}
 		if !strings.Contains(stripScripts(body), "Android") {
 			t.Errorf("the %s page does not name the platform", name)
 		}
-	}
-
-	// A mixed index carries both platforms' advice, and an iOS-only one none of Android's.
-	ios := rec()
-	ios.Slug = "iosapp"
-	mixed, _ := Index("host", "https://host/otata", []artifact.Record{ios, r}, nil)
-	if !strings.Contains(string(mixed), "Developer Mode") || !strings.Contains(string(mixed), "allow installs") {
-		t.Error("a mixed index dropped one platform's advice")
-	}
-	only, _ := Index("host", "https://host/otata", []artifact.Record{ios}, nil)
-	if strings.Contains(string(only), "allow installs") {
-		t.Error("an iOS-only index carries Android advice")
 	}
 }
 
@@ -228,8 +210,7 @@ func TestNoRefreshWhenIdle(t *testing.T) {
 	}
 }
 
-// One format for a size everywhere a human reads one. It closes a trap of a
-// fixed "%.1f MB" showing a small app as "0.0 MB".
+// One format for a size. It closes a trap of a fixed "%.1f MB" showing a small app as "0.0 MB".
 func TestSize(t *testing.T) {
 	cases := map[float64]string{
 		21238.0 / (1 << 20): "21 KB", // arbitrary small value
@@ -304,9 +285,7 @@ func TestCardHeadLinksTheAppPage(t *testing.T) {
 // Every src and href on a page is absolute, built from the base URL as the
 // manifest's URLs are. Tailscale serves its mount path with and without the
 // trailing slash and never redirects, so from a hand-typed URL missing the
-// slash a relative reference resolves one level too high, off the mount
-// entirely: it served unstyled pages while the stylesheet was a link, and
-// broken icons after that.
+// slash a relative reference resolves one level too high.
 func TestPagesCarryNoRelativeURLs(t *testing.T) {
 	ref := regexp.MustCompile(`(?:src|href)="([^"]*)"`)
 	building := map[string]artifact.Building{"other": {Slug: "other", Started: time.Now()}}

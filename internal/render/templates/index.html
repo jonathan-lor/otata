@@ -8,60 +8,64 @@
 {{template "style"}}
 </head>
 <body>
-  <div class="wrap">
-    <div class="masthead">
+  <main class="wrap">
+    <header class="masthead">
       <div class="brand">
-        <h1>otata</h1>
+        <div>
+          <h1 class="wordmark">otata</h1>
+          <div class="host">{{.Host}}</div>
+        </div>
         <a class="github" href="https://github.com/jonathan-lor/otata" aria-label="otata on GitHub">
-          <!-- mark-github from Primer Octicons (MIT), inlined to not arrive by a failable request. -->
-          <svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M6.766 11.328c-2.063-.25-3.516-1.734-3.516-3.656 0-.781.281-1.625.75-2.188-.203-.515-.172-1.609.063-2.062.625-.078 1.468.25 1.968.703.594-.187 1.219-.281 1.985-.281.765 0 1.39.094 1.953.265.484-.437 1.344-.765 1.969-.687.218.422.25 1.515.046 2.047.5.593.766 1.39.766 2.203 0 1.922-1.453 3.375-3.547 3.64.531.344.89 1.094.89 1.954v1.625c0 .468.391.734.86.547C13.781 14.359 16 11.53 16 8.03 16 3.61 12.406 0 7.984 0 3.563 0 0 3.61 0 8.031a7.88 7.88 0 0 0 5.172 7.422c.422.156.828-.125.828-.547v-1.25c-.219.094-.5.156-.75.156-1.031 0-1.64-.562-2.078-1.609-.172-.422-.36-.672-.719-.719-.187-.015-.25-.093-.25-.187 0-.188.313-.328.625-.328.453 0 .844.281 1.25.86.313.452.64.655 1.031.655s.641-.14 1-.5c.266-.265.47-.5.657-.656"/></svg>
+          <!-- mark-github from Primer Octicons (MIT) -->
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M6.766 11.328c-2.063-.25-3.516-1.734-3.516-3.656 0-.781.281-1.625.75-2.188-.203-.515-.172-1.609.063-2.062.625-.078 1.468.25 1.968.703.594-.187 1.219-.281 1.985-.281.765 0 1.39.094 1.953.265.484-.437 1.344-.765 1.969-.687.218.422.25 1.515.046 2.047.5.593.766 1.39.766 2.203 0 1.922-1.453 3.375-3.547 3.64.531.344.89 1.094.89 1.954v1.625c0 .468.391.734.86.547C13.781 14.359 16 11.53 16 8.03 16 3.61 12.406 0 7.984 0 3.563 0 0 3.61 0 8.031a7.88 7.88 0 0 0 5.172 7.422c.422.156.828-.125.828-.547v-1.25c-.219.094-.5.156-.75.156-1.031 0-1.64-.562-2.078-1.609-.172-.422-.36-.672-.719-.719-.187-.015-.25-.093-.25-.187 0-.188.313-.328.625-.328.453 0 .844.281 1.25.86.313.452.64.655 1.031.655s.641-.14 1-.5c.266-.265.47-.5.657-.656"/></svg>
         </a>
       </div>
-      <div class="host">{{.Host}}</div>
-    </div>
+    </header>
 {{range .Apps}}
     <div class="card">
       <a class="head" href="{{.PageURL}}">
-        {{if .HasIcon}}<img class="icon" src="{{.IconURL}}" alt="">{{else}}<div class="icon"></div>{{end}}
-        <div>
-          <h2>{{.Title}}</h2>
-          <div class="sub">{{.Version}} ({{.Build}}) &middot; {{.Config}} &middot; {{.PlatformLabel}}</div>
+        {{if .HasIcon}}<img class="icon" src="{{.IconURL}}" alt="">{{else}}{{template "app-placeholder"}}{{end}}
+        <div class="app-identity">
+          <div class="title-line"><h2>{{.Title}}</h2>{{template "platform-icon" .Platform}}</div>
+          <div class="sub">v{{.Version}} &middot; Build {{.Build}} &middot; {{.Config}}</div>
         </div>
-        <span class="chevron">&rsaquo;</span>
+        {{template "chevron"}}
       </a>
-      <dl>
-        <dt>Built</dt><dd>{{template "built" .Built}}</dd>
-        <dt>Commit</dt><dd>{{.Commit}}{{if .Dirty}} <span class="dirty">+dirty</span>{{end}}</dd>
-        <dt>Size</dt><dd>{{.Size}}</dd>
+      <dl class="summary">
+        <div><dt>Built</dt><dd>{{template "built" .Built}}</dd></div>
+        <div><dt>Commit</dt><dd>{{.Commit}}{{if .Dirty}} <span class="dirty">+dirty</span>{{end}}</dd></div>
+        <div><dt>Size</dt><dd>{{.Size}}</dd></div>
       </dl>
       {{if .Building}}
       <div class="pending">Building {{template "since" .Since}}. This is the previous build.</div>
       {{else}}
-      <a class="install" href="{{.InstallURL}}">Install</a>
+      <a class="install" href="{{.InstallURL}}">{{template "download-icon"}}Install</a>
       {{end}}
     </div>
 {{end}}
 {{range .BuildingOnly}}
     <div class="card">
       <div class="head">
-        <div class="icon"></div>
-        <div>
+        {{template "app-placeholder"}}
+        <div class="app-identity">
           <h2>{{.Slug}}</h2>
-          <div class="sub">first build &middot; {{.Config}}</div>
+          <div class="sub">First build &middot; {{.Config}}</div>
         </div>
       </div>
       <div class="pending">Building {{template "since" .Since}}. Nothing to install yet.</div>
     </div>
 {{end}}
 {{if .Empty}}
-    <div class="card"><p class="empty">Nothing published yet. Run <code>otata publish</code> inside a project.</p></div>
-{{end}}
-    <div class="note">
-      {{if .AnyIOS}}<p><strong>Developer Mode must be on</strong> for development-signed builds: Settings &rsaquo; Privacy &amp; Security &rsaquo; Developer Mode. Turning it on reboots the phone.</p>{{end}}
-      {{if .AnyAndroid}}<p><strong>Android asks once to allow installs from this browser.</strong> Tap the downloaded file if nothing opens on its own.</p>{{end}}
-      <p>If an install fails, delete any existing copy of that app first. A differently signed build cannot replace it.</p>
+    <div class="card empty-card">
+      <h2>Nothing published yet.</h2>
+      <p class="empty">Run this inside your project:</p>
+      <div class="commands">
+        <code><span class="prompt" aria-hidden="true">$ </span>otata publish --platform ios</code>
+        <code class="or"># or --platform android</code>
+      </div>
     </div>
-  </div>
+{{end}}
+  </main>
 {{if not .Empty}}{{template "agescript" .}}{{end}}
 {{if .AnyInstallable}}{{template "installscript" .}}{{end}}
 </body>

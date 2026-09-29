@@ -1,11 +1,10 @@
 package app
 
 import (
-	"fmt"
-
 	"github.com/jonathan-lor/otata/internal/cli"
 	"github.com/jonathan-lor/otata/internal/config"
 	"github.com/jonathan-lor/otata/internal/transport"
+	"github.com/jonathan-lor/otata/internal/tsnetnode"
 )
 
 // TransportSelection is what `otata transport use` was asked for.
@@ -14,19 +13,32 @@ type TransportSelection struct {
 	Name       string
 	BaseURL    string
 	KeepPrefix bool
+	Hostname   string
 }
 
 // UseTransport selects the transport every later command will serve through,
-// persists the choice, and brings the running state in line with it: the
-// transport being replaced is torn down, a server reading a prefix that has
-// changed is restarted, and every page and manifest is regenerated against the
-// new base URL. progress receives the warnings a caller should see but that
-// do not fail the command.
+// persists the choice, and restarts a server whose transport settings changed.
+// Pages are regenerated once the selected transport is ready.
 func (a *App) UseTransport(sel TransportSelection, progress func(string)) error {
+	if progress == nil {
+		progress = func(string) {}
+	}
+	if sel.Hostname != "" && sel.Name != "tailscale" {
+		return cli.Fail(cli.CodeInvalidArgs, "--hostname applies only to tailscale")
+	}
+	if sel.Name != "manual" && (sel.BaseURL != "" || sel.KeepPrefix) {
+		return cli.Fail(cli.CodeInvalidArgs, "--base-url and --keep-prefix apply only to manual")
+	}
 	// Everything gets validated before anything is changed.
 	var manual *config.Manual
 	switch sel.Name {
 	case "tailscale":
+		if sel.Hostname == "" {
+			sel.Hostname = a.Config.TSNetHostname()
+		}
+		if err := tsnetnode.ValidateHostname(sel.Hostname); err != nil {
+			return cli.Failf(cli.CodeInvalidArgs, "%v", err)
+		}
 	case "manual":
 		if sel.BaseURL == "" {
 			return cli.Fail(cli.CodeInvalidArgs, "manual transport needs --base-url")
@@ -46,16 +58,10 @@ func (a *App) UseTransport(sel TransportSelection, progress func(string)) error 
 	if manual != nil {
 		next.Manual = manual
 	}
-	candidate := transportFor(next)
-
-	// This is where the transport proves it can serve.
-	// Failing here will name the actual obstacle (tailscale logged out, HTTPS
-	// certificates disabled), whereas failing at the first publish would
-	// surface whatever `tailscale serve` prints. Unwired is not an obstacle:
-	// Ensure below is what wires it.
-	if st := candidate.Status(a.Config.Port); !st.Ready && !st.Repairable {
-		return cli.Fail(cli.CodeTransportDown, st.Detail)
+	if sel.Name == "tailscale" {
+		next.TSNet = &config.TSNet{Hostname: sel.Hostname}
 	}
+	candidate := a.transportFor(next)
 
 	// The common sanity guard against letting a public transport through.
 	// Public transports are not yet supported.
@@ -67,16 +73,9 @@ func (a *App) UseTransport(sel TransportSelection, progress func(string)) error 
 	// once at startup, so if this change moves it, the server is restarted
 	// below rather than left serving the old contract.
 	previousPrefix := a.IncomingPrefix()
-
-	// Tear down the transport being replaced, or its route stays wired to our
-	// port after we stop using it.
-	if previous := a.selectTransport(); previous != nil && previous.Name() != sel.Name {
-		if err := previous.Teardown(); err != nil {
-			progress(fmt.Sprintf("warning: could not tear down %s: %v", previous.Name(), err))
-		}
-	}
-	a.Config = next
-	a.setTransport(candidate)
+	legacy := a.Config.NeedsTailscaleMigration()
+	nodeChanged := legacy || ((a.Config.Transport == "tailscale" || sel.Name == "tailscale") &&
+		(a.Config.Transport != sel.Name || a.Config.TSNetHostname() != next.TSNetHostname()))
 
 	// Persist what was on disk plus this change, so an environment override for
 	// this one invocation does not become permanent.
@@ -84,12 +83,25 @@ func (a *App) UseTransport(sel TransportSelection, progress func(string)) error 
 	if err != nil {
 		return cli.Failf(cli.CodeInternal, "%v", err)
 	}
-	onDisk.Transport = a.Config.Transport
-	onDisk.Manual = a.Config.Manual
+	if legacy {
+		if _, other := a.otherRootServer(); other {
+			return cli.Fail(cli.CodeServerDown, "the old port serves another otata root; refusing to remove its route")
+		}
+		if err := cleanupLegacyTailscale(a.Config); err != nil {
+			return cli.Failf(cli.CodeTransportDown, "could not remove the old otata Serve route: %v", err).
+				WithHint("make the host Tailscale CLI available and fix the reported error, then retry 'otata transport use tailscale'")
+		}
+		progress("removed the old otata Serve route; published builds are retained")
+	}
+	onDisk.Transport = next.Transport
+	onDisk.Manual = next.Manual
+	onDisk.TSNet = next.TSNet
 	if err := config.Save(a.Root, onDisk); err != nil {
 		return cli.Failf(cli.CodeInternal, "%v", err)
 	}
-	if a.IncomingPrefix() != previousPrefix && a.ServerRunning() {
+	a.Config = next
+	a.setTransport(candidate)
+	if (a.IncomingPrefix() != previousPrefix || nodeChanged) && a.ServerRunning() {
 		if err := a.StopServer(); err != nil {
 			return err
 		}
@@ -100,8 +112,18 @@ func (a *App) UseTransport(sel TransportSelection, progress func(string)) error 
 		} else {
 			// A foreground `otata serve` was stopped so it cannot keep serving the old contract.
 			// Only its own terminal can restart it, and a stopped server is a safe state.
-			progress("the incoming prefix changed; run 'otata serve' again to serve it")
+			progress("the transport or incoming prefix changed; run 'otata serve' again to serve it")
 		}
+	}
+	if sel.Name == "tailscale" {
+		if legacy {
+			progress("Tailscale now runs inside otata as a separate device; run 'otata transport login' after starting the server, then replace saved links with the new URL")
+		}
+		// The server prepares HTTPS and rewrites pages when it joins.
+		if !candidate.Status(a.Config.Port).Ready {
+			progress("start the server with 'otata autostart on' or 'otata serve', then run 'otata transport login' and 'otata status'")
+		}
+		return nil
 	}
 	// Manifests embed the base URL, so switching transports invalidates every published app until something regenerates them.
 	if tr, err := a.Transport(); err == nil {
@@ -109,6 +131,8 @@ func (a *App) UseTransport(sel TransportSelection, progress func(string)) error 
 			if err := a.Reindex(baseURL); err != nil {
 				return cli.Failf(cli.CodeInternal, "transport saved but pages could not be regenerated: %v", err)
 			}
+		} else {
+			return cli.Failf(cli.CodeTransportDown, "transport saved but could not be prepared: %v", err)
 		}
 	}
 	return nil

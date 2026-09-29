@@ -114,6 +114,9 @@ func (a *App) reloadAgent() error {
 // embedded a program the manager could not find after the first `brew
 // upgrade`. It falls back to a staged copy only on evidence.
 func (a *App) EnableAutostart() error {
+	if a.Config.NeedsTailscaleMigration() {
+		return tailscaleMigrationRequired()
+	}
 	sup := a.autostart()
 	if !sup.Available() {
 		// No manager to install into: an OS with none wired up, or a Linux

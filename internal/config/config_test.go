@@ -65,7 +65,43 @@ func TestMissingConfigIsNotAnError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("a fresh install should not need a config file: %v", err)
 	}
-	if c.Port != DefaultPort || c.ServePath != DefaultServePath {
+	if c.Port != DefaultPort || c.ServePath != DefaultServePath || c.Transport != "tailscale" || c.NeedsTailscaleMigration() {
 		t.Errorf("defaults not applied: %+v", c)
+	}
+}
+
+func TestTransportDefaultsAndMigrationDetection(t *testing.T) {
+	for _, tc := range []struct {
+		body, transport string
+		legacy          bool
+	}{
+		{`{}`, "tailscale", false},
+		{`{"transport":""}`, "tailscale", false},
+		{`{"transport":"tailscale"}`, "tailscale", true},
+		{`{"transport":"tailscale","tsnet":{"hostname":"builds"}}`, "tailscale", false},
+		{`{"transport":"tsnet","tsnet":{"hostname":"builds"}}`, "tailscale", false},
+		{`{"transport":"manual","manual":{"base_url":"https://example.com"}}`, "manual", false},
+	} {
+		t.Run(tc.body, func(t *testing.T) {
+			root := t.TempDir()
+			if err := os.WriteFile(Path(root), []byte(tc.body), 0600); err != nil {
+				t.Fatal(err)
+			}
+			c, err := LoadFile(root)
+			if err != nil || c.Transport != tc.transport || c.NeedsTailscaleMigration() != tc.legacy {
+				t.Fatalf("load = %+v, %v", c, err)
+			}
+			data, _ := os.ReadFile(Path(root))
+			if string(data) != tc.body {
+				t.Fatal("reading config changed it")
+			}
+			if err := Save(root, c); err != nil {
+				t.Fatal(err)
+			}
+			c, err = LoadFile(root)
+			if err != nil || c.NeedsTailscaleMigration() != tc.legacy {
+				t.Fatalf("save/load lost migration state: %+v, %v", c, err)
+			}
+		})
 	}
 }

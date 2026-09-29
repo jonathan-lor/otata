@@ -8,7 +8,7 @@ The examples write `mac` for the builder's name in `~/.ssh/config`.
 agent's machine      edits source; runs no otata
   └── ssh
         └── mac      otata publish; the server; the store
-              └── transport (tailscale serve / your proxy)
+              └── transport (built-in Tailscale / your proxy)
                     └── phone taps Install
 ```
 
@@ -36,17 +36,18 @@ there. The same project at a new location is refused with `slug_conflict`.
 
 ## Initial setup on the Mac
 
-- `otata transport use tailscale` (or `manual`), and `otata autostart on`.
+- `otata autostart on`, then `otata transport login` to enroll the built-in
+  Tailscale node (or select a `manual` proxy).
 - Publish once locally after any change of signing identity, answering the
   keychain prompt with **Always Allow**. `codesign` blocks on that dialog,
   so the first remote publish under a new identity will hang mid-build if you don't do this.
-- Tick **Launch Tailscale at login**, `caffeinate -s` or disable sleep before leaving, and
+- Run `caffeinate -s` or disable sleep before leaving, and
   consider disabling automatic macOS installs. That reboot lands at the
   FileVault screen, where nothing runs until the password is entered.
 
 ### Headless
 
-A Mac being used only over SSH needs four substitutions:
+A Mac being used only over SSH needs three substitutions:
 
 - **Enable automatic login** (requires FileVault off). The launch agent
   lives in launchd's `gui` domain, which exists only while a user is logged
@@ -65,9 +66,9 @@ A Mac being used only over SSH needs four substitutions:
     -k <login password> ~/Library/Keychains/login.keychain-db
   ```
 
-- The Tailscale menu-bar app runs inside the login session. To serve with
-  no session at all, `brew install tailscale` plus `sudo brew services
-  start tailscale` runs it as a system daemon. otata resolves either CLI.
+otata's only serves builds and doesn't provide SSH access.
+If you connect over the host's Tailscale address, keep a separate
+Tailscale installation configured for SSH.
 
 A project under `~/Documents`, `~/Desktop` or `~/Downloads` is unreadable
 over SSH until remote users are allowed full disk access (System Settings >
@@ -76,16 +77,12 @@ General > Sharing > Remote Login).
 ## On Linux
 
 A Linux builder has no console session to keep alive and no keychain to
-unlock, and needs two things instead:
+unlock. It needs lingering for unattended serving:
 
 - **Lingering.** A user's systemd, and the otata unit under it, runs only
   while that user has a session, an SSH one included, and stops at the last
   logout. `sudo loginctl enable-linger $USER` once keeps it running with no
   session, and brings the server back after a reboot before anyone logs in.
-- **The Tailscale operator.** `tailscale serve` is refused to anyone but
-  root or the operator, so `sudo tailscale set --operator=$USER` once.
-  tailscaled itself is a system service, up whenever the machine is, so
-  there is no login-item equivalent to tick.
 
 An Android build is signed by a keystore file, the debug one generated on
 first use, so nothing prompts during a remote publish. The SDK and JDK the

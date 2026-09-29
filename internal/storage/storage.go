@@ -50,6 +50,9 @@ func (s *Store) Public() string { return filepath.Join(s.root, "public") }
 func (s *Store) State() string  { return filepath.Join(s.root, "state") }
 func (s *Store) Tmp() string    { return filepath.Join(s.root, "tmp") }
 
+// TSNetDir locates private node state without creating the store.
+func TSNetDir(root string) string { return filepath.Join(root, "state", "tsnet") }
+
 // AppDir returns "" for an invalid slug. every caller that writes or deletes
 // checks ValidateSlug first, and this is the second line of defense.
 func (s *Store) AppDir(slug string) string {

@@ -1,7 +1,6 @@
 # Contributing
 
-otata is a relatively small Go project with no dependencies outside the standard library.
-This doc should give you everything you need to get started with contributing.
+otata requires Go 1.26.6 or newer.
 
 Until otherwise noted, **the steps below are intended for macOS and Linux only.**
 
@@ -22,6 +21,23 @@ TCC-protected checkout will hit the launchd hang described in
 because overwriting a running binary corrupts its mapped image and macOS kills
 the process, and Linux refuses the write outright.
 
+Use the development binary with a scratch root to keep testing separate from
+an installed release:
+
+```sh
+make build
+export OTATA_ROOT="$(mktemp -d /tmp/otata-dev.XXXXXX)"
+export OTATA_PORT=18877
+./bin/otata transport use tailscale --hostname otata-dev
+./bin/otata serve
+# In another terminal with the same environment:
+./bin/otata transport login
+./bin/otata doctor
+```
+
+Use foreground serving for scratch work since there's only one autostart unit per
+user. The tsnet tests use a fake node and do not enroll real devices.
+
 ## Repository layout
 
 | Package | What it handles |
@@ -35,7 +51,8 @@ the process, and Linux refuses the write outright.
 | `internal/artifact` | The record: what a published build is, and the platform it runs on |
 | `internal/builder` | Turning a project into a payload; the only place that knows what Xcode and Gradle are |
 | `internal/appmeta` | Reading identity, icon and signing out of a built payload, one reader per platform |
-| `internal/transport` | Making the loopback server reachable; the only place that knows what Tailscale is |
+| `internal/transport` | Embedded Tailscale and manual HTTPS adapters |
+| `internal/tsnetnode` | Persistent embedded node lifecycle and authenticated local control API |
 | `internal/server` | The install surface over HTTP |
 | `internal/render` | The pages, with templates embedded in the binary |
 | `internal/version` | This binary's version, read from the build's VCS stamp |
@@ -47,11 +64,13 @@ go test ./...              # everything
 go test ./internal/server/ -v
 ```
 
-CI runs the suite on both macOS and Linux and a test that depends on a macOS tool (`ditto`, `plutil`, `pngcrush`) will skip if the tool is absent.
+CI runs the suite with the race detector on both macOS and Linux. Tests that
+depend on a macOS tool (`ditto`, `plutil`, `pngcrush`) skip if the tool is absent.
 
-Code that uses the tailscale transport is tested against the fake CLI in `internal/transport/transporttest`. Putting its directory on `PATH` lets the transport find it.
+Embedded node tests use a fake backend. Migration tests use a fake host CLI
+to verify that only otata's old Serve handler is removed.
 
-Five `*_manual_test.go` files run against real local projects and artifacts
+The `*_manual_test.go` files run against real local projects and artifacts
 and **skip unless told where they are**, so the test suite stays hermetic on
 a fresh machine:
 

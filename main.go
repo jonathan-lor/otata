@@ -27,7 +27,8 @@ const usage = `otata installs iOS and Android builds on your phone over your own
   otata serve                   run the file server in the foreground
   otata start | stop | restart  server lifecycle
   otata autostart on|off        run the server at login (launchd or systemd --user)
-  otata transport use <name>    tailscale | manual (--base-url, --keep-prefix)
+  otata transport use <name>    tailscale (default) | manual
+  otata transport login         enroll otata in your tailnet or retry startup
   otata version                 print the version
   otata help                    this summary
 
@@ -276,9 +277,15 @@ func doctor(a *app.App, args []string) int {
 	return 0
 }
 
-const transportSummary = "transport use <tailscale|manual> [--base-url URL] [--keep-prefix]"
+const transportSummary = "transport use <tailscale|manual> [--hostname NAME] [--base-url URL] [--keep-prefix] | transport login"
 
 func transportCmd(a *app.App, args []string) int {
+	if len(args) == 1 && args[0] == "login" {
+		if err := a.LoginTransport(); err != nil {
+			return cli.EmitError("transport", err)
+		}
+		return emitStatus(a, "transport")
+	}
 	if wantsHelp(args) && (len(args) < 2 || args[0] != "use" || args[1] == "-h" || args[1] == "--help") {
 		fmt.Println("usage: otata " + transportSummary)
 		return 0
@@ -289,13 +296,14 @@ func transportCmd(a *app.App, args []string) int {
 	name := args[1]
 	fs := flag.NewFlagSet("transport", flag.ContinueOnError)
 	baseURL := fs.String("base-url", "", "base URL your proxy serves (manual only)")
+	hostname := fs.String("hostname", "", "otata device hostname (tailscale only; defaults to otata)")
 	keepPrefix := fs.Bool("keep-prefix", false,
 		"your proxy forwards the base URL's path unchanged instead of stripping it (manual only)")
 	if exit, done := parseFlags(fs, "transport", transportSummary, args[2:]); done {
 		return exit
 	}
 
-	sel := app.TransportSelection{Name: name, BaseURL: *baseURL, KeepPrefix: *keepPrefix}
+	sel := app.TransportSelection{Name: name, BaseURL: *baseURL, KeepPrefix: *keepPrefix, Hostname: *hostname}
 	if err := a.UseTransport(sel, progress); err != nil {
 		return cli.EmitError("transport", err)
 	}

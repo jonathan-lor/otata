@@ -48,6 +48,18 @@ otata publish --platform ios --json       # or --platform android
 
 ## Reading the result
 
+On a fresh installation, Tailscale is built in and selected by default. Run
+`otata autostart on`, then `otata transport login --json`; give the user the
+`transport.auth_url` to enroll otata in their phone's tailnet. Wait for
+`transport.ready` before publishing. Do not install host Tailscale or configure
+Serve for this workflow.
+
+An older host-backed installation reports `migration_required` in status or
+`needs_setup` with a migration hint. Run `otata transport use tailscale` once
+to remove its old Serve route, then start and enroll otata. The install URL
+changes; published builds are kept. The host CLI is needed only for that
+cleanup. Preserve host Tailscale if it is also used for SSH or other services.
+
 Every command prints `{ok, command, data, error}`. On failure, `error` carries
 a stable `code`, a `message`, and often a `hint` and `details`. Branch on the
 code, never on message text. Exit 2 means the command was called wrongly;
@@ -63,7 +75,7 @@ stopped it.
 | `signing_failed` | On iOS, needs a human with Apple portal access; do not retry. On Android the APK is unsigned or does not verify: a debug build is signed, a release build needs a signingConfig |
 | `free_profile` | iOS refuses free-team builds over the air; a paid team is the only fix. Do not retry |
 | `server_down` | `otata doctor --fix`; if autostart was never set up, `otata autostart on` once |
-| `transport_down` | Machine-side (Tailscale logged out, the route is public with Funnel on, or on Linux the user is not Tailscale's operator: `sudo tailscale set --operator=$USER`); `otata doctor` names it. Do not retry until it is fixed |
+| `transport_down` | Read `otata status` and `otata doctor`; enrollment uses `transport login`, approval and DNS/HTTPS settings need the tailnet administrator, certificate preparation needs time |
 | `no_transport` | Run the `otata transport use` command the hint names |
 | `slug_conflict` | Another path owns this name: pass `--slug`, or `otata forget <slug>` |
 | `build_in_progress` | Another publish holds the slug: wait; `doctor --fix` clears a marker whose process is gone |
@@ -79,8 +91,8 @@ stopped it.
 otata doctor --fix --json
 ```
 
-Doctor repairs what it can (the launch agent or systemd unit, transport
-wiring, stale build markers, pages), then verifies every URL and exits
+Doctor repairs what it can (the launch agent or systemd unit, stale build
+markers, pages), then verifies every URL and exits
 non-zero with each failing check naming its remedy. Logs on the machine:
 
 - `~/.otata/server.log` — server and access log

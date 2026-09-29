@@ -1,8 +1,4 @@
-// Package transport makes the loopback server reachable from a phone.
-//
-// iOS requires a URL served over HTTPS with a publicly trusted certificate.
-// Tailscale is one way to obtain that, not the only one, and nothing outside
-// this package knows which is in use, except the guard keyed on Visibility.
+// Package transport provides embedded Tailscale and external HTTPS adapters.
 package transport
 
 import (
@@ -10,10 +6,7 @@ import (
 	"net/url"
 )
 
-// Visibility is where a transport's URL can be reached from. It is derived
-// where it can be (Tailscale reads it off Funnel) and private by definition
-// where it cannot (a proxy otata knows nothing about); the guard that keeps
-// unreleased builds off the public internet refuses Public.
+// Visibility describes who can reach a transport's URL.
 type Visibility string
 
 const (
@@ -24,37 +17,29 @@ const (
 )
 
 type Status struct {
-	Name  string `json:"name"`
-	Ready bool   `json:"ready"`
-	// Repairable is set when Ready is false and Ensure would make it true:
-	// the transport is usable and only its wiring is missing. Unset, the
-	// obstacle is on the machine (logged out, certificates off, a bad base
-	// URL) and Detail names it; nothing otata does will clear it.
-	Repairable bool       `json:"repairable,omitempty"`
+	Name       string     `json:"name"`
+	Ready      bool       `json:"ready"`
 	BaseURL    string     `json:"base_url,omitempty"`
 	Visibility Visibility `json:"visibility"`
 	Detail     string     `json:"detail,omitempty"`
+	State      string     `json:"state,omitempty"`
+	AuthURL    string     `json:"auth_url,omitempty"`
 }
 
 type Transport interface {
 	Name() string
 	Visibility() Visibility
 
-	// Ensure makes the local port reachable and returns the base URL a phone
-	// should use. It must be idempotent.
+	// Ensure waits for transport readiness and returns the base URL a phone
+	// should use. It must be idempotent; it cannot prove remote reachability.
 	Ensure(port int) (string, error)
 
 	// Status reports without mutating.
 	Status(port int) Status
 
-	// Teardown removes only what otata added. Scoping matters: the command
-	// Tailscale itself suggests for removing a proxy takes down every handler
-	// on the port, including ones the user depends on.
-	Teardown() error
-
-	// IncomingPrefix is the path prefix requests still carry when they reach the
-	// loopback server: what this transport forwards without stripping. Empty
-	// means bare paths. The server strips exactly this, so the two cannot differ.
+	// IncomingPrefix is the path prefix requests carry when they reach the
+	// HTTP handler, through the embedded node or a loopback proxy. Empty means
+	// bare paths. The server strips exactly this, so the two cannot differ.
 	IncomingPrefix() string
 }
 

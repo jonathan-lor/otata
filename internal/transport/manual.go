@@ -17,7 +17,7 @@ type Manual struct {
 NewManual describes a proxy that serves baseURL. keepPrefix says the proxy
 forwards the base URL's path unchanged rather than stripping it, such as nginx with
 a bare proxy_pass, Caddy's handle rather than handle_path, a Cloudflare
-tunnel, etc. Stripping is the default, as Tailscale does.
+tunnel, etc. Stripping is the default.
 
 The prefix is derived from the base URL, not declared separately.
 */
@@ -71,6 +71,10 @@ func (m *Manual) Status(int) Status {
 	return s
 }
 
-// Teardown is a no-op. otata did not create the route and must not remove
-// something the developer configured themselves.
-func (m *Manual) Teardown() error { return nil }
+func normalizePath(p string) string {
+	p = strings.TrimSuffix(p, "/")
+	if p != "" && !strings.HasPrefix(p, "/") {
+		p = "/" + p
+	}
+	return p
+}

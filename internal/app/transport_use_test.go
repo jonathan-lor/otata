@@ -1,16 +1,13 @@
 package app
 
 import (
-	"bytes"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/jonathan-lor/otata/internal/cli"
 	"github.com/jonathan-lor/otata/internal/config"
 	"github.com/jonathan-lor/otata/internal/storage"
-	"github.com/jonathan-lor/otata/internal/transport/transporttest"
 )
 
 // freshApp is an App on a scratch root with nothing configured. Port 1 so a
@@ -68,6 +65,8 @@ func TestUseTransportRefusesBadSelectionsBeforeChangingAnything(t *testing.T) {
 		{"unknown transport", TransportSelection{Name: "wireguard"}, cli.CodeInvalidArgs},
 		{"manual without a base URL", TransportSelection{Name: "manual"}, cli.CodeInvalidArgs},
 		{"manual over http", TransportSelection{Name: "manual", BaseURL: "http://x/otata"}, cli.CodeInvalidArgs},
+		{"hostname on manual", TransportSelection{Name: "manual", BaseURL: "https://x/otata", Hostname: "builds"}, cli.CodeInvalidArgs},
+		{"base URL on tailscale", TransportSelection{Name: "tailscale", BaseURL: "https://x/otata"}, cli.CodeInvalidArgs},
 	}
 	for _, c := range cases {
 		a := freshApp(t)
@@ -81,125 +80,5 @@ func TestUseTransportRefusesBadSelectionsBeforeChangingAnything(t *testing.T) {
 		if _, err := os.Stat(a.Store.IndexPath()); err == nil {
 			t.Errorf("%s: a refused selection generated pages", c.name)
 		}
-	}
-}
-
-// useStubTailscale puts a fake tailscale CLI first on PATH for the test, so
-// the transport resolves it instead of a real one. Nothing else this
-// command spawns is on that PATH either, which is the point: no real
-// launchd, keychain or tailnet is consulted.
-func useStubTailscale(t *testing.T, serveOut string) (callLog string) {
-	t.Helper()
-	bin, callLog := transporttest.Stub(t, serveOut, transporttest.StatusReady)
-	t.Setenv("PATH", filepath.Dir(bin))
-	return callLog
-}
-
-// The headline case: Tailscale itself is fine, but Funnel is on for the
-// listener otata mounts on, so every handler there is public. Selection must
-// refuse with the config it found left exactly as it was. It used to tear
-// down the previous transport, save, and report success, after which every
-// command refused the transport it had just been told to use.
-func TestUseTransportRefusesAFunnelledTailnetBeforeChangingAnything(t *testing.T) {
-	useStubTailscale(t, transporttest.ServeFunnelled)
-	a := freshApp(t)
-	previous := config.Config{Port: config.DefaultPort, ServePath: "/otata", Transport: "manual",
-		Manual: &config.Manual{BaseURL: "https://old.example.com/otata"}}
-	if err := config.Save(a.Root, previous); err != nil {
-		t.Fatal(err)
-	}
-	a.Config.Transport, a.Config.Manual = previous.Transport, previous.Manual
-	before, err := os.ReadFile(config.Path(a.Root))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	err = a.UseTransport(TransportSelection{Name: "tailscale"}, quiet)
-	f := cli.AsFailure(err)
-	if err == nil || f.Code != cli.CodeTransportDown {
-		t.Fatalf("funnelled tailnet: err=%v code=%q, want %q", err, f.Code, cli.CodeTransportDown)
-	}
-	if !strings.Contains(f.Message, "public") || !strings.Contains(f.Hint, "funnel") {
-		t.Errorf("the refusal does not name Funnel: %q / %q", f.Message, f.Hint)
-	}
-	after, err := os.ReadFile(config.Path(a.Root))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(before, after) {
-		t.Errorf("the config changed under a refused selection:\n%s", after)
-	}
-	if _, err := os.Stat(a.Store.IndexPath()); err == nil {
-		t.Error("a refused selection generated pages")
-	}
-}
-
-// A tailnet that cannot serve at all (here, no MagicDNS name) is refused
-// with the obstacle named and nothing changed, rather than at the first
-// publish with whatever `tailscale serve` would have printed.
-func TestUseTransportRefusesAnUnusableTailnet(t *testing.T) {
-	bin, _ := transporttest.Stub(t, transporttest.ServeUnwired, `{"Self": {"DNSName": ""}, "CertDomains": []}`)
-	t.Setenv("PATH", filepath.Dir(bin))
-	a := freshApp(t)
-	err := a.UseTransport(TransportSelection{Name: "tailscale"}, quiet)
-	f := cli.AsFailure(err)
-	if err == nil || f.Code != cli.CodeTransportDown {
-		t.Fatalf("unusable tailnet: err=%v code=%q, want %q", err, f.Code, cli.CodeTransportDown)
-	}
-	if !strings.Contains(f.Message, "MagicDNS") {
-		t.Errorf("the obstacle is not named: %q", f.Message)
-	}
-	if _, err := os.Stat(config.Path(a.Root)); err == nil {
-		t.Error("a refused selection wrote the config")
-	}
-}
-
-// One command asks its transport several questions, and the answer is built
-// once: the tailscale CLI is read once per question per command, not once
-// per caller. Selecting the tailnet and then reporting status used to spawn
-// `serve status` four times and `status` twice.
-func TestTransportIsBuiltOncePerCommand(t *testing.T) {
-	calls := useStubTailscale(t, transporttest.ServeUnwired)
-	a := freshApp(t)
-	if err := a.UseTransport(TransportSelection{Name: "tailscale"}, quiet); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := a.Status(); err != nil {
-		t.Fatal(err)
-	}
-	// Once for the selection's own questions, once more after Ensure wired
-	// the path and dropped the memo, which is the one re-read that is right.
-	if n := transporttest.Calls(t, calls, "serve status --json"); n != 2 {
-		t.Errorf("serve status read %d times across the command, want 2", n)
-	}
-	if n := transporttest.Calls(t, calls, "status --json"); n != 1 {
-		t.Errorf("status read %d times across the command, want 1", n)
-	}
-}
-
-// The same tailnet without Funnel is selected: verified, wired, persisted,
-// and the pages regenerated against its MagicDNS name.
-func TestUseTransportSelectsATailnetThatCanServe(t *testing.T) {
-	calls := useStubTailscale(t, transporttest.ServeUnwired)
-	a := freshApp(t)
-	if err := a.UseTransport(TransportSelection{Name: "tailscale"}, quiet); err != nil {
-		t.Fatal(err)
-	}
-	onDisk, err := config.LoadFile(a.Root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if onDisk.Transport != "tailscale" {
-		t.Errorf("config on disk selects %q, want tailscale", onDisk.Transport)
-	}
-	if n := transporttest.Calls(t, calls, "serve --bg --https=443 --set-path=/otata http://127.0.0.1:1"); n != 1 {
-		t.Errorf("the serve path was wired %d times, want once", n)
-	}
-	index, err := os.ReadFile(a.Store.IndexPath())
-	if err != nil {
-		t.Fatalf("no index was generated: %v", err)
-	}
-	if !strings.Contains(string(index), "host.tailnet.ts.net") {
-		t.Error("the index was not regenerated against the tailnet name")
 	}
 }

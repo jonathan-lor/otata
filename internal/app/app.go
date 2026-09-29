@@ -21,6 +21,7 @@ import (
 	"github.com/jonathan-lor/otata/internal/config"
 	"github.com/jonathan-lor/otata/internal/storage"
 	"github.com/jonathan-lor/otata/internal/transport"
+	"github.com/jonathan-lor/otata/internal/tsnetnode"
 )
 
 type App struct {
@@ -69,11 +70,11 @@ needing only its metadata (the server asking which prefix is stripped) must
 work even when publishing through it would be refused, and must use the same
 rule Transport() does.
 
-The selection is read from config and is always nil until 'otata transport use' is run.
+The selection is read from config; fresh stores default to embedded Tailscale.
 */
 func (a *App) selectTransport() transport.Transport {
 	if !a.transportSet {
-		a.setTransport(transportFor(a.Config))
+		a.setTransport(a.transportFor(a.Config))
 	}
 	return a.transport
 }
@@ -84,12 +85,13 @@ func (a *App) setTransport(t transport.Transport) {
 }
 
 // transportFor is the one rule that turns a config into a transport. It is
-// separate from the App so a user selection can be built from a config that
-// doesn't yet belong to App. See UseTransport().
-func transportFor(cfg config.Config) transport.Transport {
+// passed a config so a selection can be validated before persisting it.
+func (a *App) transportFor(cfg config.Config) transport.Transport {
 	switch cfg.Transport {
 	case "tailscale":
-		return transport.NewTailscale(cfg.ServePath)
+		if !cfg.NeedsTailscaleMigration() {
+			return transport.NewTSNet(a.tsnetDir(), a.tsnetIdentity(cfg))
+		}
 	case "manual":
 		if cfg.Manual == nil || cfg.Manual.BaseURL == "" {
 			return nil
@@ -99,18 +101,19 @@ func transportFor(cfg config.Config) transport.Transport {
 	return nil
 }
 
+func (a *App) tsnetDir() string { return storage.TSNetDir(a.Root) }
+func (a *App) tsnetIdentity(cfg config.Config) tsnetnode.Identity {
+	return tsnetnode.Identity{Root: a.RootDigest(), Port: cfg.Port, Prefix: strings.TrimSuffix(cfg.ServePath, "/"), Hostname: cfg.TSNetHostname()}
+}
+
 // Transport resolves the selected transport and enforces the visibility guard.
 func (a *App) Transport() (transport.Transport, error) {
+	if a.Config.NeedsTailscaleMigration() {
+		return nil, tailscaleMigrationRequired()
+	}
 	t := a.selectTransport()
 	if t == nil {
 		switch a.Config.Transport {
-		case "":
-			// The hint may probe tailscale, but only to inform the choice
-			hint := "run 'otata transport use tailscale', or 'otata transport use manual --base-url <url>' for your own proxy"
-			if transport.NewTailscale(a.Config.ServePath).Available() {
-				hint = "tailscale is running on this machine: run 'otata transport use tailscale'"
-			}
-			return nil, cli.Fail(cli.CodeNoTransport, "no transport selected").WithHint(hint)
 		case "manual":
 			return nil, cli.Fail(cli.CodeNoTransport, "manual transport selected but no base URL configured").
 				WithHint("otata transport use manual --base-url https://example.com/otata")
@@ -124,22 +127,13 @@ func (a *App) Transport() (transport.Transport, error) {
 }
 
 // guard refuses a public transport. None ships with an access guard, so choosing one is refused.
-//
-// The code is transport_down, not invalid_args: the command was called
-// correctly and the transport exists, but the machine's network makes it
-// unusable (Funnel on the listener, a proxy declared public). invalid_args
-// exits 2, which the docs define as "fix the arguments", and there is no
-// argument to fix.
 func (a *App) guard(t transport.Transport) error {
 	if t.Visibility() != transport.Public {
 		return nil
 	}
-	// Only Funnel makes a transport public today: it exposes every handler on
-	// the listener, and no otata flag can change that. The manual route is
-	// private by definition, since otata verifies nothing about it.
 	return cli.Failf(cli.CodeTransportDown,
 		"%s is a public transport and no access guard is implemented yet", t.Name()).
-		WithHint("run 'tailscale funnel --https=443 off', or serve through your own proxy")
+		WithHint("use Tailscale or a private HTTPS proxy")
 }
 
 // ---------- server lifecycle ----------

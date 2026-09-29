@@ -62,8 +62,9 @@ otata doctor
 
 The A record points at a private address, so the URL works only where the
 phone can reach the Mac's network: the same Wi-Fi. Pointing the record at the
-Mac's Tailscale IP (`tailscale ip -4`) instead, with Tailscale running on the
-phone, should extend that to anywhere (unverified).
+Mac's host Tailscale IP (`tailscale ip -4`) instead, with a separate host
+Tailscale installation and Tailscale on the phone, should extend that to
+anywhere (unverified). otata's embedded node does not expose Caddy.
 
 1. **DNS.** Add an A record for a subdomain — `otata.example.com` — pointing
    at the Mac's LAN address (`ipconfig getifaddr en0`). Issuing a certificate
@@ -100,10 +101,10 @@ phone, should extend that to anywhere (unverified).
    }
    ```
 
-   - **`:8443`, not `:443`.** The Tailscale app holds a wildcard listener on
-     443, and macOS allows an unprivileged bind of a low port only on the
-     wildcard address. iOS installs from a non-standard HTTPS port without
-     complaint.
+   - **This example uses `:8443`.** It avoids privileged-port requirements
+     and conflicts with any host HTTPS server. otata's embedded TCP 443
+     listener lives inside its tailnet node and does not reserve the host's
+     TCP 443 port. iOS supports a non-standard HTTPS port.
    - **The `redir` is required.** `handle_path /otata/*` does not match a
      bare `/otata` — which hand-typed URLs produce — and Caddy answers an
      unmatched request with an empty 200: a white screen with no error.
@@ -153,6 +154,6 @@ otata doctor
 otata transport use tailscale
 ```
 
-Everything regenerates against the tailnet URL. Switching is validated before
-the previous transport is torn down, and teardown removes only what otata added.
-Any other route your proxy or tunnel created never gets touched.
+Start the server if needed and run `otata transport login` to enroll it.
+Once ready, pages and manifests regenerate against the tailnet URL.
+Routes configured in your proxy or tunnel are left untouched.

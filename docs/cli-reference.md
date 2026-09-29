@@ -14,7 +14,8 @@
 | `otata serve` | Run the file server in the foreground |
 | `otata start` / `stop` / `restart` | Server lifecycle |
 | `otata autostart on\|off` | Run the server under launchd on a Mac or your own systemd on Linux |
-| `otata transport use <name>` | `tailscale` or `manual` |
+| `otata transport use <name>` | `tailscale` (default) or `manual` |
+| `otata transport login` | Enroll the running embedded node or retry preparation |
 | `otata version` | Print the version (`--version` and `-V` work too) |
 | `otata help` | The usage summary |
 
@@ -68,10 +69,14 @@ project in `android/`, where discovery looks.
 ## transport use
 
 ```sh
-otata transport use <tailscale|manual> [--base-url URL] [--keep-prefix]
+otata transport use <tailscale|manual> [--hostname NAME] [--base-url URL] [--keep-prefix]
+otata transport login
 ```
 
-`tailscale` is reachable by the devices on your tailnet and is private.
+`tailscale` is the default, private transport. It runs its own enrolled node
+inside `otata serve`, without a host Tailscale installation. `--hostname`
+applies only to Tailscale and defaults to `otata`.
+See [Tailscale](tailscale.md) for setup and migration from older releases.
 `manual` is reachable by whatever your proxy serves, which otata does not
 verify; it is for routes you consider private:
 
@@ -82,7 +87,11 @@ otata transport use manual --base-url https://builds.example.com/otata
 
 `--base-url` and `--keep-prefix` apply to `manual` only.
 `--keep-prefix` says your proxy forwards the base URL's path unchanged instead
-of stripping it. The transport is selected once and validated then. Walkthroughs
+of stripping it. Manual URLs are validated at selection.
+Tailscale saves the selection first; the server enrolls and prepares HTTPS
+afterward. `transport login` prints its current status and login URL, and
+`status --json` reports `transport.state`, `transport.auth_url` when needed,
+and `transport.ready`. Walkthroughs
 for the manual transport are in [Serving over your own proxy](manual-transports.md).
 
 ## Environment
@@ -126,13 +135,13 @@ it ran and failed, and 128 plus the signal number when a signal stopped it
 | --- | --- | --- |
 | `no_project` | Nothing buildable here | Check the directory, or pass `--artifact` |
 | `ambiguous_scheme` | Several candidates for a choice discovery could not make: a scheme, an application module or a product flavor | Re-run with the flag in `details.flag`; the candidates are in `details.candidates` |
-| `needs_setup` | A step the project's own toolchain owns has not been run, or a setting its build needs is missing | Run `details.command` in `details.dir` when there is one, then retry; otherwise the hint names the setting |
+| `needs_setup` | A toolchain prerequisite or migration from the old host Tailscale integration is needed | Run `details.command` in `details.dir` when there is one; otherwise follow the hint |
 | `build_failed` | The toolchain returned non-zero | Read the log path in `details` |
 | `signing_failed` | Certificate, profile or device registration on iOS; an APK that is unsigned or does not verify on Android | Needs a human with Apple portal access, or a signed APK: a debug build, or a release signingConfig |
 | `free_profile` | Signed by a free personal team, which iOS will not install over the air | Sign with a paid team; nothing else fixes it |
 | `server_down` | Local server not running, or the port is held by something else | `otata autostart on` once; after that, `otata doctor --fix` and retry |
-| `transport_down` | Transport present but unusable: Tailscale logged out or without HTTPS certificates, or the route is publicly reachable (Funnel on, or a proxy declared public) | Needs the machine; `otata doctor` names it |
-| `no_transport` | No transport selected, or `manual` has no base URL | Run the `otata transport use` command the hint names |
+| `transport_down` | Transport not ready: enrollment, approval, HTTPS preparation, or connectivity needs attention | Check `otata status` and `otata doctor`; use `transport login` for enrollment |
+| `no_transport` | Unknown transport in config, or `manual` has no base URL | Run the `otata transport use` command the hint names |
 | `slug_conflict` | Another project owns this name, or its record is unreadable | Pass `--slug`, or `otata forget` it |
 | `build_in_progress` | A live publish already holds this slug | Wait; `otata doctor --fix` clears a marker whose process is gone |
 | `not_found` | No app published under that slug | Check `otata list` |

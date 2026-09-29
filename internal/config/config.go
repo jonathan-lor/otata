@@ -21,19 +21,36 @@ type Manual struct {
 	BaseURL string `json:"base_url"`
 	// KeepPrefix says the proxy forwards the base URL's path unchanged instead
 	// of stripping it, so the server has to strip it. False is the common
-	// case and what Tailscale does.
+	// case for external proxies.
 	KeepPrefix bool `json:"keep_prefix,omitempty"`
 }
 
 type Config struct {
 	Port      int     `json:"port"`
 	ServePath string  `json:"serve_path"`
-	Transport string  `json:"transport,omitempty"` // empty means auto-detect
+	Transport string  `json:"transport,omitempty"`
 	Manual    *Manual `json:"manual,omitempty"`
+	TSNet     *TSNet  `json:"tsnet,omitempty"`
+}
+
+type TSNet struct {
+	Hostname string `json:"hostname"`
+}
+
+func (c Config) TSNetHostname() string {
+	if c.TSNet != nil && c.TSNet.Hostname != "" {
+		return c.TSNet.Hostname
+	}
+	return "otata"
 }
 
 func Default() Config {
-	return Config{Port: DefaultPort, ServePath: DefaultServePath}
+	return Config{Port: DefaultPort, ServePath: DefaultServePath, Transport: "tailscale", TSNet: &TSNet{Hostname: "otata"}}
+}
+
+// Released host-backed configurations have no embedded node settings.
+func (c Config) NeedsTailscaleMigration() bool {
+	return c.Transport == "tailscale" && c.TSNet == nil
 }
 
 func Path(root string) string { return filepath.Join(root, "config.json") }
@@ -49,8 +66,17 @@ func LoadFile(root string) (Config, error) {
 	if err != nil {
 		return c, err
 	}
+	c.Transport, c.TSNet = "", nil
 	if err := json.Unmarshal(data, &c); err != nil {
 		return c, err
+	}
+	// Preserve old explicit selections for migration; unconfigured stores and
+	// the unreleased tsnet spelling use the embedded default.
+	if c.Transport == "" || c.Transport == "tsnet" {
+		c.Transport = "tailscale"
+		if c.TSNet == nil {
+			c.TSNet = Default().TSNet
+		}
 	}
 	if c.Port == 0 {
 		c.Port = DefaultPort

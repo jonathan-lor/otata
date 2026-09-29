@@ -6,73 +6,33 @@ import (
 
 	"github.com/jonathan-lor/otata/internal/cli"
 	"github.com/jonathan-lor/otata/internal/config"
-	"github.com/jonathan-lor/otata/internal/transport/transporttest"
+	"github.com/jonathan-lor/otata/internal/transport"
 )
 
-// The transport is chosen once with 'transport use'.
-func TestTransportRequiresExplicitSelection(t *testing.T) {
-	a := &App{Config: config.Default()}
-	if tr := a.selectTransport(); tr != nil {
-		t.Fatalf("selected %q with nothing configured", tr.Name())
+func TestDefaultTransportNeedsNoHostInstallation(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	a := &App{Root: t.TempDir(), Config: config.Default()}
+	tr, err := a.Transport()
+	if _, ok := tr.(*transport.TSNet); err != nil || !ok || tr.Name() != "tailscale" {
+		t.Fatalf("default transport = %v, %v", tr, err)
 	}
-	_, err := a.Transport()
-	f := cli.AsFailure(err)
-	if err == nil || f.Code != cli.CodeNoTransport {
-		t.Fatalf("unconfigured transport: err=%v, code=%q", err, f.Code)
-	}
-	if !strings.Contains(f.Hint, "otata transport use") {
-		t.Errorf("the hint does not say what to run: %q", f.Hint)
+	if tr != a.selectTransport() {
+		t.Fatal("transport was not cached")
 	}
 }
 
-// A hand-edited config with a transport outside the closed set is named,
-// instead of being read as "nothing selected".
-func TestUnknownTransportIsNamed(t *testing.T) {
-	a := &App{Config: config.Config{Transport: "wireguard"}}
-	_, err := a.Transport()
-	f := cli.AsFailure(err)
-	if err == nil || f.Code != cli.CodeNoTransport {
-		t.Fatalf("unknown transport: err=%v, code=%q", err, f.Code)
-	}
-	if !strings.Contains(f.Message, "wireguard") {
-		t.Errorf("the mistake is not named: %q", f.Message)
-	}
-}
-
-// An explicit selection is honored without probing anything.
-func TestExplicitSelectionIsHonored(t *testing.T) {
-	ts := &App{Config: config.Config{Transport: "tailscale", ServePath: "/otata"}}
-	if tr := ts.selectTransport(); tr == nil || tr.Name() != "tailscale" {
-		t.Errorf("tailscale selected but not returned: %v", tr)
-	}
-	man := &App{Config: config.Config{Transport: "manual", Manual: &config.Manual{
-		BaseURL: "https://box.example.com/otata",
-	}}}
-	if tr := man.selectTransport(); tr == nil || tr.Name() != "manual" {
-		t.Errorf("manual selected but not returned: %v", tr)
-	}
-	// Manual selected with no base URL is still a refusal, with its own message.
-	empty := &App{Config: config.Config{Transport: "manual"}}
-	_, err := empty.Transport()
-	if f := cli.AsFailure(err); err == nil || f.Code != cli.CodeNoTransport || !strings.Contains(f.Message, "base URL") {
-		t.Errorf("manual without base URL: err=%v", err)
-	}
-}
-
-// A public transport is refused because no access guard ships. That is a fact
-// about the machine's network, not about how the command was called, so the
-// code must be transport_down: invalid_args exits 2 and tells an agent to fix
-// the arguments, and there is no argument to fix. Funnel is what makes a
-// tailnet public.
-func TestPublicTransportIsRefusedAsTransportDown(t *testing.T) {
-	useStubTailscale(t, transporttest.ServeFunnelled)
-	a := &App{Config: config.Config{Transport: "tailscale", ServePath: "/otata"}}
-	_, err := a.Transport()
-	f := cli.AsFailure(err)
-	if err == nil || f.Code != cli.CodeTransportDown {
-		t.Fatalf("public transport: err=%v, code=%q, want %q", err, f.Code, cli.CodeTransportDown)
-	}
-	if !strings.Contains(f.Message, "public") {
-		t.Errorf("the refusal does not say why: %q", f.Message)
+func TestInvalidTransportConfiguration(t *testing.T) {
+	for _, tc := range []struct {
+		cfg     config.Config
+		message string
+	}{
+		{config.Config{Transport: "wireguard"}, "wireguard"},
+		{config.Config{Transport: "manual"}, "base URL"},
+	} {
+		a := &App{Config: tc.cfg}
+		_, err := a.Transport()
+		if err == nil || cli.AsFailure(err).Code != cli.CodeNoTransport || !strings.Contains(err.Error(), tc.message) {
+			t.Fatalf("invalid configuration: %v", err)
+		}
 	}
 }

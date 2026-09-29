@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -8,7 +9,6 @@ import (
 	"os"
 	"slices"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -175,19 +175,9 @@ func (a *App) Doctor(fix bool) (*DoctorResult, error) {
 		}
 		res.Repaired = append(res.Repaired, "reloaded the "+a.autostart().Kind())
 	}
-	// Note the state BEFORE repairing it. Ensure is what wires the transport, so
-	// asking afterwards always says "ready" and the repair goes unreported.
 	status := tr.Status(a.Config.Port)
 	if !status.Ready && !fix {
-		// Only a usable-but-unwired transport is --fix's to mend. Any other
-		// obstacle (logged out, certificates off, a bad base URL) is on the
-		// machine, and promising that --fix wires it sent the caller to a
-		// repair that then failed with the real reason.
-		if status.Repairable {
-			needsFix("transport", tr.Name()+" is not wired to port "+strconv.Itoa(a.Config.Port), "'otata doctor --fix' wires it")
-		} else {
-			fail("transport", status.Detail)
-		}
+		fail("transport", status.Detail)
 		return res, nil
 	}
 	baseURL := status.BaseURL
@@ -198,7 +188,7 @@ func (a *App) Doctor(fix bool) (*DoctorResult, error) {
 			return res, nil
 		}
 		if !status.Ready {
-			res.Repaired = append(res.Repaired, "wired the "+tr.Name()+" transport")
+			res.Repaired = append(res.Repaired, "prepared the "+tr.Name()+" transport")
 		}
 	}
 	if fix {
@@ -313,7 +303,22 @@ func (a *App) Doctor(fix bool) (*DoctorResult, error) {
 		wg.Go(func() {
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			probed[i] = probeURL(client, p.name, p.url)
+			if embedded, ok := tr.(interface {
+				Probe(context.Context, string) (int, error)
+			}); ok {
+				ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+				defer cancel()
+				code, err := embedded.Probe(ctx, p.url)
+				c := Check{Name: p.name, OK: err == nil && code == http.StatusOK}
+				if err != nil {
+					c.Detail = err.Error()
+				} else if !c.OK {
+					c.Detail = fmt.Sprintf("HTTP %d", code)
+				}
+				probed[i] = c
+			} else {
+				probed[i] = probeURL(client, p.name, p.url)
+			}
 		})
 	}
 

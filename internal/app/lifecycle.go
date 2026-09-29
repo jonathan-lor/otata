@@ -13,11 +13,17 @@ import (
 )
 
 func (a *App) Serve() error {
+	if a.Config.NeedsTailscaleMigration() {
+		return tailscaleMigrationRequired()
+	}
 	srv, err := server.New(a.Store.Public(), a.IncomingPrefix(), a.RootDigest(), log.New(os.Stdout, "", 0))
 	if err != nil {
 		return cli.Failf(cli.CodeInternal, "%v", err)
 	}
 	defer srv.Close()
+	if a.Config.Transport == "tailscale" {
+		return a.serveTSNet(srv)
+	}
 	ln, err := server.Listen(a.Config.Port)
 	if err != nil {
 		return cli.Failf(cli.CodeServerDown, "could not bind 127.0.0.1:%d: %v", a.Config.Port, err)
@@ -30,6 +36,9 @@ func (a *App) Serve() error {
 // background server exists. Everything that needs the server comes through
 // here. With no unit installed, it refuses and tells you the command to run.
 func (a *App) StartServer() error {
+	if a.Config.NeedsTailscaleMigration() {
+		return tailscaleMigrationRequired()
+	}
 	// One probe answers both "is ours up" and "is another root's there".
 	if p, ok := a.probeServer("/"); ok {
 		if p.Root == a.RootDigest() {
@@ -51,7 +60,7 @@ func (a *App) StartServer() error {
 	return a.reloadAgent()
 }
 
-// StopServer stops our server, and only ours.
+// StopServer stops *only* our server.
 // It identifies the process over HTTP instead of something like lsof,
 // since a process holding a port doesn't necessarily mean it's otata.
 func (a *App) StopServer() error {
@@ -61,6 +70,21 @@ func (a *App) StopServer() error {
 	// whether ours does. A server for another root never counts as running,
 	// and waiting on that would declare it stopped while it was still alive.
 	gone := func() bool { _, ours := a.serverPID(); return !ours }
+	// tsnet may spend up to five seconds flushing logs during Close. Keep
+	// waiting for local identity to disappear so restart cannot race the
+	// embedded node's state lock or report a healthy shutdown as a failure.
+	waitForStop := func() bool {
+		deadline := time.Now().Add(10 * time.Second)
+		for {
+			if gone() {
+				return true
+			}
+			if time.Now().After(deadline) {
+				return false
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+	}
 
 	// A server another root's unit keeps alive cannot be stopped from here.
 	// Signaling it only makes the manager respawn it, and removing the unit
@@ -78,11 +102,8 @@ func (a *App) StopServer() error {
 		if err := a.autostart().Unload(); err != nil {
 			return cli.Failf(cli.CodeInternal, "could not unload the %s: %v", a.autostart().Kind(), err)
 		}
-		for range 30 {
-			if gone() {
-				return nil
-			}
-			time.Sleep(100 * time.Millisecond)
+		if waitForStop() {
+			return nil
 		}
 	}
 
@@ -101,11 +122,8 @@ func (a *App) StopServer() error {
 	if err := proc.Signal(syscall.SIGTERM); err != nil {
 		return cli.Failf(cli.CodeInternal, "could not signal the server (pid %d): %v", pid, err)
 	}
-	for range 30 {
-		if gone() {
-			return nil
-		}
-		time.Sleep(100 * time.Millisecond)
+	if waitForStop() {
+		return nil
 	}
 	return cli.Failf(cli.CodeInternal, "server on port %d did not stop", a.Config.Port)
 }

@@ -11,9 +11,8 @@ Quickly install iOS and Android builds over your own network, _wherever you are_
 Tired of just getting screenshots? otata is a CLI for agents to get the latest build from your computer to your phone during remote sessions, allowing you to truly work on mobile apps from anywhere. Just ask your agent to publish with otata after making some changes, and then install with the provided URL!
 
 otata currently supports building and installing SwiftUI, React Native, Flutter and Kotlin Multiplatform apps on iOS, and native apps on Android.
-Windows is not yet supported.
 
-Tailscale is the recommended method for serving, but serving through your own HTTPS proxy is also supported.
+[Tailscale](docs/tailscale.md) is used by default for serving, but your own HTTPS proxy is also supported.
 
 ```sh
 cd ~/path/to/MyApp
@@ -26,7 +25,7 @@ otata publish --platform android
 
 Whichever platform you build for, your phone needs **a way to reach the computer**: [Tailscale](https://tailscale.com) is the recommended solution for this (since iOS requires HTTPS with a publicly trusted certificate) and is free for personal use, and bringing [your own HTTPS proxy](docs/manual-transports.md) works too.
 
-**Building for iOS has the following requirements:**
+**Building for iOS requires:**
 
 - **A Mac with Xcode.** Apple doesn't allow iOS builds anywhere else (without breaking TOS). If you use a different host machine and only use the Mac to build, otata can be used [over SSH](docs/otata-via-ssh.md).
 - **A paid Apple Developer account** ($99/year), with your iOS device registered to
@@ -36,7 +35,7 @@ Whichever platform you build for, your phone needs **a way to reach the computer
 
 (The assumption is that if you're committed enough to need otata for remote work with agents, you probably plan to actually ship to the App Store, in which case you'd own or be a part of a paid Apple developer team anyways.)
 
-**Building for Android has the following requirements:**
+**Building for Android requires:**
 
 - **A JDK 17 or newer and the Android SDK**, on a Mac or a Linux machine, with `ANDROID_HOME` set or `sdk.dir` in the project's `local.properties`. The project's Gradle wrapper does the building, and the SDK's build-tools read the APK afterwards.
 - **A signed build.** A debug build is signed by the debug keystore every machine has and a release build needs a `signingConfig` in the module, since Android won't install an unsigned APK.
@@ -48,7 +47,7 @@ Whichever platform you build for, your phone needs **a way to reach the computer
 
 This install will assume that you've chosen to use Tailscale. You should also reference the more detailed step-by-step guide in [Getting started](docs/getting-started.md). 
 
-First, install Tailscale on your computer ([Mac](https://tailscale.com/docs/install/mac), [Linux](https://tailscale.com/docs/install/linux)) and phone ([iPhone](https://tailscale.com/docs/install/ios), [Android](https://tailscale.com/docs/install/android)). Sign into the same account on both, and turn on HTTPS certificates and MagicDNS in the [admin console](https://login.tailscale.com/admin/dns) under DNS. 
+First, install Tailscale on your phone ([iPhone](https://tailscale.com/docs/install/ios), [Android](https://tailscale.com/docs/install/android)) and sign in. Turn on HTTPS certificates and MagicDNS in the [admin console](https://login.tailscale.com/admin/dns) under DNS.
 
 Then, install otata:
 
@@ -71,9 +70,16 @@ go install github.com/jonathan-lor/otata@latest
 Then, once:
 
 ```sh
-otata transport use tailscale
 otata autostart on
+otata transport login
 ```
+
+Open the printed login URL to enroll otata in the same tailnet as your phone.
+Wait for `otata status` to report ready since first certificate issuance can take a minute.
+
+**Upgrading from otata <0.4.0?** Run
+`otata transport use tailscale` first. Enrollment and the install URL change but your
+existing published builds stay. See [migration instructions](docs/tailscale.md#upgrading-from-the-host-integration).
 
 otata also includes an [agent skill](skills/otata/SKILL.md).
 
@@ -121,6 +127,7 @@ before it's safe, and none is implemented yet.
 - [CLI reference](docs/cli-reference.md)
 - [FAQ](docs/FAQ.md)
 - [Serving over your own proxy](docs/manual-transports.md)
+- [Tailscale setup and migration](docs/tailscale.md)
 - [otata via SSH](docs/otata-via-ssh.md)
 - [Gotchas and troubleshooting](docs/gotchas.md)
 - [Contributing](CONTRIBUTING.md)

@@ -3,50 +3,30 @@
 This guide sets up otata with Tailscale, on a Mac or a Linux machine, for iOS
 and Android. Serving through your own HTTPS proxy instead of Tailscale is covered in [manual transports](manual-transports.md).
 
-## 1. Tailscale on your computer
+**As of otata v0.4.0, Tailscale now runs inside otata. Existing host-backed installations must [migrate once](tailscale.md#upgrading-from-the-host-integration).**
 
-iOS only installs from a URL served over HTTPS with a publicly trusted
-certificate, so your iPhone can't just fetch from your computer's IP address.
-Tailscale solves that by putting your devices on your own private network and
-issuing a real certificate for a name only your devices can reach. Android has
-no such rule, but the same private network is what makes the URL reachable
-from anywhere without exposing anything. Tailscale is completely free for personal use.
-
-Install Tailscale [on your Mac](https://tailscale.com/docs/install/mac) or
-[on Linux](https://tailscale.com/docs/install/linux), then sign in.
-
-On Linux, also make your user Tailscale's operator once since `tailscale serve` is refused without sudo:
-
-```sh
-sudo tailscale set --operator=$USER
-```
-
-## 2. Tailscale on your phone
+## 1. Tailscale on your phone
 
 Install Tailscale [on your iPhone](https://tailscale.com/docs/install/ios) or
 [on your Android phone](https://tailscale.com/docs/install/android) and sign in
-**with the same account**.
+to the tailnet you will enroll otata in.
 
-It's very important that you don't skip this step. otata will work on the computer, and then the provided link
-won't load on your phone, because your phone won't be on the same network as the computer.
-
-## 3. Turn on HTTPS certificates
+## 2. Turn on HTTPS certificates
 
 Open the [Tailscale admin console](https://login.tailscale.com/admin/dns), go to **DNS**,
 and enable **HTTPS Certificates**. A new tailnet has them off, and
-`tailscale serve` can't run without them. The same page has **MagicDNS**, which
+otata needs them to serve trusted HTTPS. The same page has **MagicDNS**, which
 HTTPS certificates require, so turn that on too if it isn't already.
 
-## 4. Install otata
+## 3. Install otata
 
-On a Mac:
+On Mac:
 
 ```sh
 brew install --cask jonathan-lor/tap/otata
 ```
 
-On Linux, the install script puts the latest release's binary in `~/.local/bin`,
-verified against its checksums:
+On Linux:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/jonathan-lor/otata/main/install.sh | sh
@@ -58,15 +38,18 @@ Or, on either:
 go install github.com/jonathan-lor/otata@latest
 ```
 
-## 5. Point otata at Tailscale
+## 4. Enroll otata
 
 ```sh
-otata transport use tailscale
 otata autostart on
+otata transport login
 ```
 
-`otata transport use` verifies the whole path before saving anything, so if a step
-above was missed it'll name that step exactly.
+Open the printed login URL and enroll otata in the same tailnet as your phone.
+Approve the device if required. Run `otata status` and wait since
+first certificate issuance can take a minute. `otata doctor` will verify the
+served URLs. To customize the device name before starting, use
+`otata transport use tailscale --hostname otata-builds`.
 
 `autostart on` runs the file server under launchd on a Mac and under your
 own systemd on Linux, so it starts at login and comes back if it exits.
@@ -81,7 +64,7 @@ once:
 sudo loginctl enable-linger $USER
 ```
 
-## 6. iOS: sign the app with a paid team
+## 5. iOS: sign the app with a paid team
 
 Open the project in Xcode once, and under **Signing & Capabilities** select your
 team. This has to be a paid Apple Developer account ($99/year). iOS refuses to
@@ -96,13 +79,13 @@ for a device the team already knows about.
 While you're here, answer the keychain prompt on the first local build with **Always Allow**.
 `codesign` blocks on that dialog, and you probably won't be there to click it during a remote publish.
 
-## 7. iOS: Developer Mode on your iPhone
+## 6. iOS: Developer Mode on your iPhone
 
 Settings -> Privacy & Security -> **Developer Mode**. 
 If you don't see the option to enable Developer Mode, connect your phone to the Mac once.
 iOS only shows it after connecting to a Mac running Xcode.
 
-## 8. Android: a JDK and the SDK
+## 7. Android: a JDK and the SDK
 
 The project's own Gradle wrapper does the building, and it needs a JDK 17 or
 newer (`java -version` says which you have) and the Android SDK. Set
@@ -121,7 +104,7 @@ A debug build is signed by the debug keystore every machine has, so
 Android will not install an unsigned APK; until one exists, otata refuses a
 release build with `needs_setup` before running it.
 
-## 9. Publish
+## 8. Publish
 
 ```sh
 cd ~/path/to/MyApp

@@ -5,14 +5,13 @@
 `itms-services://` is Apple's method for installing a signed app from a web-hosted manifest.
 The browser hands the manifest URL to the iOS install daemon, which downloads the `.ipa` and installs it.
 Both the manifest and the payload must be served over HTTPS with a publicly trusted certificate; self-signed is refused.
-On the tailscale transport that certificate is a real Let's Encrypt one, obtained by `tailscale cert` for a name that resolves only inside your tailnet.
+The built-in Tailscale node obtains a trusted certificate for its tailnet hostname.
 
 ```
 phone (on the tailnet)
   └── https://<host>.<tailnet>.ts.net/otata/     trusted cert, tailnet-only
-        └── transport (tailscale serve / your proxy)
-              └── 127.0.0.1:8787       loopback only
-                    └── ~/.otata/public/<slug>/
+        └── otata's embedded Tailscale HTTPS listener
+              └── ~/.otata/public/<slug>/
 ```
 
 ## How does the Android install work?
@@ -120,16 +119,16 @@ install the *previous* one. What closes that:
 
 ## What exactly does `doctor` check?
 
-It checks the whole path: server up and serving this root, transport
-wired, no build marker left by a dead process, the index and every manifest
+It checks otata's whole path: server up and serving this root, transport
+ready, no build marker left by a dead process, the index and every manifest
 and payload answering over the real URL, signing unexpired. It exits
 non-zero if anything is wrong, and every failing check says how to fix it.
 Under `--json`, unhealthy is `ok: false` with the `unhealthy` code, and
 `data.checks` still carries every check.
 
 `otata doctor --fix` is what you should reach for remotely and after a reboot.
-It repairs first (reloads the launch agent or systemd unit, wires the
-transport, clears stale markers, regenerates the pages, restarts a server
+It repairs first (reloads the launch agent or systemd unit, waits for transport
+readiness, clears stale markers, regenerates the pages, restarts a server
 serving a `public/` since recreated), then runs the same checks, so the exit
 code reports what is still broken. It will not replace a server belonging to
 a different `OTATA_ROOT`. `otata restart` does that explicitly.
@@ -164,7 +163,7 @@ returns before login. On a Mac, FileVault keeps the volume encrypted until
 someone types the password. On Linux, a user's systemd starts at that user's
 first login, an SSH session included, and stops at the last logout, taking
 the server with it, unless `loginctl enable-linger` says otherwise. What to
-set up before leaving the machine — Tailscale at login, sleep, the keychain
+set up before leaving the machine — sleep, the keychain
 prompt, lingering — is in [otata-via-ssh.md](otata-via-ssh.md#initial-setup-on-the-mac)
 and its [Linux section](otata-via-ssh.md#on-linux).
 
@@ -173,7 +172,7 @@ and its [Linux section](otata-via-ssh.md#on-linux).
 | Path | Holds |
 | --- | --- |
 | `public/` | The only tree ever served: the index, and a directory per app with its page, manifest, icon and payload |
-| `state/` | One record per app, naming local paths, and the marker of a build in flight |
+| `state/` | App records and build markers; `tsnet/` holds the private Tailscale identity and certificate cache |
 | `build/` | Archives, exports and the build log, per app |
 | `tmp/` | Where publishing stages a file before renaming it into `public/`, so a client can never fetch a half-written one |
 | `bin/` | A copy of the otata binary, present only when the installed one sits where the service manager cannot run it: a TCC-protected directory on a Mac, a path systemd refuses on Linux |

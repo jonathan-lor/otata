@@ -33,7 +33,7 @@ func (f *Failure) Error() string {
 const (
 	CodeNoProject       = "no_project"        // nothing buildable here
 	CodeAmbiguousScheme = "ambiguous_scheme"  // several candidates, none obvious
-	CodeNeedsSetup      = "needs_setup"       // a prerequisite step of the project's toolchain has not been run
+	CodeNeedsSetup      = "needs_setup"       // a toolchain prerequisite or installation migration is needed
 	CodeBuildFailed     = "build_failed"      // the toolchain returned non-zero
 	CodeSigningFailed   = "signing_failed"    // cert, profile or device registration
 	CodeFreeProfile     = "free_profile"      // signed by a personal team; iOS refuses those over the air

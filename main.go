@@ -284,7 +284,12 @@ func transportCmd(a *app.App, args []string) int {
 		if err := a.LoginTransport(); err != nil {
 			return cli.EmitError("transport", err)
 		}
-		return emitStatus(a, "transport")
+		res, err := a.Status()
+		if err != nil {
+			return cli.EmitError("transport", err)
+		}
+		cli.Emit("transport", app.TransportLoginResult{StatusResult: res})
+		return 0
 	}
 	if wantsHelp(args) && (len(args) < 2 || args[0] != "use" || args[1] == "-h" || args[1] == "--help") {
 		fmt.Println("usage: otata " + transportSummary)

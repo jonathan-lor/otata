@@ -70,7 +70,6 @@ project in `android/`, where discovery looks.
 
 ```sh
 otata transport use <tailscale|manual> [--hostname NAME] [--base-url URL] [--keep-prefix]
-otata transport login
 ```
 
 `tailscale` is the default, private transport. It runs its own enrolled node
@@ -88,11 +87,25 @@ otata transport use manual --base-url https://builds.example.com/otata
 `--base-url` and `--keep-prefix` apply to `manual` only.
 `--keep-prefix` says your proxy forwards the base URL's path unchanged instead
 of stripping it. Manual URLs are validated at selection.
-Tailscale saves the selection first; the server enrolls and prepares HTTPS
-afterward. `transport login` prints its current status and login URL, and
-`status --json` reports `transport.state`, `transport.auth_url` when needed,
-and `transport.ready`. Walkthroughs
-for the manual transport are in [Serving over your own proxy](manual-transports.md).
+Tailscale saves the selection first and the server enrolls and prepares HTTPS afterward.
+Walkthroughs for the manual transport are in [Serving over your own proxy](manual-transports.md).
+
+## transport login
+
+```sh
+otata transport login
+```
+
+Enroll the running embedded Tailscale node or retry preparation. The output
+shows the enrollment URL and instructions when login is needed, confirms when
+otata is logged in and ready, or explains the next step when approval, DNS
+configuration, or HTTPS preparation is pending. Printing a login URL does not
+mean enrollment has completed. Run `otata status` after completing browser login
+to check readiness. Re-running login on an enrolled node retains its identity.
+
+`transport login --json` retains the full status payload and the `transport`
+command name. Like `status --json`, it reports `transport.state`,
+`transport.auth_url` when needed, and `transport.ready`.
 
 ## Environment
 

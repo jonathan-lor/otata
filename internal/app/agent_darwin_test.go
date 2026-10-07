@@ -11,8 +11,8 @@ import (
 
 // The plist embeds everything the agent needs to serve what the installing
 // command saw, and survives values launchctl would otherwise choke on.
-func TestLaunchPlistEmbedsRootPortAndPath(t *testing.T) {
-	raw := launchPlist(agentSpec{Program: "/Users/a & b/bin/otata", Root: "/Users/a & b/.otata", Port: 9123, ServePath: "/builds<1>", Log: "/tmp/server.log"})
+func TestLaunchPlistEmbedsRootAndPort(t *testing.T) {
+	raw := launchPlist(agentSpec{Program: "/Users/a & b/bin/otata", Root: "/Users/a & b/.otata", Port: 9123, Log: "/tmp/server.log"})
 	cmd := exec.Command("plutil", "-convert", "json", "-o", "-", "-")
 	cmd.Stdin = bytes.NewReader(raw)
 	out, err := cmd.Output()
@@ -30,8 +30,11 @@ func TestLaunchPlistEmbedsRootPortAndPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	env := plist.EnvironmentVariables
-	if env["OTATA_ROOT"] != "/Users/a & b/.otata" || env["OTATA_PORT"] != "9123" || env["OTATA_PATH"] != "/builds<1>" {
+	if env["OTATA_ROOT"] != "/Users/a & b/.otata" || env["OTATA_PORT"] != "9123" {
 		t.Errorf("environment = %v", env)
+	}
+	if _, obsolete := env["OTATA_PATH"]; obsolete {
+		t.Fatal("new agent still embeds the removed Tailscale path")
 	}
 	if len(plist.ProgramArguments) != 2 || plist.ProgramArguments[0] != "/Users/a & b/bin/otata" || plist.ProgramArguments[1] != "serve" {
 		t.Errorf("ProgramArguments = %v", plist.ProgramArguments)

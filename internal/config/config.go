@@ -7,15 +7,11 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 
 	"github.com/jonathan-lor/otata/internal/atomicfile"
 )
 
-const (
-	DefaultPort      = 8787
-	DefaultServePath = "/otata"
-)
+const DefaultPort = 8787
 
 type Manual struct {
 	BaseURL string `json:"base_url"`
@@ -27,7 +23,6 @@ type Manual struct {
 
 type Config struct {
 	Port      int     `json:"port"`
-	ServePath string  `json:"serve_path"`
 	Transport string  `json:"transport,omitempty"`
 	Manual    *Manual `json:"manual,omitempty"`
 	TSNet     *TSNet  `json:"tsnet,omitempty"`
@@ -45,12 +40,7 @@ func (c Config) TSNetHostname() string {
 }
 
 func Default() Config {
-	return Config{Port: DefaultPort, ServePath: DefaultServePath, Transport: "tailscale", TSNet: &TSNet{Hostname: "otata"}}
-}
-
-// Released host-backed configurations have no embedded node settings.
-func (c Config) NeedsTailscaleMigration() bool {
-	return c.Transport == "tailscale" && c.TSNet == nil
+	return Config{Port: DefaultPort, Transport: "tailscale", TSNet: &TSNet{Hostname: "otata"}}
 }
 
 func Path(root string) string { return filepath.Join(root, "config.json") }
@@ -66,23 +56,18 @@ func LoadFile(root string) (Config, error) {
 	if err != nil {
 		return c, err
 	}
-	c.Transport, c.TSNet = "", nil
 	if err := json.Unmarshal(data, &c); err != nil {
 		return c, err
 	}
-	// Preserve old explicit selections for migration; unconfigured stores and
-	// the unreleased tsnet spelling use the embedded default.
+	// An unspecified transport defaults to the embedded node; "tsnet" is an alias.
 	if c.Transport == "" || c.Transport == "tsnet" {
 		c.Transport = "tailscale"
-		if c.TSNet == nil {
-			c.TSNet = Default().TSNet
-		}
+	}
+	if c.Transport == "tailscale" && c.TSNet == nil {
+		c.TSNet = Default().TSNet
 	}
 	if c.Port == 0 {
 		c.Port = DefaultPort
-	}
-	if c.ServePath == "" {
-		c.ServePath = DefaultServePath
 	}
 	return c, nil
 }
@@ -101,12 +86,6 @@ func Load(root string) (Config, error) {
 			return c, fmt.Errorf("OTATA_PORT=%q is not a valid port", v)
 		}
 		c.Port = port
-	}
-	if v := os.Getenv("OTATA_PATH"); v != "" {
-		if !strings.HasPrefix(v, "/") {
-			v = "/" + v
-		}
-		c.ServePath = strings.TrimSuffix(v, "/")
 	}
 	return c, nil
 }

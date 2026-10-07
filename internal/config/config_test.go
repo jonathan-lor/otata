@@ -2,17 +2,18 @@ package config
 
 import (
 	"os"
+	"reflect"
+	"strings"
 	"testing"
 )
 
 // These are documented in docs/cli-reference.md and in an error hint that tells the user to set OTATA_PORT.
 func TestEnvironmentOverridesFile(t *testing.T) {
 	root := t.TempDir()
-	if err := Save(root, Config{Port: 8787, ServePath: "/otata", Transport: "tailscale"}); err != nil {
+	if err := Save(root, Config{Port: 8787, Transport: "tailscale"}); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("OTATA_PORT", "9123")
-	t.Setenv("OTATA_PATH", "builds")
 
 	c, err := Load(root)
 	if err != nil {
@@ -21,15 +22,12 @@ func TestEnvironmentOverridesFile(t *testing.T) {
 	if c.Port != 9123 {
 		t.Errorf("port = %d, want 9123", c.Port)
 	}
-	if c.ServePath != "/builds" {
-		t.Errorf("serve path = %q, want /builds (leading slash added)", c.ServePath)
-	}
 	// The file must be untouched, so a one-off override is not persisted.
 	onDisk, err := LoadFile(root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if onDisk.Port != 8787 || onDisk.ServePath != "/otata" {
+	if onDisk.Port != 8787 {
 		t.Errorf("LoadFile saw the override: %+v", onDisk)
 	}
 }
@@ -48,7 +46,7 @@ func TestInvalidPortIsReported(t *testing.T) {
 // atomicfile's, tested there; the mode is this package's to choose.
 func TestSaveIsPrivate(t *testing.T) {
 	root := t.TempDir()
-	if err := Save(root, Config{Port: 1, ServePath: "/a"}); err != nil {
+	if err := Save(root, Config{Port: 1}); err != nil {
 		t.Fatal(err)
 	}
 	info, err := os.Stat(Path(root))
@@ -65,22 +63,23 @@ func TestMissingConfigIsNotAnError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("a fresh install should not need a config file: %v", err)
 	}
-	if c.Port != DefaultPort || c.ServePath != DefaultServePath || c.Transport != "tailscale" || c.NeedsTailscaleMigration() {
+	if c.Port != DefaultPort || c.Transport != "tailscale" || c.TSNetHostname() != "otata" {
 		t.Errorf("defaults not applied: %+v", c)
 	}
 }
 
-func TestTransportDefaultsAndMigrationDetection(t *testing.T) {
+func TestTransportDefaultsAndRemovedPaths(t *testing.T) {
+	t.Setenv("OTATA_PATH", "/obsolete-service-path")
 	for _, tc := range []struct {
-		body, transport string
-		legacy          bool
+		body, transport, hostname string
 	}{
-		{`{}`, "tailscale", false},
-		{`{"transport":""}`, "tailscale", false},
-		{`{"transport":"tailscale"}`, "tailscale", true},
-		{`{"transport":"tailscale","tsnet":{"hostname":"builds"}}`, "tailscale", false},
-		{`{"transport":"tsnet","tsnet":{"hostname":"builds"}}`, "tailscale", false},
-		{`{"transport":"manual","manual":{"base_url":"https://example.com"}}`, "manual", false},
+		{`{}`, "tailscale", "otata"},
+		{`{"transport":""}`, "tailscale", "otata"},
+		{`{"transport":"tailscale","serve_path":"/otata"}`, "tailscale", "otata"},
+		{`{"transport":"tailscale","serve_path":"/custom","tsnet":{"hostname":"builds"}}`, "tailscale", "builds"},
+		{`{"transport":"tsnet","tsnet":{"hostname":"builds"}}`, "tailscale", "builds"},
+		{`{"transport":"tailscale","tsnet":null}`, "tailscale", "otata"},
+		{`{"transport":"manual","serve_path":"/ignored","manual":{"base_url":"https://example.com/custom","keep_prefix":true}}`, "manual", "otata"},
 	} {
 		t.Run(tc.body, func(t *testing.T) {
 			root := t.TempDir()
@@ -88,8 +87,12 @@ func TestTransportDefaultsAndMigrationDetection(t *testing.T) {
 				t.Fatal(err)
 			}
 			c, err := LoadFile(root)
-			if err != nil || c.Transport != tc.transport || c.NeedsTailscaleMigration() != tc.legacy {
+			if err != nil || c.Transport != tc.transport || c.TSNetHostname() != tc.hostname {
 				t.Fatalf("load = %+v, %v", c, err)
+			}
+			runtime, err := Load(root)
+			if err != nil || !reflect.DeepEqual(runtime, c) {
+				t.Fatalf("obsolete OTATA_PATH changed config: %+v, %v", runtime, err)
 			}
 			data, _ := os.ReadFile(Path(root))
 			if string(data) != tc.body {
@@ -98,9 +101,13 @@ func TestTransportDefaultsAndMigrationDetection(t *testing.T) {
 			if err := Save(root, c); err != nil {
 				t.Fatal(err)
 			}
-			c, err = LoadFile(root)
-			if err != nil || c.NeedsTailscaleMigration() != tc.legacy {
-				t.Fatalf("save/load lost migration state: %+v, %v", c, err)
+			reloaded, err := LoadFile(root)
+			if err != nil || !reflect.DeepEqual(reloaded, c) {
+				t.Fatalf("save/load changed configuration: %+v, %v", reloaded, err)
+			}
+			data, _ = os.ReadFile(Path(root))
+			if strings.Contains(string(data), "serve_path") {
+				t.Fatal("saved configuration retained the removed path setting")
 			}
 		})
 	}

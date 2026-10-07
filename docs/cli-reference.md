@@ -75,7 +75,8 @@ otata transport use <tailscale|manual> [--hostname NAME] [--base-url URL] [--kee
 `tailscale` is the default, private transport. It runs its own enrolled node
 inside `otata serve`, without a host Tailscale installation. `--hostname`
 applies only to Tailscale and defaults to `otata`.
-See [Tailscale](tailscale.md) for setup and migration from older releases.
+Tailscale always serves at `https://<node>.<tailnet>.ts.net/`; its path cannot
+be customized. See [Tailscale](tailscale.md) for setup and upgrading older releases.
 `manual` is reachable by whatever your proxy serves, which otata does not
 verify; it is for routes you consider private:
 
@@ -113,11 +114,12 @@ command name. Like `status --json`, it reports `transport.state`,
 | --- | --- | --- |
 | `OTATA_ROOT` | `~/.otata` | Where the store lives |
 | `OTATA_PORT` | `8787` | Loopback port the file server binds |
-| `OTATA_PATH` | `/otata` | Path the transport serves otata under |
 | `NO_COLOR` | unset | Any value turns off ANSI color |
 
-`OTATA_PORT` and `OTATA_PATH` override the stored config for one invocation
-without persisting it. `otata transport use` is what writes config to disk.
+`OTATA_PORT` overrides the stored config for one invocation without persisting
+it. `otata transport use` writes config to disk. The removed `OTATA_PATH`
+environment variable and `serve_path` config field are ignored. Manual proxy
+paths come from `--base-url`, with `--keep-prefix` controlling prefix stripping.
 
 ## Output
 

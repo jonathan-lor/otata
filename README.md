@@ -107,7 +107,7 @@ Thus, `--json` is accepted anywhere on the command line. Your agent also doesn't
 
 ```sh
 $ otata status --json | jq .data.transport.base_url
-"https://your-mac.your-tailnet.ts.net/otata"
+"https://otata.your-tailnet.ts.net"
 ```
 
 otata errors carry stable machine codes to make it easier for agents to branch off them.

@@ -54,11 +54,19 @@ On a fresh installation, Tailscale is built in and selected by default. Run
 `transport.ready` before publishing. Do not install host Tailscale or configure
 Serve for this workflow.
 
-An older host-backed installation reports `migration_required` in status or
-`needs_setup` with a migration hint. Run `otata transport use tailscale` once
-to remove its old Serve route, then start and enroll otata. The install URL
-changes; published builds are kept. The host CLI is needed only for that
-cleanup. Preserve host Tailscale if it is also used for SSH or other services.
+Tailscale serves at the node's root URL. Old `serve_path` and `OTATA_PATH`
+settings are ignored; manual proxy paths still come from `--base-url`.
+When upgrading, let publishes finish and stop the old server before replacing
+the binary, then restart and use the new URLs. Existing tsnet enrollment and
+published builds are retained.
+
+For an older host-backed installation, the host's old Serve route needs manual
+cleanup before upgrading. Inspect `tailscale serve status --json` and remove
+only a handler verified to point to otata's loopback port, using its original
+HTTPS port and path with `off`. Do not reset Serve or remove unrelated routes.
+Otata no longer detects or removes these routes; one left in place can still
+expose the loopback server through the host's URL. Then start and enroll the
+embedded node. Preserve host Tailscale used for SSH or other services.
 
 Every command prints `{ok, command, data, error}`. On failure, `error` carries
 a stable `code`, a `message`, and often a `hint` and `details`. Branch on the

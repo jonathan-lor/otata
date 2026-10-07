@@ -21,7 +21,6 @@ import (
 type Identity struct {
 	Root     string `json:"root"`
 	Port     int    `json:"port"`
-	Prefix   string `json:"prefix"`
 	Hostname string `json:"hostname"`
 }
 
@@ -40,6 +39,10 @@ type receipt struct {
 	Token    string   `json:"token"`
 }
 
+// controlVersion identifies the CLI/server control contract. Bump it when
+// requests, responses, or routing assumptions become incompatible.
+const controlVersion = 2
+
 func ReceiptPath(dir string) string { return filepath.Join(dir, "control.json") }
 
 type Client struct {
@@ -56,7 +59,7 @@ func (c Client) call(ctx context.Context, method, path string, input, output any
 	if err := json.Unmarshal(data, &rec); err != nil {
 		return fmt.Errorf("invalid tsnet control receipt: %w", err)
 	}
-	if rec.Version != 1 || rec.Identity != c.Identity {
+	if rec.Version != controlVersion || rec.Identity != c.Identity {
 		return fmt.Errorf("tsnet server configuration differs; restart 'otata serve' or run 'otata restart'")
 	}
 	u, err := url.Parse(rec.URL)
@@ -122,13 +125,18 @@ func (c Client) Probe(ctx context.Context, target string) (int, error) {
 	return result.Code, nil
 }
 
-// A probe can only HEAD this node's own served path. It cannot act as a
+// A probe can only HEAD this node's own HTTPS origin. It cannot act as a
 // general-purpose tailnet proxy, and redirects are never followed.
 func validProbe(base, target string) bool {
 	b, e1 := url.Parse(base)
 	u, e2 := url.Parse(target)
-	return e1 == nil && e2 == nil && b.Scheme == "https" && u.Scheme == b.Scheme && u.Host == b.Host &&
-		u.User == nil && u.RawQuery == "" && u.Fragment == "" && strings.HasPrefix(path.Clean(u.Path)+"/", strings.TrimSuffix(b.Path, "/")+"/")
+	if e1 != nil || e2 != nil || b.Scheme != "https" || u.Scheme != b.Scheme || u.Host != b.Host ||
+		u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+		return false
+	}
+	// Reject traversal and ambiguous paths.
+	clean := path.Clean(u.Path)
+	return u.Path == "" || u.Path == clean || u.Path == clean+"/"
 }
 
 func (m *manager) control(token string) http.Handler {

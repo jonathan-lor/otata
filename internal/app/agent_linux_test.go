@@ -20,11 +20,10 @@ import (
 // backslashes.
 func hostileSpec(program string) agentSpec {
 	return agentSpec{
-		Program:   program,
-		Root:      `/home/a & b "q" 'r' %p ${HOME} \back/.otata`,
-		Port:      9123,
-		ServePath: "/builds<1>",
-		Log:       `/home/a & b "q" %p ${HOME}/server.log`,
+		Program: program,
+		Root:    `/home/a & b "q" 'r' %p ${HOME} \back/.otata`,
+		Port:    9123,
+		Log:     `/home/a & b "q" %p ${HOME}/server.log`,
 	}
 }
 
@@ -39,6 +38,9 @@ func TestUnitFileRoundTrips(t *testing.T) {
 	got, ok := parseUnitFile(unit)
 	if !ok || got != spec {
 		t.Errorf("read back %+v\nwant      %+v\nunit:\n%s", got, spec, unit)
+	}
+	if strings.Contains(string(unit), "OTATA_PATH") {
+		t.Fatal("new service still embeds the removed Tailscale path")
 	}
 	for _, want := range []string{
 		"Restart=on-failure\n",
@@ -155,7 +157,7 @@ StandardOutput=append:/home/a b/%%p/server.log
 [Install]
 WantedBy=default.target
 `
-	want := agentSpec{Program: "/opt/my tools/otata", Root: "/home/a b/.otata", Port: 8787, ServePath: "/a b", Log: "/home/a b/%p/server.log"}
+	want := agentSpec{Program: "/opt/my tools/otata", Root: "/home/a b/.otata", Port: 8787, Log: "/home/a b/%p/server.log"}
 	if got, ok := parseUnitFile([]byte(unit)); !ok || got != want {
 		t.Errorf("parsed %+v, want %+v", got, want)
 	}

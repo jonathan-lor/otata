@@ -195,7 +195,7 @@ func runWithRetry(ctx context.Context, opts Options, n node, retryDelay time.Dur
 	defer control.Close()
 	errCh := make(chan error, 2)
 	go func() { errCh <- control.Serve(ln) }()
-	data, _ := json.Marshal(receipt{1, opts.Identity, "http://" + ln.Addr().String(), token})
+	data, _ := json.Marshal(receipt{controlVersion, opts.Identity, "http://" + ln.Addr().String(), token})
 	if err := atomicfile.WriteData(opts.Dir, ReceiptPath(opts.Dir), 0600, data); err != nil {
 		return err
 	}
@@ -274,7 +274,7 @@ func runWithRetry(ctx context.Context, opts Options, n node, retryDelay time.Dur
 			m.set(st)
 			continue
 		}
-		base := "https://" + host + opts.Identity.Prefix
+		base := "https://" + host
 		// Health events must not bypass preparation backoff. A new hostname,
 		// restored availability, or explicit login/retry can start fresh.
 		if base == retryBase && time.Now().Before(retryAt) {

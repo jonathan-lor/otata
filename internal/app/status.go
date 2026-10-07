@@ -134,9 +134,6 @@ func (a *App) Status() (*StatusResult, error) {
 		res.Transport = tr.Status(a.Config.Port)
 	} else {
 		res.Transport = transport.Status{Name: "none", Detail: failureDetail(err)}
-		if a.Config.NeedsTailscaleMigration() {
-			res.Transport.Name, res.Transport.State = "tailscale", "migration_required"
-		}
 	}
 	if res.Apps, _ = a.Store.Records(); res.Apps == nil {
 		res.Apps = []artifact.Record{} // unreadable state dir: still [] not null

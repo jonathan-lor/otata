@@ -197,11 +197,8 @@ func serveThisRoot(t *testing.T, a *App) {
 	a.Config.Port = ln.Addr().(*net.TCPAddr).Port
 }
 
-// A transport that is unready for a reason --fix cannot mend must be reported
-// as that reason. It used to say "not wired; 'otata doctor --fix' wires it"
-// for every unready transport, and --fix then failed with the real one. The
-// obstacle here is a base URL the config validation refuses, which a
-// hand-edited config can hold and which needs no Tailscale to reproduce.
+// Doctor must report why a transport is unready, including configuration errors
+// that --fix cannot repair. A hand-edited config can contain an invalid base URL.
 func TestDoctorReportsTheTransportObstacleNotWiring(t *testing.T) {
 	root := t.TempDir()
 	store, err := storage.Open(root)
@@ -209,7 +206,6 @@ func TestDoctorReportsTheTransportObstacleNotWiring(t *testing.T) {
 		t.Fatal(err)
 	}
 	a := &App{Root: root, Store: store, Config: config.Config{
-		ServePath: "/otata",
 		Transport: "manual",
 		Manual:    &config.Manual{BaseURL: "http://127.0.0.1:1/otata"},
 	}}
@@ -249,7 +245,7 @@ func TestDoctorReportsTheTransportObstacleNotWiring(t *testing.T) {
 // report still reads app by app whatever each one has.
 func TestDoctorProbesNoManifestForAndroid(t *testing.T) {
 	a := freshApp(t)
-	a.Config.ServePath, a.Config.Transport = "/otata", "manual"
+	a.Config.Transport = "manual"
 	// Port 1 answers nothing, so the URL probes fail fast without leaving the machine.
 	a.Config.Manual = &config.Manual{BaseURL: "https://127.0.0.1:1/otata", KeepPrefix: true}
 	now := time.Now()
@@ -283,8 +279,6 @@ func TestDoctorProbesNoManifestForAndroid(t *testing.T) {
 // Under a keep-prefix manual transport every request reaching the server
 // carries the base URL's path, and the bare root is refused by design. Doctor's
 // "can the server serve the index" probe must therefore ask with the prefix.
-// probing "/" declared every healthy keep-prefix server broken, and doctor
-// --fix restarted one on every run, forever.
 func TestDoctorProbesIndexThroughIncomingPrefix(t *testing.T) {
 	root := t.TempDir()
 	store, err := storage.Open(root)
@@ -292,7 +286,6 @@ func TestDoctorProbesIndexThroughIncomingPrefix(t *testing.T) {
 		t.Fatal(err)
 	}
 	a := &App{Root: root, Store: store, Config: config.Config{
-		ServePath: "/otata",
 		Transport: "manual",
 		Manual: &config.Manual{
 			// Port 1 answers nothing, so the URL probes that follow the check
@@ -338,7 +331,6 @@ func TestDoctorNamesAutostartWhenItCannotStartTheServer(t *testing.T) {
 	}
 	a := &App{Root: root, Store: store, Config: config.Config{
 		Port:      1,
-		ServePath: "/otata",
 		Transport: "manual",
 		Manual:    &config.Manual{BaseURL: "https://127.0.0.1:1/otata", KeepPrefix: true},
 	}}

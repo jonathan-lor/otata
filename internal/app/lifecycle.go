@@ -13,9 +13,6 @@ import (
 )
 
 func (a *App) Serve() error {
-	if a.Config.NeedsTailscaleMigration() {
-		return tailscaleMigrationRequired()
-	}
 	srv, err := server.New(a.Store.Public(), a.IncomingPrefix(), a.RootDigest(), log.New(os.Stdout, "", 0))
 	if err != nil {
 		return cli.Failf(cli.CodeInternal, "%v", err)
@@ -36,9 +33,6 @@ func (a *App) Serve() error {
 // background server exists. Everything that needs the server comes through
 // here. With no unit installed, it refuses and tells you the command to run.
 func (a *App) StartServer() error {
-	if a.Config.NeedsTailscaleMigration() {
-		return tailscaleMigrationRequired()
-	}
 	// One probe answers both "is ours up" and "is another root's there".
 	if p, ok := a.probeServer("/"); ok {
 		if p.Root == a.RootDigest() {

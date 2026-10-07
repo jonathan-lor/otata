@@ -13,9 +13,9 @@ type TSNet struct{ Client tsnetnode.Client }
 func NewTSNet(dir string, identity tsnetnode.Identity) *TSNet {
 	return &TSNet{Client: tsnetnode.Client{Dir: dir, Identity: identity}}
 }
-func (*TSNet) Name() string             { return "tailscale" }
-func (*TSNet) Visibility() Visibility   { return Private }
-func (t *TSNet) IncomingPrefix() string { return t.Client.Identity.Prefix }
+func (*TSNet) Name() string           { return "tailscale" }
+func (*TSNet) Visibility() Visibility { return Private }
+func (*TSNet) IncomingPrefix() string { return "" }
 
 func (t *TSNet) Status(port int) Status {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)

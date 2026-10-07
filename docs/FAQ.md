@@ -9,7 +9,7 @@ The built-in Tailscale node obtains a trusted certificate for its tailnet hostna
 
 ```
 phone (on the tailnet)
-  └── https://<host>.<tailnet>.ts.net/otata/     trusted cert, tailnet-only
+  └── https://<node>.<tailnet>.ts.net/          trusted cert, tailnet-only
         └── otata's embedded Tailscale HTTPS listener
               └── ~/.otata/public/<slug>/
 ```
@@ -156,8 +156,8 @@ the manager, and with no unit installed they refuse and name the command. The
 only other server is `otata serve` in a foreground terminal, alive as long
 as the terminal.
 
-One unit exists per user, embedding the `OTATA_ROOT`, `OTATA_PORT` and
-`OTATA_PATH` it was installed with: a shell with a scratch root sees
+One unit exists per user, embedding the `OTATA_ROOT` and `OTATA_PORT`
+it was installed with: a shell with a scratch root sees
 `autostart off`, cannot stop it, and is refused `autostart on`. Nothing
 returns before login. On a Mac, FileVault keeps the volume encrypted until
 someone types the password. On Linux, a user's systemd starts at that user's

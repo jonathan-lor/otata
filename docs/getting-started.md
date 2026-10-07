@@ -3,7 +3,10 @@
 This guide sets up otata with Tailscale, on a Mac or a Linux machine, for iOS
 and Android. Serving through your own HTTPS proxy instead of Tailscale is covered in [manual transports](manual-transports.md).
 
-**As of otata v0.4.0, Tailscale now runs inside otata. Existing host-backed installations must [migrate once](tailscale.md#upgrading-from-the-host-integration).**
+**Upgrading? Tailscale now serves at the node's root URL. Read the
+[tsnet upgrade steps](tailscale.md#upgrading-from-a-prefixed-tsnet-release), or
+the [host integration upgrade steps](tailscale.md#upgrading-from-the-host-integration)
+if you used an older host-backed release.**
 
 ## 1. Tailscale on your phone
 

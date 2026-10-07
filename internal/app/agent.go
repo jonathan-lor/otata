@@ -10,14 +10,13 @@ import (
 )
 
 // agentSpec is what a supervisor's unit says it runs: the definition otata
-// writes and reads back. One unit exists per user, and it embeds the root,
-// port and serve path it was installed with.
+// writes and reads back. One unit exists per user, and it embeds the root
+// and port it was installed with.
 type agentSpec struct {
-	Program   string
-	Root      string
-	Port      int
-	ServePath string
-	Log       string
+	Program string
+	Root    string
+	Port    int
+	Log     string
 }
 
 // agentMatches reports whether an installed unit serves this root and port and both must match exactly.

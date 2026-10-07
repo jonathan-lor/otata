@@ -69,7 +69,7 @@ func parseAgentPlist() (agentSpec, bool) {
 		return agentSpec{}, false
 	}
 	env := plist.EnvironmentVariables
-	spec := agentSpec{Program: plist.ProgramArguments[0], Root: env["OTATA_ROOT"], ServePath: env["OTATA_PATH"], Log: plist.StandardOutPath}
+	spec := agentSpec{Program: plist.ProgramArguments[0], Root: env["OTATA_ROOT"], Log: plist.StandardOutPath}
 	spec.Port, _ = strconv.Atoi(env["OTATA_PORT"])
 	return spec, true
 }
@@ -189,7 +189,6 @@ func launchPlist(spec agentSpec) []byte {
     <dict>
         <key>OTATA_ROOT</key><string>%s</string>
         <key>OTATA_PORT</key><string>%d</string>
-        <key>OTATA_PATH</key><string>%s</string>
     </dict>
     <key>RunAtLoad</key><true/>
     <key>KeepAlive</key>
@@ -198,5 +197,5 @@ func launchPlist(spec agentSpec) []byte {
     <key>StandardErrorPath</key><string>%s</string>
 </dict>
 </plist>
-`, launchLabel, xmlText(spec.Program), xmlText(spec.Root), spec.Port, xmlText(spec.ServePath), xmlText(spec.Log), xmlText(spec.Log))
+`, launchLabel, xmlText(spec.Program), xmlText(spec.Root), spec.Port, xmlText(spec.Log), xmlText(spec.Log))
 }

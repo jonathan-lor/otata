@@ -116,7 +116,7 @@ func setup(t *testing.T, n *fakeNode, prepare func(string) error) (Client, conte
 func setupWithRetry(t *testing.T, n *fakeNode, prepare func(string) error, retryDelay time.Duration) (Client, context.CancelFunc, <-chan error) {
 	t.Helper()
 	dir := t.TempDir()
-	identity := Identity{Root: "test-root", Port: 18877, Prefix: "/otata", Hostname: "otata-test"}
+	identity := Identity{Root: "test-root", Port: 18877, Hostname: "otata-test"}
 	if n.client == nil {
 		n.client = &http.Client{}
 	}
@@ -198,6 +198,9 @@ func TestEnrollmentCertificateReadinessAndShutdown(t *testing.T) {
 	}
 	close(gate)
 	s := waitStatus(t, c, func(s Status) bool { return s.Ready })
+	if s.BaseURL != "https://otata.tailnet.ts.net" {
+		t.Fatalf("Tailscale did not advertise its root URL: %s", s.BaseURL)
+	}
 	if got := <-prepared; got != s.BaseURL {
 		t.Fatalf("prepared %q, ready %q", got, s.BaseURL)
 	}
@@ -284,6 +287,22 @@ func TestPrivateControlAndScopedProbes(t *testing.T) {
 	if err := json.Unmarshal(data, &rec); err != nil {
 		t.Fatal(err)
 	}
+	// Incompatible control versions require a restart even when the node identity matches.
+	old := rec
+	old.Version = 1
+	oldData, err := json.Marshal(old)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(ReceiptPath(c.Dir), oldData, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Status(ctx); err == nil || !strings.Contains(err.Error(), "restart") {
+		t.Fatalf("obsolete control receipt accepted: %v", err)
+	}
+	if err := os.WriteFile(ReceiptPath(c.Dir), data, 0600); err != nil {
+		t.Fatal(err)
+	}
 	resp, err := http.Get(rec.URL + "/status")
 	if err != nil {
 		t.Fatal(err)
@@ -292,14 +311,14 @@ func TestPrivateControlAndScopedProbes(t *testing.T) {
 	if resp.StatusCode != 401 {
 		t.Fatalf("unauthenticated status: %d", resp.StatusCode)
 	}
-	for _, mutate := range []func(*Identity){func(i *Identity) { i.Root = "other" }, func(i *Identity) { i.Port++ }, func(i *Identity) { i.Prefix = "/other" }, func(i *Identity) { i.Hostname = "other" }} {
+	for _, mutate := range []func(*Identity){func(i *Identity) { i.Root = "other" }, func(i *Identity) { i.Port++ }, func(i *Identity) { i.Hostname = "other" }} {
 		wrong := c
 		mutate(&wrong.Identity)
 		if _, err := wrong.Status(ctx); err == nil {
 			t.Fatal("different config accepted")
 		}
 	}
-	for _, target := range []string{"https://other.tailnet.ts.net/otata/app", "http://otata.tailnet.ts.net/otata/app", s.BaseURL + "-other/app", s.BaseURL + "/../private", s.BaseURL + "/%2e%2e/private", s.BaseURL + "/app?x=1"} {
+	for _, target := range []string{"https://other.tailnet.ts.net/app", "http://otata.tailnet.ts.net/app", s.BaseURL + "-other/app", s.BaseURL + "/../private", s.BaseURL + "/%2e%2e/private", s.BaseURL + "/app?x=1", s.BaseURL + "/app#fragment", s.BaseURL + "/app//payload.ipa"} {
 		if _, err := c.Probe(ctx, target); err == nil {
 			t.Fatalf("accepted out-of-scope probe %q", target)
 		}
@@ -307,6 +326,10 @@ func TestPrivateControlAndScopedProbes(t *testing.T) {
 	if len(requests) != 0 {
 		t.Fatal("rejected probe reached network")
 	}
+	if code, err := c.Probe(ctx, s.BaseURL+"/"); err != nil || code != 200 {
+		t.Fatalf("root index probe = %d,%v", code, err)
+	}
+	<-requests
 	if code, err := c.Probe(ctx, s.BaseURL+"/app/payload.ipa"); err != nil || code != 200 {
 		t.Fatalf("probe = %d,%v", code, err)
 	}
@@ -558,7 +581,7 @@ func TestControlReadyBeforeNodeInitialization(t *testing.T) {
 			}
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
-			identity := Identity{Root: "startup", Port: 18877, Prefix: "/otata", Hostname: "startup"}
+			identity := Identity{Root: "startup", Port: 18877, Hostname: "startup"}
 			c := Client{Dir: t.TempDir(), Identity: identity}
 			ready := make(chan struct{})
 			done := make(chan error, 1)

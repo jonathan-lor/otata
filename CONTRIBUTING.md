@@ -45,7 +45,7 @@ user. The tsnet tests use a fake node and do not enroll real devices.
 | `main.go` | Command dispatch and flag parsing only |
 | `internal/cli` | How commands talk to their caller: JSON vs text, the error taxonomy |
 | `internal/app` | Orchestration: the only place that knows about the others at once, one file per command |
-| `internal/config` | The little that cannot be discovered: port, serve path, the selected transport |
+| `internal/config` | Port, selected transport, node hostname and manual proxy settings |
 | `internal/storage` | The on-disk layout, and the **only** definition of it |
 | `internal/atomicfile` | Stage-and-rename writes, so a crash never leaves a torn file |
 | `internal/artifact` | The record: what a published build is, and the platform it runs on |
@@ -67,8 +67,8 @@ go test ./internal/server/ -v
 CI runs the suite with the race detector on both macOS and Linux. Tests that
 depend on a macOS tool (`ditto`, `plutil`, `pngcrush`) skip if the tool is absent.
 
-Embedded node tests use a fake backend. Migration tests use a fake host CLI
-to verify that only otata's old Serve handler is removed.
+Embedded node tests use a fake backend. Upgrade tests cover ignored old path
+settings, root URLs and unchanged manual proxy routing without a host CLI.
 
 The `*_manual_test.go` files run against real local projects and artifacts
 and **skip unless told where they are**, so the test suite stays hermetic on

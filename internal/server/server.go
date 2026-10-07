@@ -34,8 +34,8 @@ type Server struct {
 	root *os.Root
 
 	// prefix is what every request still carries when it arrives: the base URL's
-	// path under a proxy that forwards it unchanged. Tailscale strips its mount
-	// path, so there it is empty. The server strips exactly this and nothing else.
+	// path under a proxy that forwards it unchanged. Embedded Tailscale serves
+	// at the root, so there it is empty. The server strips exactly this prefix.
 	prefix string
 
 	// identity names the store this server serves, so a client can tell "an otata

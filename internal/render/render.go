@@ -141,12 +141,8 @@ func viewFor(r artifact.Record, baseURL string) appView {
 		Platform: r.Platform,
 		Built:    stampOf(r.BuiltAt),
 		Size:     Size(r.SizeMB()),
-		// Absolute like the manifest's URLs, and regenerated with them when the
-		// base changes. Tailscale serves its mount path with and without the
-		// trailing slash and never redirects, so on a hand-typed URL missing the
-		// slash a relative reference resolves one level too high, off the mount
-		// entirely: unstyled pages while the stylesheet was a link, broken
-		// icons after.
+		// Absolute URLs preserve the public base URL through manual proxies and
+		// are regenerated with the manifests whenever that base changes.
 		PageURL:  appBase + "/",
 		IconURL:  appBase + "/" + r.IconFile(),
 		IndexURL: base + "/",

@@ -22,9 +22,9 @@ func tsnetControl(t *testing.T, status func() tsnetnode.Status) *TSNet {
 		json.NewEncoder(w).Encode(status())
 	}))
 	t.Cleanup(server.Close)
-	tr := NewTSNet(t.TempDir(), tsnetnode.Identity{Root: "test", Port: 18877, Prefix: "/otata", Hostname: "test"})
+	tr := NewTSNet(t.TempDir(), tsnetnode.Identity{Root: "test", Port: 18877, Hostname: "test"})
 	data, err := json.Marshal(map[string]any{
-		"version": 1, "identity": tr.Client.Identity, "url": server.URL, "token": "test-token",
+		"version": 2, "identity": tr.Client.Identity, "url": server.URL, "token": "test-token",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -42,12 +42,12 @@ func TestTSNetEnsureWaitsForStartup(t *testing.T) {
 		i := min(int(calls.Add(1))-1, len(states)-1)
 		s := tsnetnode.Status{State: states[i]}
 		if s.State == "ready" {
-			s.Ready, s.BaseURL = true, "https://test.ts.net/otata"
+			s.Ready, s.BaseURL = true, "https://test.ts.net"
 		}
 		return s
 	})
 	base, err := tr.Ensure(tr.Client.Identity.Port)
-	if err != nil || base != "https://test.ts.net/otata" || calls.Load() != 4 {
+	if err != nil || base != "https://test.ts.net" || calls.Load() != 4 {
 		t.Fatalf("startup: base=%q err=%v calls=%d", base, err, calls.Load())
 	}
 }

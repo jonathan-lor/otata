@@ -37,7 +37,7 @@ Options:
 
 'otata <command> --help' shows a command's flags.
 
-Environment: OTATA_ROOT (default ~/.otata), OTATA_PORT, OTATA_PATH, NO_COLOR.
+Environment: OTATA_ROOT (default ~/.otata), OTATA_PORT, NO_COLOR.
 `
 
 func main() { os.Exit(run()) }

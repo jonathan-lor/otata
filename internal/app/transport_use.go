@@ -73,25 +73,14 @@ func (a *App) UseTransport(sel TransportSelection, progress func(string)) error 
 	// once at startup, so if this change moves it, the server is restarted
 	// below rather than left serving the old contract.
 	previousPrefix := a.IncomingPrefix()
-	legacy := a.Config.NeedsTailscaleMigration()
-	nodeChanged := legacy || ((a.Config.Transport == "tailscale" || sel.Name == "tailscale") &&
-		(a.Config.Transport != sel.Name || a.Config.TSNetHostname() != next.TSNetHostname()))
+	nodeChanged := (a.Config.Transport == "tailscale" || sel.Name == "tailscale") &&
+		(a.Config.Transport != sel.Name || a.Config.TSNetHostname() != next.TSNetHostname())
 
 	// Persist what was on disk plus this change, so an environment override for
 	// this one invocation does not become permanent.
 	onDisk, err := config.LoadFile(a.Root)
 	if err != nil {
 		return cli.Failf(cli.CodeInternal, "%v", err)
-	}
-	if legacy {
-		if _, other := a.otherRootServer(); other {
-			return cli.Fail(cli.CodeServerDown, "the old port serves another otata root; refusing to remove its route")
-		}
-		if err := cleanupLegacyTailscale(a.Config); err != nil {
-			return cli.Failf(cli.CodeTransportDown, "could not remove the old otata Serve route: %v", err).
-				WithHint("make the host Tailscale CLI available and fix the reported error, then retry 'otata transport use tailscale'")
-		}
-		progress("removed the old otata Serve route; published builds are retained")
 	}
 	onDisk.Transport = next.Transport
 	onDisk.Manual = next.Manual
@@ -116,9 +105,6 @@ func (a *App) UseTransport(sel TransportSelection, progress func(string)) error 
 		}
 	}
 	if sel.Name == "tailscale" {
-		if legacy {
-			progress("Tailscale now runs inside otata as a separate device; run 'otata transport login' after starting the server, then replace saved links with the new URL")
-		}
 		// The server prepares HTTPS and rewrites pages when it joins.
 		if !candidate.Status(a.Config.Port).Ready {
 			progress("start the server with 'otata autostart on' or 'otata serve', then run 'otata transport login' and 'otata status'")

@@ -1,8 +1,9 @@
 # Tailscale
 
-As of v0.4.0, otata's `tailscale` transport now joins your tailnet directly as a separate device via [tsnet](https://tailscale.com/docs/features/tsnet) instead of using your machine's Tailscale installation.
+otata's `tailscale` transport joins your tailnet directly as a separate device via [tsnet](https://tailscale.com/docs/features/tsnet), without using your machine's Tailscale installation.
+It serves at `https://<node>.<tailnet>.ts.net/`, with no configurable path prefix.
 Your phone still needs tailnet access, and the tailnet needs MagicDNS and HTTPS certificates enabled.
-If you were an existing user on the previous host-backed Tailscale implementation, you'll need to [migrate once](#upgrading-from-the-host-integration).
+For an existing installation, read the upgrade steps below before installing.
 
 ## Setup
 
@@ -43,37 +44,79 @@ To use an existing private HTTPS proxy, select `manual` with `--base-url`;
 see [manual transports](manual-transports.md). A managed server restarts when
 the transport or hostname changes; a foreground server asks you to restart it.
 
-## Upgrading from the host integration
+## Upgrading from a prefixed tsnet release
 
-**This is a breaking change:** otata enrolls as a new device with a new URL.
-Published builds are kept, and installed apps do not need reinstalling.
-Old configurations report `migration_required` rather than silently switching.
+**This is a breaking change:** Tailscale always serves at `/`. The old
+`/otata` prefix and custom Tailscale prefixes are no longer supported or
+redirected. `serve_path` in saved configuration and `OTATA_PATH` in your shell
+or an old service definition are ignored. Manual proxy paths are unchanged.
 
-After upgrading, run:
+Let running publishes and downloads finish, then stop otata before replacing
+the binary. A publish running the old binary still holds its old URLs.
 
 ```sh
-otata transport use tailscale
+otata stop
+```
+
+Install the new release, then refresh the service and check the new URL:
+
+```sh
 otata autostart on
-otata transport login
+otata status
 otata doctor
 ```
 
-The first command uses the host Tailscale CLI once to inspect Serve and remove
-only the old path on port 443 if it still points to otata's configured loopback
-port. Unrelated handlers are left alone. If inspection or removal fails, the
-configuration stays unmigrated; fix the reported error and rerun the command.
-Use the same `OTATA_ROOT`, `OTATA_PORT`, and `OTATA_PATH` as the old server if
-you configured overrides; migration does not persist those overrides.
+Use the same `OTATA_ROOT` and `OTATA_PORT` if you configured overrides.
+The embedded node keeps its identity and enrollment in `state/tsnet/`.
+Published payloads are retained, and pages and manifests regenerate at startup
+before HTTPS is marked ready. No rebuild or app reinstall is needed.
+Replace bookmarks and shared links with the URLs reported by otata.
 
-Complete browser enrollment, wait for HTTPS readiness, then replace bookmarks
-and shared links with the URL in `otata status`. Tailnets with approval or
-restricted ACLs may need an administrator to authorize the new device.
-Pages and manifests regenerate automatically. Serving is interrupted during
-migration; no rebuild is needed. The host CLI is not used afterward.
+For foreground serving, stop the old `otata serve` with Ctrl-C and start the
+new binary in that terminal instead of using `autostart on`.
 
-Foreground users run `otata serve` in a separate terminal instead of
-`autostart on`. Keep any host Tailscale installation you use for SSH or other
-applications; otata's embedded node serves builds, not host SSH.
+## Upgrading from the host integration
+
+Otata no longer detects or cleans up the host Tailscale integration. Old
+configurations selecting `tailscale` now select the embedded node directly.
+It requires its own enrollment and uses a different hostname from the host.
+
+Before installing the new release, finish running publishes and stop the old
+server as above. Use the **host's** Tailscale CLI to inspect its Serve routes:
+
+```sh
+tailscale serve status --json
+```
+
+Find the handler that points to otata's loopback address, normally
+`http://127.0.0.1:8787`, and confirm its HTTPS port and path. Remove only that
+handler. For the old background route on port 443 at `/otata`:
+
+```sh
+tailscale serve --bg --https=443 --set-path=/otata off
+```
+
+Use your original port and path if they differ. If no otata handler exists,
+there is nothing to remove. If the handler points elsewhere, leave it alone.
+Do not use `tailscale serve reset`, which removes unrelated routes too.
+See [Tailscale's Serve reference](https://tailscale.com/docs/reference/tailscale-cli/serve).
+An old route left in place may still expose otata through the host's URL and
+access policy because it forwards to the loopback server.
+
+Install the release, then run:
+
+```sh
+otata autostart on
+otata transport login
+otata status
+otata doctor
+```
+
+Complete browser enrollment and any required device approval, then wait for
+HTTPS readiness and replace saved links with the new URLs. Keep the same
+`OTATA_ROOT` to retain published builds; pages and manifests regenerate without
+rebuilding payloads. Keep any host Tailscale installation used for SSH or other
+services. Otata never invokes the host CLI.
 
 ## Troubleshooting
 
@@ -82,7 +125,6 @@ applications; otata's embedded node serves builds, not host SSH.
 
 | State | Action |
 | --- | --- |
-| `migration_required` | Follow the upgrade steps above |
 | `stopped` | Start the server, or restart it if its configuration differs |
 | `starting`, `connecting` | Check network access and server logs if this persists |
 | `needs_login` | Run `otata transport login` and open its URL |

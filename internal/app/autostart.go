@@ -114,9 +114,6 @@ func (a *App) reloadAgent() error {
 // embedded a program the manager could not find after the first `brew
 // upgrade`. It falls back to a staged copy only on evidence.
 func (a *App) EnableAutostart() error {
-	if a.Config.NeedsTailscaleMigration() {
-		return tailscaleMigrationRequired()
-	}
 	sup := a.autostart()
 	if !sup.Available() {
 		// No manager to install into: an OS with none wired up, or a Linux
@@ -232,9 +229,8 @@ func (a *App) installAgent(program string, wait time.Duration) error {
 		return err
 	}
 
-	// Root, port and serve path are all embedded, so the unit serves exactly
-	// what the command that installed it saw.
-	spec := agentSpec{Program: program, Root: a.Root, Port: a.Config.Port, ServePath: a.Config.ServePath, Log: a.Store.ServerLog()}
+	// Root and port are embedded; transport settings come from this root's config.
+	spec := agentSpec{Program: program, Root: a.Root, Port: a.Config.Port, Log: a.Store.ServerLog()}
 	if err := sup.Install(spec); err != nil {
 		// The manager refusing the program is EnableAutostart's cue to stage
 		// a copy, so it travels as itself, and nothing was written. Anything

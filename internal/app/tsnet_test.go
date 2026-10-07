@@ -17,8 +17,18 @@ import (
 
 func TestTSNetSelectionWithoutHostInstallation(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
+	t.Setenv("OTATA_PATH", "/ignored-service-path")
+	t.Setenv("OTATA_PORT", "1")
 	a := freshApp(t)
-	a.Config.ServePath = "/dev"
+	// Selecting the embedded node needs no host CLI or path configuration.
+	if err := os.WriteFile(config.Path(a.Root), []byte(`{"transport":"tailscale","serve_path":"/old"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var err error
+	a.Config, err = config.Load(a.Root)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := a.UseTransport(TransportSelection{Name: "tailscale", Hostname: "dev-node"}, quiet); err != nil {
 		t.Fatal(err)
 	}
@@ -26,15 +36,15 @@ func TestTSNetSelectionWithoutHostInstallation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Transport != "tailscale" || cfg.NeedsTailscaleMigration() || cfg.TSNetHostname() != "dev-node" || cfg.Port != config.DefaultPort || cfg.ServePath != config.DefaultServePath {
+	if cfg.Transport != "tailscale" || cfg.TSNetHostname() != "dev-node" || cfg.Port != config.DefaultPort {
 		t.Fatalf("persisted config: %+v", cfg)
 	}
 	tr, err := a.Transport()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if tr.IncomingPrefix() != "/dev" {
-		t.Fatal("lost runtime prefix")
+	if tr.IncomingPrefix() != "" {
+		t.Fatal("Tailscale retained an obsolete path prefix")
 	}
 	if s := tr.Status(a.Config.Port); s.Ready || s.State != "stopped" {
 		t.Fatalf("unstarted selection claimed ready: %+v", s)
@@ -79,17 +89,14 @@ func (s *switchingSupervisor) Unload() error {
 	return s.stop()
 }
 
-// Manual keep-prefix and tsnet have identical HTTP paths, but changing
-// between them must still stop/start the process that owns the node.
+// Changing between manual and tsnet must restart the process that owns the
+// node, even when the manual proxy also serves at the root.
 func TestTSNetSwitchRestartsManagedServer(t *testing.T) {
-	for _, from := range []string{"tailscale", "manual", "legacy"} {
+	for _, from := range []string{"tailscale", "manual"} {
 		t.Run(from, func(t *testing.T) {
 			a := freshApp(t)
 			a.Config.Transport = from
-			if from == "legacy" {
-				a.Config.Transport, a.Config.TSNet = "tailscale", nil
-			}
-			a.Config.Manual = &config.Manual{BaseURL: "https://old.example.com/otata", KeepPrefix: true}
+			a.Config.Manual = &config.Manual{BaseURL: "https://old.example.com", KeepPrefix: true}
 			if err := config.Save(a.Root, a.Config); err != nil {
 				t.Fatal(err)
 			}
@@ -98,12 +105,6 @@ func TestTSNetSwitchRestartsManagedServer(t *testing.T) {
 				t.Fatal(err)
 			}
 			a.Config.Port = ln.Addr().(*net.TCPAddr).Port
-			if from == "legacy" {
-				if err := config.Save(a.Root, a.Config); err != nil {
-					t.Fatal(err)
-				}
-				migrationCLI(t, fmt.Sprintf(`{"Web":{"host.ts.net:443":{"Handlers":{"/otata":{"Proxy":"http://127.0.0.1:%d"}}}}}`, a.Config.Port), false)
-			}
 			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("X-Otata", "1")
 				w.Header().Set("X-Otata-Root", a.RootDigest())
@@ -113,7 +114,7 @@ func TestTSNetSwitchRestartsManagedServer(t *testing.T) {
 			serve := func(l net.Listener) { current = &http.Server{Handler: handler}; go current.Serve(l) }
 			serve(ln)
 			defer func() { current.Close() }()
-			sup := &switchingSupervisor{fakeSupervisor: &fakeSupervisor{available: true, loaded: true, installed: &agentSpec{Program: "/fake/otata", Root: a.Root, Port: a.Config.Port, ServePath: a.Config.ServePath}}}
+			sup := &switchingSupervisor{fakeSupervisor: &fakeSupervisor{available: true, loaded: true, installed: &agentSpec{Program: "/fake/otata", Root: a.Root, Port: a.Config.Port}}}
 			sup.stop = func() error { return current.Close() }
 			sup.start = func() error {
 				l, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", a.Config.Port))
@@ -126,7 +127,7 @@ func TestTSNetSwitchRestartsManagedServer(t *testing.T) {
 			a.sup = sup
 			sel := TransportSelection{Name: "tailscale", Hostname: "dev-node"}
 			if from == "tailscale" {
-				sel = TransportSelection{Name: "manual", BaseURL: "https://new.example.com/otata", KeepPrefix: true}
+				sel = TransportSelection{Name: "manual", BaseURL: "https://new.example.com", KeepPrefix: true}
 			}
 			if err := a.UseTransport(sel, quiet); err != nil {
 				t.Fatal(err)
@@ -145,12 +146,12 @@ type embeddedProbeTransport struct{ targets []string }
 
 func (*embeddedProbeTransport) Name() string                     { return "tailscale" }
 func (*embeddedProbeTransport) Visibility() transport.Visibility { return transport.Private }
-func (*embeddedProbeTransport) IncomingPrefix() string           { return "/otata" }
+func (*embeddedProbeTransport) IncomingPrefix() string           { return "" }
 func (*embeddedProbeTransport) Ensure(int) (string, error) {
-	return "https://unresolvable.invalid/otata", nil
+	return "https://unresolvable.invalid", nil
 }
 func (*embeddedProbeTransport) Status(int) transport.Status {
-	return transport.Status{Name: "tailscale", Ready: true, BaseURL: "https://unresolvable.invalid/otata", Visibility: transport.Private}
+	return transport.Status{Name: "tailscale", Ready: true, BaseURL: "https://unresolvable.invalid", Visibility: transport.Private}
 }
 func (t *embeddedProbeTransport) Probe(ctx context.Context, target string) (int, error) {
 	t.targets = append(t.targets, target)
@@ -161,7 +162,7 @@ func TestDoctorUsesEmbeddedNetwork(t *testing.T) {
 	a := freshApp(t)
 	tr := &embeddedProbeTransport{}
 	a.setTransport(tr)
-	if err := a.Reindex("https://unresolvable.invalid/otata"); err != nil {
+	if err := a.Reindex("https://unresolvable.invalid"); err != nil {
 		t.Fatal(err)
 	}
 	serveThisRoot(t, a)

@@ -89,9 +89,7 @@ func (a *App) setTransport(t transport.Transport) {
 func (a *App) transportFor(cfg config.Config) transport.Transport {
 	switch cfg.Transport {
 	case "tailscale":
-		if !cfg.NeedsTailscaleMigration() {
-			return transport.NewTSNet(a.tsnetDir(), a.tsnetIdentity(cfg))
-		}
+		return transport.NewTSNet(a.tsnetDir(), a.tsnetIdentity(cfg))
 	case "manual":
 		if cfg.Manual == nil || cfg.Manual.BaseURL == "" {
 			return nil
@@ -103,14 +101,11 @@ func (a *App) transportFor(cfg config.Config) transport.Transport {
 
 func (a *App) tsnetDir() string { return storage.TSNetDir(a.Root) }
 func (a *App) tsnetIdentity(cfg config.Config) tsnetnode.Identity {
-	return tsnetnode.Identity{Root: a.RootDigest(), Port: cfg.Port, Prefix: strings.TrimSuffix(cfg.ServePath, "/"), Hostname: cfg.TSNetHostname()}
+	return tsnetnode.Identity{Root: a.RootDigest(), Port: cfg.Port, Hostname: cfg.TSNetHostname()}
 }
 
 // Transport resolves the selected transport and enforces the visibility guard.
 func (a *App) Transport() (transport.Transport, error) {
-	if a.Config.NeedsTailscaleMigration() {
-		return nil, tailscaleMigrationRequired()
-	}
 	t := a.selectTransport()
 	if t == nil {
 		switch a.Config.Transport {

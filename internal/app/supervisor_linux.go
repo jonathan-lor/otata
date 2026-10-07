@@ -318,7 +318,6 @@ func unitFile(spec agentSpec) ([]byte, error) {
 	fmt.Fprintf(&b, "ExecStart=%s serve\n", unitWord(spec.Program))
 	fmt.Fprintf(&b, "Environment=%s\n", unitWord("OTATA_ROOT="+spec.Root))
 	fmt.Fprintf(&b, "Environment=%s\n", unitWord("OTATA_PORT="+strconv.Itoa(spec.Port)))
-	fmt.Fprintf(&b, "Environment=%s\n", unitWord("OTATA_PATH="+spec.ServePath))
 	b.WriteString("Restart=on-failure\n")
 	if spec.Log != "" {
 		fmt.Fprintf(&b, "StandardOutput=append:%s\n", unitRaw(spec.Log))
@@ -340,7 +339,7 @@ func unitSafe(spec agentSpec) error {
 		return &errAgentProgram{Program: spec.Program,
 			Reason: "systemd will not run a program from a path holding a quote, backslash, control character or invalid UTF-8"}
 	}
-	for _, v := range []struct{ name, value string }{{"root", spec.Root}, {"serve path", spec.ServePath}, {"log path", spec.Log}} {
+	for _, v := range []struct{ name, value string }{{"root", spec.Root}, {"log path", spec.Log}} {
 		if unsafe(v.value) {
 			return fmt.Errorf("the %s %q holds a control character or invalid UTF-8, which a systemd unit cannot carry", v.name, v.value)
 		}
@@ -397,7 +396,7 @@ func parseUnitFile(data []byte) (agentSpec, bool) {
 		case "Environment":
 			if value == "" {
 				// An empty Environment= resets the list, as an empty ExecStart= does.
-				spec.Root, spec.Port, spec.ServePath = "", 0, ""
+				spec.Root, spec.Port = "", 0
 			}
 			for _, w := range unitWords(value) {
 				name, v, _ := strings.Cut(w, "=")
@@ -406,8 +405,6 @@ func parseUnitFile(data []byte) (agentSpec, bool) {
 					spec.Root = v
 				case "OTATA_PORT":
 					spec.Port, _ = strconv.Atoi(v)
-				case "OTATA_PATH":
-					spec.ServePath = v
 				}
 			}
 		case "StandardOutput":

@@ -8,48 +8,40 @@ Quickly install iOS and Android builds over your own network, _wherever you are_
 [![release](https://img.shields.io/github/v/release/jonathan-lor/otata)](https://github.com/jonathan-lor/otata/releases/latest)
 [![license](https://img.shields.io/github/license/jonathan-lor/otata)](LICENSE)
 
-Tired of just getting screenshots? otata is a CLI for agents to get the latest build from your computer to your phone during remote sessions, allowing you to truly work on mobile apps from anywhere. Just ask your agent to publish with otata after making some changes, and then install with the provided URL!
+Tired of just getting screenshots? otata is a CLI for agents to get the latest build from your computer to your phone during remote sessions, so you can truly work on mobile apps from anywhere. Ask your agent to publish with otata after making some changes, and then install from the provided URL!
 
-otata currently supports building and installing SwiftUI, React Native, Flutter and Kotlin Multiplatform apps on iOS, and native apps on Android.
-
-[Tailscale](docs/tailscale.md) is used by default for serving, but your own HTTPS proxy is also supported.
+otata supports SwiftUI, React Native, Flutter and Kotlin Multiplatform apps on iOS, and Gradle-built apps on Android, native or cross-platform.
 
 ```sh
 cd ~/path/to/MyApp
 otata publish --platform ios       # builds, signs, publishes, prints the URL
 # or
-otata publish --platform android   
+otata publish --platform android
 ```
 
 ## Requirements
 
-Whichever platform you build for, your phone needs **a way to reach the computer**: [Tailscale](https://tailscale.com) is the recommended solution for this (since iOS requires HTTPS with a publicly trusted certificate) and is free for personal use, and bringing [your own HTTPS proxy](docs/manual-transports.md) works too.
+Your phone needs to reach the computer over HTTPS with a publicly trusted certificate. [Tailscale](docs/tailscale.md) does this by default and is free for personal use. [Your own HTTPS proxy](docs/manual-transports.md) works too.
 
-**Building for iOS requires:**
+**iOS**
 
-- **A Mac with Xcode.** Apple doesn't allow iOS builds anywhere else (without breaking TOS). If you use a different host machine and only use the Mac to build, otata can be used [over SSH](docs/otata-via-ssh.md).
-- **A paid Apple Developer account** ($99/year), with your iOS device registered to
-  the team. **iOS outright refuses to install a free personal team's build over
-  the air,** so `otata publish` will follow suit and refuse as well.
-- **Developer Mode on the phone**: Settings -> Privacy & Security -> Developer Mode.
+- A Mac with Xcode. It can be a build machine you drive [over SSH](docs/otata-via-ssh.md).
+- A paid Apple Developer account ($99/year) with your phone registered to the team. iOS refuses to install a free personal team's build over the air, so `otata publish` refuses it too.
+- Developer Mode on the phone: Settings -> Privacy & Security -> Developer Mode.
 
-(The assumption is that if you're committed enough to need otata for remote work with agents, you probably plan to actually ship to the App Store, in which case you'd own or be a part of a paid Apple developer team anyways.)
+**Android**
 
-**Building for Android requires:**
-
-- **A JDK 17 or newer and the Android SDK**, on a Mac or a Linux machine, with `ANDROID_HOME` set or `sdk.dir` in the project's `local.properties`. The project's Gradle wrapper does the building, and the SDK's build-tools read the APK afterwards.
-- **A signed build.** A debug build is signed by the debug keystore every machine has and a release build needs a `signingConfig` in the module, since Android won't install an unsigned APK.
-- **Allowing installs from your browser.**
+- A Mac or Linux machine with JDK 17+ and the Android SDK (`ANDROID_HOME`, or `sdk.dir` in the project's `local.properties`).
+- A signed build. Debug builds are signed out of the box; release builds need a `signingConfig`.
+- A phone that allows installs from your browser.
 
 ## Install
 
-**You can just give your agent the link to this repo to run the install and setup if you'd like. You'll still have to do the Tailscale steps yourself though.** 
+You can give your agent the link to this repo to install and set up otata, but you'll still need to do the Tailscale steps. These steps assume Tailscale and [getting started](docs/getting-started.md) has the full walkthrough which you should also read.
 
-This install will assume that you've chosen to use Tailscale. You should also reference the more detailed step-by-step guide in [Getting started](docs/getting-started.md). 
+Install Tailscale on your phone ([iPhone](https://tailscale.com/docs/install/ios), [Android](https://tailscale.com/docs/install/android)) and sign in. In the [admin console](https://login.tailscale.com/admin/dns) under DNS, turn on MagicDNS and HTTPS certificates.
 
-First, install Tailscale on your phone ([iPhone](https://tailscale.com/docs/install/ios), [Android](https://tailscale.com/docs/install/android)) and sign in. Turn on HTTPS certificates and MagicDNS in the [admin console](https://login.tailscale.com/admin/dns) under DNS.
-
-Then, install otata:
+Then install otata:
 
 ```sh
 # Mac
@@ -61,65 +53,39 @@ brew install --cask jonathan-lor/tap/otata
 curl -fsSL https://raw.githubusercontent.com/jonathan-lor/otata/main/install.sh | sh
 ```
 
-Or just install with `go`:
+Or with Go: `go install github.com/jonathan-lor/otata@latest`.
 
-```sh
-go install github.com/jonathan-lor/otata@latest
-```
-
-Then, once:
+Then:
 
 ```sh
 otata autostart on
 otata transport login
 ```
 
-Open the printed login URL to enroll otata in the same tailnet as your phone.
-Wait for `otata status` to report ready since first certificate issuance can take a minute.
+Open the printed URL to enroll otata in your phone's tailnet, then wait for `otata status` to report ready. The first certificate can take a minute.
 
-**Upgrading from otata <0.4.0?** Run
-`otata transport use tailscale` first. Enrollment and the install URL change but your
-existing published builds stay. See [migration instructions](docs/tailscale.md#upgrading-from-the-host-integration).
+**Upgrading from before 0.5.0?** The Tailscale URL changed; read [upgrading](docs/tailscale.md#upgrading) first.
 
-otata also includes an [agent skill](skills/otata/SKILL.md).
-
-## Usage 
-
-Three commands cover nearly everything:
+## Usage
 
 ```sh
-otata publish --platform ios|android   # build and publish the project in the current directory
+otata publish --platform ios|android   # build and publish the project in this directory
+otata publish --artifact App.ipa       # publish an .ipa or .apk from any toolchain
 otata list                             # what is published
 otata doctor                           # verify the server, transport and every URL; --fix repairs first
 ```
 
-`--platform` is the only required flag. `otata publish` will discover the rest from the project and the directory name.
-
-`--config` defaults to `Release`, and a publish that falls back to it will tell you before the build starts.
-Publishing an already-built `.ipa` or `.apk` from any toolchain is `otata publish --artifact <path>`.
-
-A more detailed reference can be found in the [CLI reference](docs/cli-reference.md).
+`--platform` is the only required flag. otata discovers the rest from the project. See the [CLI reference](docs/cli-reference.md) for everything else.
 
 ## Built For Agents
 
-The primary caller is almost certainly an agent publishing the latest build for your review after making some changes.
-Thus, `--json` is accepted anywhere on the command line. Your agent also doesn't have to be running on the Mac for iOS builds. See [docs/otata-via-ssh.md](docs/otata-via-ssh.md).
-
-```sh
-$ otata status --json | jq .data.transport.base_url
-"https://otata.your-tailnet.ts.net"
-```
-
-otata errors carry stable machine codes to make it easier for agents to branch off them.
-The exit code is 2 when the command was called wrongly, 1 when it ran and failed, and 128 plus the signal number when a signal stopped it.
-The [CLI reference](docs/cli-reference.md#error-codes) also lists every code and what to do about it.
+Every command accepts `--json`, and failures carry [stable error codes](docs/cli-reference.md#error-codes) to branch on. The agent doesn't have to run on the build machine ([otata via SSH](docs/otata-via-ssh.md)), and otata includes an [agent skill](skills/otata/SKILL.md).
 
 ## Current Limitations
 
-**macOS and Linux only.** Windows is not yet supported, and WSL is untested.
+**macOS and Linux only.** Windows is not supported yet, and WSL is untested.
 
-**Private transports only (for now).** A public transport would need an access guard
-before it's safe, and none is implemented yet.
+**Private transports only (for now).** A public transport needs an access guard first, and none exists yet.
 
 ## Documentation
 
@@ -127,7 +93,7 @@ before it's safe, and none is implemented yet.
 - [CLI reference](docs/cli-reference.md)
 - [FAQ](docs/FAQ.md)
 - [Serving over your own proxy](docs/manual-transports.md)
-- [Tailscale setup and migration](docs/tailscale.md)
+- [Tailscale](docs/tailscale.md)
 - [otata via SSH](docs/otata-via-ssh.md)
 - [Gotchas and troubleshooting](docs/gotchas.md)
 - [Contributing](CONTRIBUTING.md)

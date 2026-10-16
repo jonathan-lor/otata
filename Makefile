@@ -1,6 +1,5 @@
 # otata: development tasks.
 BINARY  := otata
-MODULE  := github.com/jonathan-lor/otata
 BIN_DIR := $(HOME)/.local/bin
 
 .PHONY: build install test vet fmt

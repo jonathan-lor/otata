@@ -8,16 +8,10 @@ import (
 	"github.com/jonathan-lor/otata/internal/artifact"
 )
 
-// ConfigPrebuilt marks a payload that arrived already built. It records
-// provenance rather than a configuration: no project defines a "prebuilt" one,
-// so it must never be handed back to a toolchain.
+// ConfigPrebuilt is the config recorded for an --artifact payload.
 const ConfigPrebuilt = "prebuilt"
 
-// Prebuilt accepts an already-built payload, which is what lets every
-// framework through: Flutter, React Native and KMP all emit an .ipa or an
-// .apk, and this consumes one without knowing which produced it. The
-// extension is what says which platform it is. It is not a Builder: there
-// is nothing to detect and nothing to build, only a file to check.
+// Prebuilt checks an already-built payload, whose extension gives its platform.
 func Prebuilt(path string) (Result, error) {
 	info, err := os.Stat(path)
 	if err != nil {

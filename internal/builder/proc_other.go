@@ -4,6 +4,5 @@ package builder
 
 import "os/exec"
 
-// ownProcessGroup has no process groups to arrange here; a cancelled command
-// is killed the way exec does it by default, parent only.
+// ownProcessGroup does nothing here, so cancelling kills only the parent.
 func ownProcessGroup(*exec.Cmd) {}

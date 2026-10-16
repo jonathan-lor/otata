@@ -10,12 +10,8 @@ import (
 	"strings"
 )
 
-/*
-XcodeBuild is the default builder. `publish --builder archive` selects the archive path instead.
-
-The archive action rebuilds every target on every run while the build action is incremental.
-A device build already signs the app and embeds its provisioning profile, so the .app can be zipped into an .ipa directly.
-*/
+// XcodeBuild is the default iOS builder. It builds incrementally instead of
+// archiving, and zips the signed .app into an .ipa.
 type XcodeBuild struct{ Xcode }
 
 func (x *XcodeBuild) Build(ctx context.Context, opts Options) (Result, error) {
@@ -44,9 +40,8 @@ func (x *XcodeBuild) Build(ctx context.Context, opts Options) (Result, error) {
 	return j.result(ipa), nil
 }
 
-// builtApp asks xcodebuild where the scheme's app product landed. The answer
-// depends on settings this package must not guess (a project can relocate
-// TARGET_BUILD_DIR), so it's read back rather than derived.
+// builtApp asks xcodebuild where the app landed, since a project can move
+// TARGET_BUILD_DIR.
 func builtApp(ctx context.Context, container, scheme, config string) (string, error) {
 	args := append([]string{"-showBuildSettings", "-json"}, projectArgs(container)...)
 	args = append(args, "-scheme", scheme, "-configuration", config, "-destination", "generic/platform=iOS")
@@ -68,7 +63,6 @@ func builtApp(ctx context.Context, container, scheme, config string) (string, er
 }
 
 // appFromSettings picks the app product out of -showBuildSettings -json output.
-// Split from the exec so the selection rule is testable.
 func appFromSettings(out []byte) (string, error) {
 	var entries []struct {
 		BuildSettings map[string]string `json:"buildSettings"`

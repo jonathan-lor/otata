@@ -7,10 +7,8 @@ import (
 	"strings"
 )
 
-// SigningError distinguishes a failure a human must fix in Apple's portal from
-// one the code can fix. An agent should escalate the first and retry the second.
-//
-// Hint is the remedy for the phrase that matched, not for signing in general.
+// SigningError is a signing failure that needs a human with Xcode or portal
+// access. Hint is the remedy for the phrase that matched.
 type SigningError struct {
 	Detail string
 	Hint   string
@@ -18,11 +16,8 @@ type SigningError struct {
 
 func (e *SigningError) Error() string { return "code signing failed: " + e.Detail }
 
-// SetupError reports a step the project's own toolchain must run before the
-// build can start: pods installed, an xcconfig generated, a JDK for a Gradle
-// phase. Not a build failure: the code is fine and the log holds nothing to
-// act on. Not "no project" either. One command fixes it, so the command is
-// carried instead of described.
+// SetupError is a prerequisite the project's toolchain is missing, like pods
+// or a JDK, usually with the command that fixes it.
 type SetupError struct {
 	Detail  string // what is missing
 	Hint    string // what to do about it, when no single command says it
@@ -35,22 +30,17 @@ func (e *SetupError) Error() string { return e.Detail }
 // diagnosis pairs a phrase a failing build prints with the remedy for it.
 type diagnosis struct {
 	phrase string
-	// signing marks what only a human with Xcode or portal access can resolve,
-	// and hint is its remedy. A signing failure states itself, so the matched
-	// phrase is its detail.
+	// signing marks a SigningError, with hint as its remedy.
 	signing bool
 	hint    string
-	// setup is the step a caller can run and then retry, for the rest, which
-	// is the whole reason the two are different codes.
+	// setup is the SetupError for everything else.
 	setup SetupError
 }
 
-// gradleDiagnoses is what a Gradle build prints for a prerequisite it lacks,
-// each phrased as the toolchain phrases it. Both builders scan for these: a
-// Gradle build is what an Android publish runs, and what a Kotlin
-// Multiplatform archive runs inside xcodebuild.
+// gradleDiagnoses are Gradle's messages for missing prerequisites. Both
+// builders scan for them, since a KMP iOS build runs Gradle.
 var gradleDiagnoses = []diagnosis{
-	// The JDK, as macOS's java stub and the wrapper script report its absence.
+	// The JDK.
 	{phrase: "Unable to locate a Java Runtime", setup: jdkMissing},
 	{phrase: "JAVA_HOME is not set", setup: jdkMissing},
 	{phrase: "JAVA_HOME is set to an invalid directory", setup: SetupError{
@@ -70,14 +60,12 @@ var gradleDiagnoses = []diagnosis{
 		Command: "sdkmanager --licenses",
 		Hint:    "the tool is under the SDK's cmdline-tools/latest/bin; Android Studio's SDK Manager does the same"}},
 
-	// The plugin. Its variant API is how the listing is asked, and it
-	// arrived in 7.0.
+	// The plugin, whose variant API the listing needs.
 	{phrase: "Could not get unknown property 'androidComponents'", setup: SetupError{
 		Detail: "the project's Android Gradle plugin is older than 7.0, whose variant API is how otata lists a project's modules",
 		Hint:   "upgrade the plugin to com.android.tools.build:gradle 7.0 or newer"}},
 
-	// Signing, on Android, is a setup step and not portal work: a config
-	// names a keystore, and a machine has it or does not.
+	// Signing, which is a setup step on Android.
 	{phrase: "not found for signing config", setup: SetupError{
 		Detail: "the signing config names a keystore that is not on this machine",
 		Hint:   "put the keystore where the module's build script expects it, or build with --config Debug"}},
@@ -85,15 +73,13 @@ var gradleDiagnoses = []diagnosis{
 		Detail: "the signing config is incomplete",
 		Hint:   "the module's build script names the missing property; set it, or build with --config Debug"}},
 
-	// Flutter's settings script, in its two templates, without the SDK
-	// location that every flutter command writes into local.properties.
+	// Flutter's two templates, without the SDK path in local.properties.
 	{phrase: "flutter.sdk not set in local.properties", setup: flutterSDKMissing},
 	{phrase: "Define location with flutter.sdk in the local.properties file", setup: flutterSDKMissing},
 }
 
-// classifyBuildFailure reads the tail of the build log and names what failed.
-// A build that was cancelled failed because it was told to, and its log says
-// nothing about the code, so the cancellation is reported instead.
+// classifyBuildFailure names what failed from the tail of the log. A
+// cancelled build reports the cancellation instead.
 func classifyBuildFailure(ctx context.Context, logPath, fallback string, tables ...[]diagnosis) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -109,17 +95,9 @@ func classifyBuildFailure(ctx context.Context, logPath, fallback string, tables 
 	return diagnose(text, fallback, tables...)
 }
 
-/*
-diagnose is the log-reading half, split out so it can be tested against real
-build output without a build. The tables are scanned by position in the log,
-not in the order written: whichever phrase appears FIRST in the build output
-wins.
-
-That matters for cross-platform projects. A fresh checkout fails for two
-reasons at once (the framework's setup step has never run, and the template
-ships no development team), so a table-ordered scan reported signing and sent
-the caller to Apple's portal for something 'pod install' fixes.
-*/
+// diagnose returns the remedy for whichever phrase appears first in the log,
+// not first in the tables. A fresh cross-platform clone fails on setup and
+// signing at once, and setup comes first.
 func diagnose(text, fallback string, tables ...[]diagnosis) error {
 	best := -1
 	var match diagnosis

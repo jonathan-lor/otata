@@ -15,14 +15,10 @@ import (
 	"github.com/jonathan-lor/otata/internal/artifact"
 )
 
-// Xcode builds a native iOS app. iOS payloads require macOS and Xcode
-// permanently. That is Apple's constraint, and every cross-platform framework
-// routes through xcodebuild too.
+// Xcode builds an iOS app by archiving and exporting it.
 type Xcode struct{}
 
-// searchDirs covers the repository root plus the subdirectories cross-platform
-// frameworks use instead of assuming the project sits at top level. React
-// Native has no workspace at all until pods are installed.
+// searchDirs is the repository root and the subdirectories frameworks use.
 func searchDirs(dir string) []string {
 	return []string{dir, filepath.Join(dir, "ios"), filepath.Join(dir, "iosApp"), filepath.Join(dir, "apps", "ios")}
 }
@@ -67,21 +63,16 @@ func projectArgs(container string) []string {
 	return []string{"-project", container}
 }
 
-// flutterConfigMissing is Flutter's one setup step, stated once for the
-// pre-check and for the two log phrases that mean the same thing.
+// flutterConfigMissing is shared by the pre-check and two log phrases.
 var flutterConfigMissing = SetupError{
 	Detail:  "Flutter has not generated its build configuration for this project",
 	Command: "flutter build ios --config-only",
 	Hint:    "that xcconfig is generated, not committed, so a fresh clone never has it",
 }
 
-// xcodeDiagnoses is what an xcodebuild log can say that has a remedy: the
-// signing failures only a human with Xcode or portal access resolves, each
-// with its own hint, and the setup steps of the frameworks that wrap Xcode.
-// A Kotlin Multiplatform archive runs Gradle inside xcodebuild, so its log
-// is scanned for gradleDiagnoses too: see job.failure.
+// xcodeDiagnoses are the xcodebuild failures with a known remedy.
 var xcodeDiagnoses = []diagnosis{
-	// Signing. Each of these has a different remedy, which is why each carries its own hint
+	// Signing.
 	{phrase: "requires a development team", signing: true,
 		hint: "select a team in Xcode under Signing & Capabilities, or set DEVELOPMENT_TEAM in the target's build settings; cross-platform templates usually read it from an xcconfig instead (Kotlin Multiplatform: TEAM_ID in iosApp/Configuration/Config.xcconfig)"},
 	{phrase: "No profiles for", signing: true,
@@ -99,11 +90,8 @@ var xcodeDiagnoses = []diagnosis{
 	{phrase: "Code Signing Error", signing: true,
 		hint: "read the signing settings on the target; the log names what was rejected"},
 
-	// Setup. Each is phrased as the toolchain phrases it. With no
-	// Generated.xcconfig there is no FLUTTER_ROOT either, so Flutter's build
-	// phase resolves to an absolute path with an empty prefix, which is what
-	// the failure actually looks like. The tidier message below appears only
-	// when CocoaPods reads the Podfile first.
+	// Setup. Without Generated.xcconfig, FLUTTER_ROOT is empty and Flutter's
+	// failure names a rootless path. CocoaPods says it more plainly when it runs first.
 	{phrase: "flutter_tools/bin/xcode_backend.sh: No such file or directory", setup: flutterConfigMissing},
 	{phrase: "Flutter/Generated.xcconfig must exist", setup: flutterConfigMissing},
 	{phrase: "The sandbox is not in sync with the Podfile.lock", setup: SetupError{
@@ -115,9 +103,8 @@ var xcodeDiagnoses = []diagnosis{
 		Hint:    "in a CocoaPods project that file is written by the install"}},
 }
 
-// Ambiguous reports a choice discovery could not make: several candidates
-// and none the rule prefers. It carries them, and the flag that makes the
-// choice, so a caller can choose without re-running discovery.
+// Ambiguous is a choice discovery couldn't make, with the candidates and
+// the flag that chooses.
 type Ambiguous struct {
 	Detail     string // what could not be chosen, as the message
 	Flag       string // the flag that chooses: --scheme, --module or --flavor
@@ -147,9 +134,8 @@ func (x *Xcode) Schemes(container string) ([]string, error) {
 		return nil, fmt.Errorf("no schemes in %s", filepath.Base(container))
 	}
 
-	// Narrow to app-producing schemes when the scheme files are readable. Package
-	// schemes are auto-generated with no file on disk, which is what we want to
-	// drop. Failing open matters because unreadable must not narrow to an empty set.
+	// Narrow to schemes whose files archive an app. Package schemes have no
+	// file, and if no file reads, the list stays as it is.
 	if apps := appSchemes(container); len(apps) > 0 {
 		var kept []string
 		for _, name := range all {
@@ -198,9 +184,8 @@ type schemeFile struct {
 	} `xml:"BuildAction>BuildActionEntries>BuildActionEntry"`
 }
 
-// appSchemes returns scheme names whose build action archives a .app. Matching
-// on ".app" alone would catch a framework scheme whose UI tests merely name a
-// host app, so the entry must archive as well.
+// appSchemes returns the schemes that archive a .app, which excludes a
+// framework whose UI tests merely name a host app.
 func appSchemes(container string) map[string]bool {
 	found := map[string]bool{}
 	roots := []string{container}
@@ -237,21 +222,14 @@ func appSchemes(container string) map[string]bool {
 	return found
 }
 
-// prerequisite reports a step the project's own toolchain must run before
-// xcodebuild can archive it, or nil when nothing is missing.
-//
-// Asked before the archive rather than read out of the log afterwards: the
-// answer is already on disk, and the archive it replaces takes minutes to fail.
-// It also survives what the log cannot say: a fresh clone fails for two
-// reasons, and the loudest is rarely the one to fix first.
+// prerequisite returns a framework setup step that hasn't run, or nil. It
+// checks the disk before a build that would take minutes to fail.
 func prerequisite(container string) *SetupError {
 	dir := filepath.Dir(container)
 	root := filepath.Dir(dir)
 
-	// Flutter before CocoaPods because its Podfile reads Generated.xcconfig, so a
-	// missing xcconfig is also why the pods are absent, and 'pod install' alone
-	// fixes neither. AppFrameworkInfo.plist is the committed half of the same
-	// directory, so its presence is what makes this a Flutter project.
+	// Flutter first, since its Podfile reads Generated.xcconfig.
+	// AppFrameworkInfo.plist is the committed file that marks a Flutter project.
 	if exists(filepath.Join(dir, "Flutter", "AppFrameworkInfo.plist")) &&
 		!exists(filepath.Join(dir, "Flutter", "Generated.xcconfig")) {
 		missing := flutterConfigMissing
@@ -262,9 +240,7 @@ func prerequisite(container string) *SetupError {
 		return &missing
 	}
 
-	// A Podfile with nothing installed is React Native's default state.
-	// The workspace CocoaPods writes does not exist yet either, so detection
-	// falls back to the .xcodeproj and archives something that cannot link.
+	// React Native ships a Podfile with nothing installed.
 	if exists(filepath.Join(dir, "Podfile")) && !exists(filepath.Join(dir, "Pods", "Manifest.lock")) {
 		return &SetupError{
 			Detail:  "the project's pods are not installed",
@@ -280,15 +256,13 @@ func exists(path string) bool {
 	return err == nil
 }
 
-// job is what both Xcode builders resolve before running anything: the
-// scheme, the configuration, and an open log in the work directory.
+// job is a resolved Xcode build: the scheme, the configuration and an open log.
 type job struct {
 	container, scheme, config, logPath string
 	log                                *os.File
 }
 
-// prepare resolves the job, refusing before the toolchain runs when a
-// prerequisite of the project's own toolchain has not been run.
+// prepare resolves the job, refusing it if a prerequisite is missing.
 func (x *Xcode) prepare(opts Options) (*job, error) {
 	if opts.Config == "" {
 		return nil, fmt.Errorf("no build configuration given")
@@ -311,8 +285,7 @@ func (x *Xcode) prepare(opts Options) (*job, error) {
 	return &job{container: opts.Container, scheme: scheme, config: opts.Config, logPath: logPath, log: logFile}, nil
 }
 
-// args is the xcodebuild invocation both builders share: the action, what
-// identifies the build, and whatever the action adds.
+// args is the xcodebuild invocation both builders share.
 func (j *job) args(action string, extra ...string) []string {
 	args := append([]string{action}, projectArgs(j.container)...)
 	args = append(args,
@@ -326,13 +299,11 @@ func (j *job) args(action string, extra ...string) []string {
 	return append(args, extra...)
 }
 
-// result is the payload this job produced.
 func (j *job) result(payload string) Result {
 	return Result{PayloadPath: payload, Platform: artifact.IOS, Config: j.config, LogPath: j.logPath}
 }
 
-// failure names what went wrong from the log: Xcode's own phrases and
-// Gradle's, since a Kotlin Multiplatform archive runs Gradle inside xcodebuild.
+// failure checks Gradle's phrases too, since KMP runs Gradle inside xcodebuild.
 func (j *job) failure(ctx context.Context, fallback string) error {
 	return classifyBuildFailure(ctx, j.logPath, fallback, xcodeDiagnoses, gradleDiagnoses)
 }
@@ -381,8 +352,7 @@ func (x *Xcode) Build(ctx context.Context, opts Options) (Result, error) {
 	return j.result(ipa), nil
 }
 
-// archiveTeam reads the signing team out of the archive, so nothing is
-// hardcoded and any team's project builds.
+// archiveTeam reads the signing team out of the archive.
 func archiveTeam(archive string) (string, error) {
 	out, err := exec.Command("/usr/libexec/PlistBuddy",
 		"-c", "Print :ApplicationProperties:Team", filepath.Join(archive, "Info.plist")).Output()
@@ -397,7 +367,6 @@ func archiveTeam(archive string) (string, error) {
 // "development". Ad-hoc would need an Apple Distribution certificate.
 func exportOptions(team string) []byte {
 	var escaped bytes.Buffer
-	// The team is read out of an archive, so it is data, not a constant.
 	_ = xml.EscapeText(&escaped, []byte(team))
 	return []byte(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

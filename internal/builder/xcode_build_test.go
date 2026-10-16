@@ -8,8 +8,7 @@ import (
 	"testing"
 )
 
-// requireTools skips the test when a tool it shells out to is absent, so the
-// suite stays hermetic on a machine that cannot run it: ditto is macOS's.
+// requireTools skips the test when one of the tools isn't installed.
 func requireTools(t *testing.T, names ...string) {
 	t.Helper()
 	for _, name := range names {

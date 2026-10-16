@@ -8,9 +8,6 @@ import (
 	"github.com/jonathan-lor/otata/internal/artifact"
 )
 
-// For is the one place a platform's builders are chosen, so its table is
-// pinned: the two iOS modes by name, Android's one, a typo refused, and a
-// platform with no builder refused rather than handed the wrong one.
 func TestForSelectsTheBuilderByPlatformAndMode(t *testing.T) {
 	if b, err := For(artifact.IOS, ""); err != nil {
 		t.Errorf("default mode: %v", err)
@@ -43,8 +40,6 @@ func TestForSelectsTheBuilderByPlatformAndMode(t *testing.T) {
 	}
 }
 
-// Detect answers with the container or with why there is none; a caller
-// never has to know what an Xcode project looks like to report the miss.
 func TestDetectNamesWhatItLookedFor(t *testing.T) {
 	dir := t.TempDir()
 	if _, err := (&Xcode{}).Detect(dir); err == nil {
@@ -59,8 +54,6 @@ func TestDetectNamesWhatItLookedFor(t *testing.T) {
 	}
 }
 
-// A prebuilt payload is checked, not built: it must exist, be a file, and be
-// a kind otata serves, and its extension says which platform it is.
 func TestPrebuilt(t *testing.T) {
 	dir := t.TempDir()
 	ipa := filepath.Join(dir, "App.ipa")

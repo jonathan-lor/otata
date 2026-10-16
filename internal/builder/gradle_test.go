@@ -8,8 +8,6 @@ import (
 	"testing"
 )
 
-// Detect answers with the Gradle root, which is where the settings file is:
-// the repository root, or android/ under a framework's.
 func TestGradleDetectFindsTheSettingsFile(t *testing.T) {
 	dir := t.TempDir()
 	if _, err := (&Gradle{}).Detect(dir); err == nil || !strings.Contains(err.Error(), "settings.gradle") {
@@ -25,8 +23,7 @@ func TestGradleDetectFindsTheSettingsFile(t *testing.T) {
 	}
 }
 
-// What the init script printed for a two-flavor module, with the rest of
-// what Gradle says around it, copied from a run against a real project.
+// Init script output for a two-flavor module, copied from a real run.
 const scratchListing = "Fetching distribution.\n" +
 	"otata-variant\t:app\tfreeDebug\tfree\tdebug\tsigned\n" +
 	"otata-variant\t:app\tpaidDebug\tpaid\tdebug\tsigned\n" +
@@ -58,8 +55,7 @@ func TestParseListingReadsModulesAndVariants(t *testing.T) {
 	}
 }
 
-// A listing with two application modules, one flavored and one not, and a
-// second with two neither of which is :app.
+// twoModules is a listing with a flavored :app and an unflavored :wear.
 func twoModules() listing {
 	return listing{
 		modules: map[string]string{":app": "/x/app/build", ":wear": "/x/wear/build"},
@@ -74,10 +70,6 @@ func twoModules() listing {
 	}
 }
 
-// The selection rule, case by case: what is named wins, a lone candidate is
-// taken, :app is the module to prefer, and anything else is refused with the
-// candidates and the flag that chooses, so a caller can choose without
-// re-running discovery.
 func TestResolveAppliesTheSelectionRule(t *testing.T) {
 	cases := []struct {
 		name                   string
@@ -129,9 +121,6 @@ func TestResolveAppliesTheSelectionRule(t *testing.T) {
 	}
 }
 
-// A variant with no signing config is refused before a build runs, as the
-// step it is: both remedies are in the hint. One the listing could not
-// judge is left to the verification after the build.
 func TestUnsignedVariantIsRefusedBeforeBuilding(t *testing.T) {
 	err := unsigned(variant{module: ":app", buildType: "release", signed: "unsigned"})
 	setup, ok := errors.AsType[*SetupError](err)
@@ -148,8 +137,7 @@ func TestUnsignedVariantIsRefusedBeforeBuilding(t *testing.T) {
 	}
 }
 
-// Copied from a real build: the plugin's metadata names the variant and
-// the file, relative to itself.
+// Copied from a real build.
 const freeDebugMetadata = `{
   "version": 3,
   "artifactType": {"type": "APK", "kind": "Directory"},
@@ -191,8 +179,7 @@ func TestLocateAPKReadsThePluginsMetadata(t *testing.T) {
 		t.Errorf("another variant's metadata was taken: %v", err)
 	}
 
-	// Splits: several APKs and no universal one is refused with the setting
-	// that adds one; a universal element is the one served.
+	// With ABI splits, the universal APK is served, and its absence is refused.
 	_, matched, err := apkFromMetadata([]byte(splitMetadata), "release")
 	if !matched || err == nil || !strings.Contains(err.Error(), "universalApk") {
 		t.Errorf("split metadata: matched=%v err=%v", matched, err)
@@ -207,9 +194,7 @@ func TestLocateAPKReadsThePluginsMetadata(t *testing.T) {
 	}
 }
 
-// The pre-checks, in the order the toolchain would hit them, each cleared
-// by what fixes it. JAVA_HOME points at a stand-in throughout so the test
-// does not depend on a java on PATH.
+// JAVA_HOME points at a stand-in, so the test needs no java on PATH.
 func TestGradlePrerequisiteChecksInOrder(t *testing.T) {
 	root := t.TempDir()
 	jdk := t.TempDir()
@@ -285,8 +270,7 @@ func TestGradlePrerequisiteChecksInOrder(t *testing.T) {
 	}
 }
 
-// Each phrase as Gradle, the wrapper script or the plugin prints it,
-// captured from real runs where noted, and the remedy each maps to.
+// Phrases marked captured were copied from real runs.
 func TestGradleDiagnosesNameTheRemedy(t *testing.T) {
 	cases := []struct {
 		log     string

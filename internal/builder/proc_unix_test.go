@@ -11,11 +11,8 @@ import (
 	"time"
 )
 
-// A cancelled build must take every process the toolchain started with it,
-// not only the parent. The stand-in for xcodebuild is a shell whose
-// background child keeps writing a heartbeat; if only the shell died, the
-// child would go on writing after runLogged returned, which is exactly what
-// an orphaned swift-frontend did in the work directory.
+// The stand-in toolchain is a shell whose background child writes a
+// heartbeat. Cancelling must stop the child too.
 func TestCancelKillsTheWholeProcessGroup(t *testing.T) {
 	dir := t.TempDir()
 	beat := filepath.Join(dir, "beat")
@@ -61,7 +58,6 @@ func TestCancelKillsTheWholeProcessGroup(t *testing.T) {
 	}
 }
 
-// An uncancelled run is unaffected by any of this.
 func TestRunLoggedReportsTheCommandsOwnFailure(t *testing.T) {
 	log, err := os.Create(filepath.Join(t.TempDir(), "log"))
 	if err != nil {

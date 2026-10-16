@@ -1,4 +1,4 @@
-// Package render writes the install surface.
+// Package render writes the install pages.
 package render
 
 import (
@@ -16,11 +16,8 @@ import (
 //go:embed templates
 var files embed.FS
 
-// tpl holds the page templates plus the stylesheet, parsed once as the
-// "style" template both pages inline. Inlined instead of linked on purpose because
-// the pages will usually be fetched over a tailnet that can stall mid-load, and a
-// stylesheet arriving by a second request can render unstyled HTML whenever
-// that request was the one to fail.
+// tpl holds the page templates and the stylesheet, which pages inline so a
+// stalled second request can't leave them unstyled.
 var tpl = func() *template.Template {
 	t := template.Must(template.ParseFS(files, "templates/*.html"))
 	css, err := files.ReadFile("templates/style.css")
@@ -38,16 +35,12 @@ type appView struct {
 	// Platform selects the platform icon and bundle/package label.
 	Platform   artifact.Platform
 	InstallURL template.URL
-	// Built is the build's timestamp, as the stamp the HTML carries. The page
-	// is a static file written at publish and read at any later time, so it
-	// can say WHEN the build happened but never how long ago that was.
-	// That is computed on the phone by the age script from this value.
+	// Built is when the build happened. The page's script works out how long ago.
 	Built    stamp
 	Building bool
 	Since    stamp // when the in-flight build started; meaningful only if Building
 
-	// PageURL is this app's page, IconURL its icon, IndexURL the index. All
-	// absolute, for the reason on viewFor.
+	// PageURL, IconURL and IndexURL are absolute.
 	PageURL, IconURL, IndexURL string
 }
 
@@ -56,9 +49,7 @@ type pendingView struct {
 	Since        stamp
 }
 
-// stamp is one instant in the two forms a page needs: machine-readable for the
-// script that turns it into "40 seconds ago", and an absolute time for the
-// reader when script does not run, which is true, just less convenient.
+// stamp is an instant as the page needs it: ISO for the script, text for the reader.
 type stamp struct {
 	ISO  string // RFC 3339, for the datetime attribute; empty if unknown
 	Text string // what the HTML says before script touches it
@@ -76,20 +67,14 @@ type indexView struct {
 	Apps         []appView
 	BuildingOnly []pendingView
 	AnyBuilding  bool
-	// AnyInstallable is whether any row carries an install link, which is not the
-	// negation of AnyBuilding. A store can hold one app mid-build and another
-	// ready to tap. The latch script ships only where there is a link to latch.
+	// AnyInstallable means some row has an install link, so the latch script ships.
 	AnyInstallable bool
-	// Empty is computed rather than derived from Apps in the template because a first
-	// build has no record yet, and saying "nothing published" beside a running
-	// build is exactly wrong at the moment someone is most likely watching.
+	// Empty also counts first builds, which have no record yet.
 	Empty bool
 }
 
-// Index renders the list of everything published.
-//
-// It takes no clock on purpose. The output is a file that outlives the moment
-// it was written, so nothing in it may depend on when that was.
+// Index renders the list of everything published. It takes no clock, since
+// the page outlives the moment it's written.
 func Index(host, baseURL string, records []artifact.Record, building map[string]artifact.Building) ([]byte, error) {
 	view := indexView{Host: host}
 	published := map[string]bool{}
@@ -106,8 +91,7 @@ func Index(host, baseURL string, records []artifact.Record, building map[string]
 		}
 		view.Apps = append(view.Apps, a)
 	}
-	// A first build has no record yet, so it would otherwise be invisible
-	// exactly when someone is waiting for it.
+	// Show first builds, which have no record yet.
 	for slug, b := range building {
 		if published[slug] {
 			continue
@@ -121,7 +105,7 @@ func Index(host, baseURL string, records []artifact.Record, building map[string]
 	return execute("index.html", view)
 }
 
-// App renders one app's page, for a link that can be bookmarked.
+// App renders one app's page.
 func App(r artifact.Record, baseURL string, building *artifact.Building) ([]byte, error) {
 	a := viewFor(r, baseURL)
 	if building != nil {
@@ -141,18 +125,14 @@ func viewFor(r artifact.Record, baseURL string) appView {
 		Platform: r.Platform,
 		Built:    stampOf(r.BuiltAt),
 		Size:     Size(r.SizeMB()),
-		// Absolute URLs preserve the public base URL through manual proxies and
-		// are regenerated with the manifests whenever that base changes.
+		// Absolute, so they survive manual proxies. Reindex rewrites them.
 		PageURL:  appBase + "/",
 		IconURL:  appBase + "/" + r.IconFile(),
 		IndexURL: base + "/",
 	}
-	// How the phone installs is the platform's. iOS is handed a manifest through
-	// the itms-services scheme; Android fetches the payload itself, so the link
-	// is the payload, with the same cache key so a new build is never served
-	// from cache. template.URL is required either way: html/template rejects
-	// unknown schemes in an href and would replace itms-services:// with
-	// #ZgotmplZ, breaking every install link silently.
+	// iOS installs from a manifest through itms-services, Android from the
+	// payload. template.URL keeps html/template from replacing itms-services://
+	// with #ZgotmplZ.
 	if r.Platform.InstallsFromManifest() {
 		manifest := fmt.Sprintf("%s/manifest.plist?v=%s", appBase, r.CacheKey())
 		v.InstallURL = template.URL("itms-services://?action=download-manifest&url=" + escape(manifest))
@@ -170,16 +150,13 @@ func execute(name string, data any) ([]byte, error) {
 	return []byte(out.String()), nil
 }
 
-// escape percent-encodes everything outside the RFC 3986 unreserved set. The
-// manifest URL rides as a query-parameter value inside the href, so '/', ':',
-// '?' and '&' must all be encoded or iOS cannot follow the link. QueryEscape
-// does exactly that except for a space, which it writes as '+', a form the
-// receiving side would read back as a plus.
+// escape encodes the manifest URL for the itms-services query: QueryEscape,
+// but with %20 for a space, since iOS reads a + back as a plus.
 func escape(s string) string {
 	return strings.ReplaceAll(url.QueryEscape(s), "+", "%20")
 }
 
-// Size states a payload size in units that keep it visible.
+// Size formats a payload size, in KB below 1 MB.
 func Size(mb float64) string {
 	if mb < 0.95 {
 		return fmt.Sprintf("%d KB", int(math.Round(mb*1024)))
@@ -187,9 +164,8 @@ func Size(mb float64) string {
 	return fmt.Sprintf("%.1f MB", mb)
 }
 
-// Age states how long ago a build happened. It serves the CLI, where the output is read the moment
-// it's written. The pages get the same wording from the age script in templates/agescript.html,
-// which must be kept in step with this. The phone is the one place the two could be compared.
+// Age says how long ago t was, for the CLI. templates/agescript.html words it
+// the same way on the pages, so change both together.
 func Age(t, now time.Time) string {
 	if t.IsZero() {
 		return "unknown"

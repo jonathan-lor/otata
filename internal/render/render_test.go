@@ -17,8 +17,7 @@ func rec() artifact.Record {
 	}
 }
 
-// The trap: html/template replaces unknown URL schemes in href with #ZgotmplZ,
-// which would break every install link without erroring.
+// html/template replaces unknown URL schemes with #ZgotmplZ.
 func TestInstallLinkSurvivesTemplateEscaping(t *testing.T) {
 	out, err := Index("host.ts.net", "https://host.ts.net/otata", []artifact.Record{rec()}, nil)
 	if err != nil {
@@ -33,9 +32,6 @@ func TestInstallLinkSurvivesTemplateEscaping(t *testing.T) {
 	}
 }
 
-// Everything outside the unreserved set is percent-encoded, a space and a
-// plus included, or the manifest URL inside the itms-services href comes
-// apart. Pinned so the encoding cannot drift with its implementation.
 func TestEscape(t *testing.T) {
 	cases := map[string]string{
 		"https://host.ts.net/otata/myapp/manifest.plist?v=abc-7": "https%3A%2F%2Fhost.ts.net%2Fotata%2Fmyapp%2Fmanifest.plist%3Fv%3Dabc-7",
@@ -50,9 +46,6 @@ func TestEscape(t *testing.T) {
 	}
 }
 
-// An Android app installs by fetching the payload, so its link is the payload
-// itself with the same cache key, with no itms-services scheme and no manifest
-// anywhere on the page. The platform remains named for accessibility.
 func TestAndroidInstallsByDirectDownload(t *testing.T) {
 	r := rec()
 	r.Platform, r.PayloadName = artifact.Android, "MyApp.apk"
@@ -77,9 +70,6 @@ func TestAndroidInstallsByDirectDownload(t *testing.T) {
 	}
 }
 
-// The icon is linked under the name the record gives it, which carries its
-// format: WebP out of an Android payload is served as WebP. A record from
-// before icons had names still links the icon.png it has.
 func TestIconIsLinkedUnderItsOwnName(t *testing.T) {
 	webp := rec()
 	webp.Platform, webp.PayloadName, webp.IconName = artifact.Android, "MyApp.apk", "icon.webp"
@@ -103,8 +93,6 @@ func TestIconIsLinkedUnderItsOwnName(t *testing.T) {
 	}
 }
 
-// The page is a file. It is written once and read at any later moment, so it
-// carries the build's instant and the phone works out the age.
 func TestFreshnessIsStated(t *testing.T) {
 	r := rec()
 	out, _ := Index("host", "https://host/otata", []artifact.Record{r}, nil)
@@ -116,8 +104,7 @@ func TestFreshnessIsStated(t *testing.T) {
 	if !strings.Contains(body, `id="ages"`) {
 		t.Error("no age script to turn the instant into an age")
 	}
-	// The markup outside the script must not state an age. The script's own
-	// source carries the words, so the check is on the page with it removed.
+	// The script's own source has the words, so check the page without it.
 	markup := stripScripts(body)
 	for _, phrase := range []string{" ago", "just now", "Building for"} {
 		if strings.Contains(markup, phrase) {
@@ -126,7 +113,6 @@ func TestFreshnessIsStated(t *testing.T) {
 	}
 }
 
-// With no instant there is nothing to compute, so no datetime invites the script to try.
 func TestUnknownBuildTimeHasNoInstant(t *testing.T) {
 	r := rec()
 	r.BuiltAt = time.Time{}
@@ -154,7 +140,6 @@ func stripScripts(html string) string {
 	}
 }
 
-// An app mid-build must not offer its stale payload as if it were current.
 func TestBuildingSuppressesInstall(t *testing.T) {
 	building := map[string]artifact.Building{
 		"myapp": {Slug: "myapp", Started: time.Now().Add(-40 * time.Second)},
@@ -167,9 +152,7 @@ func TestBuildingSuppressesInstall(t *testing.T) {
 	if strings.Contains(body, `class="install"`) {
 		t.Error("install link offered while a build is in flight")
 	}
-	// The elapsed time is computed on the phone from the start instant, for
-	// the same reason the age is: the file is read long after it is written,
-	// and the refresh while building reloads the same file.
+	// The phone computes the elapsed time from the start, as it does the age.
 	since := `<time datetime="` + building["myapp"].Started.UTC().Format(time.RFC3339) + `" data-since>`
 	if !strings.Contains(body, since) {
 		t.Errorf("build not reported as in progress with its start instant:\n%s", excerpt(body, "Building"))
@@ -179,7 +162,6 @@ func TestBuildingSuppressesInstall(t *testing.T) {
 	}
 }
 
-// A first build has no record yet, the moment someone is most likely watching.
 func TestFirstBuildIsVisible(t *testing.T) {
 	building := map[string]artifact.Building{
 		"newapp": {Slug: "newapp", Started: time.Now().Add(-5 * time.Second), Config: "Debug"},
@@ -189,8 +171,6 @@ func TestFirstBuildIsVisible(t *testing.T) {
 	if !strings.Contains(body, "newapp") {
 		t.Error("in-flight first build is invisible")
 	}
-	// It also used to say there was nothing published, beside the running
-	// build; asserting only that the slug appears did not catch that.
 	if strings.Contains(body, "Nothing published yet") {
 		t.Error("claims nothing is published while a build is running")
 	}
@@ -210,7 +190,6 @@ func TestNoRefreshWhenIdle(t *testing.T) {
 	}
 }
 
-// One format for a size. It closes a trap of a fixed "%.1f MB" showing a small app as "0.0 MB".
 func TestSize(t *testing.T) {
 	cases := map[float64]string{
 		21238.0 / (1 << 20): "21 KB", // arbitrary small value
@@ -239,9 +218,6 @@ func excerpt(s, around string) string {
 	return s[i:end]
 }
 
-// The stylesheet rides inside the page rather than arriving by a second
-// request. Over a tailnet that can stall mid-load, a linked stylesheet
-// rendered unstyled HTML whenever its fetch was the one to fail.
 func TestStylesAreInlined(t *testing.T) {
 	index, err := Index("host", "https://host/otata", []artifact.Record{rec()}, nil)
 	if err != nil {
@@ -262,8 +238,6 @@ func TestStylesAreInlined(t *testing.T) {
 	}
 }
 
-// The card head is the index's only navigation to an app's page, so it must
-// be a link. A first build must not be, since its page does not exist yet.
 func TestCardHeadLinksTheAppPage(t *testing.T) {
 	out, err := Index("host", "https://host/otata", []artifact.Record{rec()}, nil)
 	if err != nil {
@@ -282,10 +256,8 @@ func TestCardHeadLinksTheAppPage(t *testing.T) {
 	}
 }
 
-// Every src and href on a page is absolute, built from the base URL as the
-// manifest's URLs are. Tailscale serves its mount path with and without the
-// trailing slash and never redirects, so from a hand-typed URL missing the
-// slash a relative reference resolves one level too high.
+// Links are absolute, so they still resolve when the page's URL lacks its
+// trailing slash.
 func TestPagesCarryNoRelativeURLs(t *testing.T) {
 	ref := regexp.MustCompile(`(?:src|href)="([^"]*)"`)
 	building := map[string]artifact.Building{"other": {Slug: "other", Started: time.Now()}}
@@ -306,13 +278,9 @@ func TestPagesCarryNoRelativeURLs(t *testing.T) {
 	}
 }
 
-// latch identifies the install-latch script, as distinct from the age script
-// that every non-empty page carries.
+// latch is the install-latch script's tag.
 const latch = `<script id="latch">`
 
-// The script exists to stop a second tap restarting an install already running,
-// so it belongs exactly where a tappable link does, and nowhere else, because
-// a page with nothing to install has nothing to latch.
 func TestInstallLatchShipsOnlyWithAnInstallLink(t *testing.T) {
 	now := time.Now()
 	building := map[string]artifact.Building{"myapp": {Slug: "myapp", Started: now.Add(-time.Minute)}}
@@ -327,7 +295,6 @@ func TestInstallLatchShipsOnlyWithAnInstallLink(t *testing.T) {
 	}
 }
 
-// A store mid-build on one app and ready on another still needs the script.
 func TestInstallLatchSurvivesAMixedIndex(t *testing.T) {
 	now := time.Now()
 	other := rec()
@@ -340,7 +307,6 @@ func TestInstallLatchSurvivesAMixedIndex(t *testing.T) {
 	}
 }
 
-// The app page is the bookmarkable surface and carries its own link.
 func TestAppPageLatchesItsOwnLink(t *testing.T) {
 	now := time.Now()
 	ready, _ := App(rec(), "https://host/otata", nil)

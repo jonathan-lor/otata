@@ -1,13 +1,8 @@
 {{define "agescript"}}
 <script id="ages">
 /*
-Ages are computed here, on the client, from the timestamp each <time> already
-carries, and is never fetched or rendered at publish. The page is a file that
-outlives the moment it was written, so an age written into it is wrong by
-however long ago that was. The timestamp is right forever. If this script
-doesn't run, the absolute time stands, which is technically true but less convenient.
-
-Wording mirrors render.Age in Go, which the CLI uses. They need to be kept in step.
+Turns each <time>'s timestamp into an age, live, since the page outlives the
+moment it was written. Keep the wording in step with render.Age.
 */
 (function () {
   function age(ms) {

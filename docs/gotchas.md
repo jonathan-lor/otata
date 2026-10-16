@@ -51,4 +51,4 @@ journalctl --user -u otata -n 50    # Linux: what systemd saw of it
 If doctor passes but the phone cannot open the page, check that the phone is
 connected to the same tailnet and permitted to reach otata's device. Use the
 URL from `otata status`; links from the removed host integration change after
-[migration](tailscale.md#upgrading-from-the-host-integration).
+[migration](tailscale.md#upgrading).

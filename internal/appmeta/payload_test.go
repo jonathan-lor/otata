@@ -67,9 +67,6 @@ func writeDemoIPA(t *testing.T) string {
 	return path
 }
 
-// The iOS reader against a synthetic payload: identity from the plist with
-// the product's name from the bundle, the largest icon out as a standard PNG,
-// and a payload with no profile saying so rather than failing.
 func TestOpenReadsAnIPA(t *testing.T) {
 	if _, err := exec.LookPath("plutil"); err != nil {
 		t.Skip("plutil is not installed")
@@ -119,9 +116,6 @@ func TestOpenReadsAnIPA(t *testing.T) {
 	}
 }
 
-// A platform with no reader is refused as unsupported, so doctor and publish
-// say nothing about it rather than something wrong, and a payload that is
-// not there does not open for any platform.
 func TestOpenRefusesAPlatformWithoutAReader(t *testing.T) {
 	_, err := Open(artifact.Platform("windows"), "whatever.exe")
 	if !errors.Is(err, ErrUnsupported) {

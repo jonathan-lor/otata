@@ -8,9 +8,8 @@ import (
 	"github.com/jonathan-lor/otata/internal/artifact"
 )
 
-// Reads a real .ipa, named by OTATA_TEST_IPA; a staged payload under
-// ~/.otata/public/<slug>/ is the natural one. Skipped when it is unset, so the
-// suite stays hermetic.
+// Reads the real .ipa at OTATA_TEST_IPA, like one under ~/.otata/public/.
+// Skipped when unset.
 func TestReadsRealIPA(t *testing.T) {
 	ipa := os.Getenv("OTATA_TEST_IPA")
 	if ipa == "" {

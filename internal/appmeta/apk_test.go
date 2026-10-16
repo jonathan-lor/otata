@@ -13,10 +13,7 @@ import (
 	"github.com/jonathan-lor/otata/internal/artifact"
 )
 
-// The shape of `aapt2 dump badging` for a fresh template's debug build: the
-// package line's several pairs, a label with an ampersand, one PNG among
-// WebP icons, the adaptive icon's XML at anydpi, bare-word and value-only
-// lines, and a label carrying an escaped quote in another locale.
+// The shape of `aapt2 dump badging` output for a fresh template's debug build.
 const demoBadging = `package: name='com.example.demo' versionCode='34' versionName='1.2' platformBuildVersionName='16' platformBuildVersionCode='36' compileSdkVersion='36' compileSdkVersionCodename='16'
 sdkVersion:'24'
 targetSdkVersion:'36'
@@ -94,8 +91,6 @@ func TestBadgingPairs(t *testing.T) {
 	}
 }
 
-// The highest density wins among raster icons; the adaptive icon's XML,
-// though listed at the highest density of all, cannot be shown and is skipped.
 func TestPickIcon(t *testing.T) {
 	b := parseBadging([]byte(demoBadging))
 	if got := pickIcon(b.Icons); got != "res/mipmap-xxxhdpi-v4/ic_launcher.webp" {
@@ -120,8 +115,7 @@ func TestSigningFromCerts(t *testing.T) {
 	if s.HasDeadline() {
 		t.Error("an APK's signing was given a deadline")
 	}
-	// Only the first signer is read; a certificate that names nobody is an
-	// identity by fingerprint alone.
+	// Only the first signer counts, and one with no CN is known by fingerprint.
 	two := "Signer #1 certificate DN: O=Nobody Inc\nSigner #1 certificate SHA-256 digest: abc\nSigner #2 certificate DN: CN=Other\nSigner #2 certificate SHA-256 digest: def\n"
 	s, err = signingFromCerts([]byte(two))
 	if err != nil || s.Signer != "" || s.Fingerprint != "abc" {
@@ -149,8 +143,6 @@ func TestCommonName(t *testing.T) {
 	}
 }
 
-// The newest build-tools release wins, a directory without the tool is
-// skipped, and with no SDK at all PATH is the fallback.
 func TestBuildToolPrefersTheNewestRelease(t *testing.T) {
 	sdk := t.TempDir()
 	for _, rel := range []string{"34.0.0", "36.0.0", "36.1.0-rc1", "9.0.0"} {
@@ -214,8 +206,8 @@ func stubTool(t *testing.T, dir, name, output string, status int) (callLog strin
 
 func shellQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
 
-// writeDemoAPK builds the shape of a real APK: a manifest, the launcher
-// icon at several densities in two formats, and the adaptive icon's XML.
+// writeDemoAPK writes an APK with a manifest, launcher icons at several
+// densities in two formats, and an adaptive icon.
 func writeDemoAPK(t *testing.T) (path string, xxxhdpi []byte) {
 	t.Helper()
 	path = filepath.Join(t.TempDir(), "Demo.apk")
@@ -246,10 +238,6 @@ func writeDemoAPK(t *testing.T) (path string, xxxhdpi []byte) {
 	return path, xxxhdpi
 }
 
-// The Android reader end to end against a synthetic APK and stubbed
-// build-tools: identity out of the badging, the highest-density raster icon
-// out of the archive under its own format, the signer out of apksigner,
-// and each tool invoked once with the APK's path.
 func TestOpenReadsAnAPK(t *testing.T) {
 	apkPath, xxxhdpi := writeDemoAPK(t)
 	tools := t.TempDir()
@@ -307,9 +295,6 @@ func TestOpenReadsAnAPK(t *testing.T) {
 	}
 }
 
-// An APK that does not verify is ErrUnsigned, carrying apksigner's reason;
-// one whose tools are absent is ErrUnsupported, which is a fact about this
-// machine rather than the payload; and a zip that is not an APK is refused.
 func TestAPKSigningFailures(t *testing.T) {
 	apkPath, _ := writeDemoAPK(t)
 	tools := t.TempDir()

@@ -37,8 +37,7 @@ func TestPNGFirstChunk(t *testing.T) {
 	if got := pngFirstChunk(std); got != "IHDR" {
 		t.Errorf("standard PNG: first chunk %q, want IHDR", got)
 	}
-	// The header bytes of a genuinely crushed icon: signature, then a CgBI
-	// chunk where IHDR would be.
+	// A crushed icon's header: the signature, then CgBI where IHDR would be.
 	cg := filepath.Join(dir, "cgbi.png")
 	head := append(append([]byte(nil), pngSignature...), 0, 0, 0, 4)
 	head = append(head, []byte("CgBIP\x00 \x06")...)
@@ -57,8 +56,6 @@ func TestPNGFirstChunk(t *testing.T) {
 	}
 }
 
-// A standard PNG must pass through byte-identical. Most icons (and anything
-// arriving via --artifact from another toolchain) were never crushed.
 func TestNormalizeIconLeavesStandardPNGAlone(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "icon.png")
 	orig := writeTestPNG(t, path)
@@ -74,10 +71,8 @@ func TestNormalizeIconLeavesStandardPNGAlone(t *testing.T) {
 	}
 }
 
-// The fixture is crushed by the same tool and flag Xcode's packaging uses, so
-// the revert is proven against the real transformation without embedding any
-// real app's asset. The bar is decodability by a standard decoder, which is
-// the position a browser is in.
+// Crush the fixture with the tool and flag Xcode uses, then check that a
+// standard decoder, like a browser's, can read the result.
 func TestNormalizeIconRevertsAppleOptimization(t *testing.T) {
 	if exec.Command("xcrun", "-f", "pngcrush").Run() != nil {
 		t.Skip("pngcrush not available")

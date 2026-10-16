@@ -10,9 +10,7 @@ import (
 	"time"
 )
 
-// The shape of a real provisioning profile, trimmed: every value type one
-// carries, the XML declaration and DOCTYPE, an entity in a string, and base64
-// wrapped across lines the way Apple writes it.
+// A real provisioning profile, trimmed, with every value type one carries.
 const profileShapedPlist = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -73,8 +71,6 @@ func TestParseProfileReadsEveryValueType(t *testing.T) {
 	}
 }
 
-// A document the parser cannot faithfully represent must be refused.
-// A silently dropped or nil value here would surface as a wrong signing deadline.
 func TestParsePlistXMLFailsClosed(t *testing.T) {
 	bad := map[string]string{
 		"not xml":             `hello`,
@@ -99,7 +95,6 @@ func TestParsePlistXMLFailsClosed(t *testing.T) {
 	}
 }
 
-// A binary payload would be a first for a profile, but the fallback exists, so it is exercised.
 func TestParseProfileConvertsABinaryPlist(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("plutil is macOS's")

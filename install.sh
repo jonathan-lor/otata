@@ -3,22 +3,16 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/jonathan-lor/otata/main/install.sh | sh
 #
-# It downloads the tarball for this machine, verifies it against the
-# release's checksums, and puts the binary in ~/.local/bin (or $OTATA_BIN_DIR)
-# by writing beside the target and renaming into place, so a server running
-# the old binary keeps its image until it is restarted. A launch agent or
-# systemd user unit that is installed is then refreshed, so that restart
-# happens now rather than at the next login.
-#
-# On a Mac, `brew install --cask jonathan-lor/tap/otata` is the install that
-# `brew upgrade` will track. This script works there too.
+# It verifies the tarball against the release's checksums, installs the
+# binary into ~/.local/bin (or $OTATA_BIN_DIR), and refreshes an installed
+# launch agent or systemd unit. It works on a Mac too, but only the Homebrew
+# cask (`brew install --cask jonathan-lor/tap/otata`) is tracked by `brew upgrade`.
 set -eu
 
 repo="jonathan-lor/otata"
 bin_dir="${OTATA_BIN_DIR:-$HOME/.local/bin}"
-# The release to install: the latest, unless OTATA_VERSION names a tag.
-# OTATA_RELEASE_URL points the download at somewhere other than GitHub,
-# which is how the script is tested against a release that is not published.
+# OTATA_VERSION picks a tag instead of the latest. OTATA_RELEASE_URL downloads
+# from somewhere other than GitHub, for testing an unpublished release.
 version="${OTATA_VERSION:-}"
 release_url="${OTATA_RELEASE_URL:-}"
 
@@ -44,8 +38,7 @@ else
   fail "sha256sum or shasum is needed to verify the download"
 fi
 
-# The latest tag is where GitHub's releases/latest redirects, which needs
-# neither the API nor its rate limit.
+# Read the latest tag off the releases/latest redirect, avoiding the API's rate limit.
 if [ -z "$version" ]; then
   location=$(curl -fsSLI -o /dev/null -w '%{url_effective}' "https://github.com/$repo/releases/latest") ||
     fail "could not look up the latest release"
@@ -67,8 +60,7 @@ echo "downloading otata $version for $os/$arch"
 curl -fsSL -o "$tmp/$archive" "$release_url/$archive" || fail "no $archive in release $version"
 curl -fsSL -o "$tmp/$sums" "$release_url/$sums" || fail "release $version has no checksums file"
 
-# Verify before unpacking. The checksums file lists every archive; only the
-# one downloaded is compared, by its own name.
+# Verify before unpacking.
 expected=$(grep " $archive\$" "$tmp/$sums" | cut -d' ' -f1)
 [ -n "$expected" ] || fail "$sums does not list $archive"
 actual=$(cd "$tmp" && checksum "$archive" | cut -d' ' -f1)
@@ -81,8 +73,7 @@ chmod +x "$bin_dir/.otata.new"
 mv "$bin_dir/.otata.new" "$bin_dir/otata"
 echo "installed $bin_dir/otata ($("$bin_dir/otata" version 2>/dev/null || echo "$version"))"
 
-# A unit that keeps the server alive is refreshed the way `make install`
-# refreshes it: 'autostart on' reinstalls and restarts it on the new binary.
+# Refresh an installed unit so it runs the new binary.
 if [ -f "$HOME/Library/LaunchAgents/com.anakepha.otata.plist" ] ||
    [ -f "${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/otata.service" ]; then
   echo "refreshing the service so it runs the new binary"

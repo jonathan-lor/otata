@@ -8,16 +8,10 @@ BIN_DIR := $(HOME)/.local/bin
 build: ## Compile for this machine into bin/
 	go build -o bin/$(BINARY) .
 
-## install copies instead of symlinking on purpose. launchd can't run a binary
-## in a TCC-protected directory like ~/Documents, and it fails by hanging in
-## dyld instead of erroring, which is very hard to diagnose.
-## Write beside the target and rename into place. Overwriting a currently running
-## binary corrupts its mapped image and macOS kills the process with SIGKILL;
-## Linux refuses the write outright (ETXTBSY). Rename swaps the directory
-## entry and leaves the running inode alone.
-## A unit that keeps the server alive, launchd's or systemd's, is then
-## refreshed: 'autostart on' reinstalls and restarts it, so the server that
-## returns is the new binary and not the old image still running.
+## install copies rather than symlinks, since launchd hangs on a binary in a
+## TCC-protected directory like ~/Documents. It renames into place, because
+## overwriting a running binary kills it on macOS and fails on Linux. Then it
+## refreshes the launch agent or systemd unit so the new binary runs.
 install: build
 	@mkdir -p $(BIN_DIR)
 	cp bin/$(BINARY) $(BIN_DIR)/.$(BINARY).new

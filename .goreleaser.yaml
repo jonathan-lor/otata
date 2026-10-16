@@ -1,16 +1,13 @@
-# Release pipeline of tar.gz archives for macOS and Linux.
-# (macOS archives are also signed, notarized, and published as a cask in jonathan-lor/homebrew-tap)
-
-# Validate with `goreleaser check`; dry-run with
-# `goreleaser release --snapshot --clean` (signing stays off without the
-# MACOS_* environment variables).
+# Builds tar.gz archives for macOS and Linux. The macOS ones are also signed,
+# notarized and published as a cask in jonathan-lor/homebrew-tap.
+# Check with `goreleaser check`. Dry-run with `goreleaser release --snapshot
+# --clean`, which skips signing without the MACOS_* variables.
 version: 2
 
 project_name: otata
 
-# One build per platform, so the cask below can name the macOS archives
-# alone: Homebrew's cask DSL takes an on_linux block, but this cask's
-# uninstall and zap stanzas are launchd's, which mean nothing there.
+# One build per platform, so the cask can take the macOS archives alone,
+# since its uninstall and zap stanzas are launchd's.
 builds:
   - id: darwin
     env:
@@ -22,9 +19,8 @@ builds:
       - amd64
     flags:
       - -trimpath
-    # version.String reads the VCS-stamped module version, so goreleaser's
-    # default -X injections would be dead weight; keep -buildvcs at its
-    # default or released binaries report "dev".
+    # The version comes from the VCS stamp, so no -X flags. Keep -buildvcs on,
+    # or released binaries report "dev".
     ldflags:
       - -s -w
   - id: linux
@@ -48,7 +44,7 @@ archives:
 
 notarize:
   macos:
-    # ids selects builds; the default is the project name, which no build here uses.
+    # ids defaults to the project name, which matches no build here.
     - ids: [darwin]
       enabled: '{{ isEnvSet "MACOS_SIGN_P12" }}'
       sign:
@@ -78,8 +74,7 @@ homebrew_casks:
     homepage: https://github.com/jonathan-lor/otata
     description: Over-the-air installer for iOS and Android builds on your own network
     skip_upload: auto
-    # brew upgrade runs the old cask's uninstall stanzas, so the launch agent
-    # is booted out on upgrade and returns at next login or `otata start`.
+    # brew upgrade runs these, stopping the agent until next login or `otata start`.
     uninstall:
       launchctl:
         - com.anakepha.otata

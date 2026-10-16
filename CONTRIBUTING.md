@@ -1,12 +1,8 @@
 # Contributing
 
-otata requires Go 1.26.6 or newer.
-
-Until otherwise noted, **the steps below are intended for macOS and Linux only.**
+otata needs Go 1.26.6 or newer, on macOS or Linux.
 
 ## Building
-
-`git clone`, then:
 
 ```sh
 make build     # bin/otata
@@ -15,13 +11,7 @@ make test
 make vet
 ```
 
-`make install` copies instead of symlinking on purpose. A symlink into a
-TCC-protected checkout makes launchd hang at startup. It writes beside the target and renames,
-because overwriting a running binary corrupts its mapped image and macOS kills
-the process, and Linux refuses the write outright.
-
-Use the development binary with a scratch root to keep testing separate from
-an installed release:
+To test without touching an installed release, use a scratch root and a foreground server, since there's only one autostart unit per user:
 
 ```sh
 make build
@@ -34,44 +24,35 @@ export OTATA_PORT=18877
 ./bin/otata doctor
 ```
 
-Use foreground serving for scratch work since there's only one autostart unit per
-user. The tsnet tests use a fake node and do not enroll real devices.
-
 ## Repository layout
 
 | Package | What it handles |
 | --- | --- |
-| `main.go` | Command dispatch and flag parsing only |
-| `internal/cli` | How commands talk to their caller: JSON vs text, the error taxonomy |
-| `internal/app` | Orchestration: the only place that knows about the others at once, one file per command |
+| `main.go` | Command dispatch and flag parsing |
+| `internal/cli` | JSON and text output, and the error codes |
+| `internal/app` | Orchestration, one file per command. The only package that knows about the others |
 | `internal/config` | Port, selected transport, node hostname and manual proxy settings |
-| `internal/storage` | The on-disk layout, and the **only** definition of it |
+| `internal/storage` | The on-disk layout, defined nowhere else |
 | `internal/atomicfile` | Stage-and-rename writes, so a crash never leaves a torn file |
-| `internal/artifact` | The record: what a published build is, and the platform it runs on |
-| `internal/builder` | Turning a project into a payload; the only place that knows what Xcode and Gradle are |
+| `internal/artifact` | The record of a published build and its platform |
+| `internal/builder` | Turning a project into a payload. The only package that knows Xcode and Gradle |
 | `internal/appmeta` | Reading identity, icon and signing out of a built payload, one reader per platform |
 | `internal/transport` | Embedded Tailscale and manual HTTPS adapters |
-| `internal/tsnetnode` | Persistent embedded node lifecycle and authenticated local control API |
+| `internal/tsnetnode` | The embedded node's lifecycle and its authenticated local control API |
 | `internal/server` | The install surface over HTTP |
 | `internal/render` | The pages, with templates embedded in the binary |
-| `internal/version` | This binary's version, read from the build's VCS stamp |
+| `internal/version` | This binary's version, from the build's VCS stamp |
 
 ## Testing
 
 ```sh
-go test ./...              # everything
+go test ./...
 go test ./internal/server/ -v
 ```
 
-CI runs the suite with the race detector on both macOS and Linux. Tests that
-depend on a macOS tool (`ditto`, `plutil`, `pngcrush`) skip if the tool is absent.
+CI runs the suite with the race detector on macOS and Linux. Tests that need a macOS tool (`ditto`, `plutil`, `pngcrush`) skip without it, and the embedded node tests use a fake backend, so nothing enrolls a real device.
 
-Embedded node tests use a fake backend. Upgrade tests cover ignored old path
-settings, root URLs and unchanged manual proxy routing without a host CLI.
-
-The `*_manual_test.go` files run against real local projects and artifacts
-and **skip unless told where they are**, so the test suite stays hermetic on
-a fresh machine:
+The `*_manual_test.go` files run against real projects and artifacts, and skip unless told where they are:
 
 ```sh
 OTATA_TEST_PROJECT=~/path/to/MyApp OTATA_TEST_SCHEME=MyApp go test ./internal/builder/ -run Real -v
@@ -80,18 +61,10 @@ OTATA_TEST_IPA=~/.otata/public/myapp/MyApp.ipa go test ./internal/appmeta/ -run 
 OTATA_TEST_APK=~/path/to/app-debug.apk go test ./internal/appmeta/ -run Real -v
 ```
 
-The Gradle one builds a Debug APK of the project through the real builder,
-with `ANDROID_HOME` set and whatever the project's wrapper and plugin need
-downloaded on the way; `OTATA_TEST_FLAVOR` is only for a module with several
-flavors. The APK readers need the SDK's build-tools through `ANDROID_HOME` too.
+The Gradle test builds a Debug APK through the real builder, so it needs `ANDROID_HOME` and downloads whatever the project's wrapper needs. `OTATA_TEST_FLAVOR` is only for a module with several flavors. The APK readers need the SDK's build-tools through `ANDROID_HOME` too.
 
 ## A few important details
 
-- **Human output goes through `cli.Line`**, which strips control characters. A
-  display name out of an Info.plist is untrusted for `--artifact`.
-- **Files reach `public/` through the store's atomic writes**, never a direct
-  write. The server reads the tree the publisher is writing.
-- **Values interpolated into a plist go through `xmlText`.** Manifests, the
-  launch agent and export options are assembled by hand from untrusted values.
-  The systemd unit has its own quoting rules kept beside it in
-  `internal/app/supervisor_linux.go`.
+- **Human output goes through `cli.Line`**, which strips control characters, because a display name from an `--artifact`'s Info.plist is untrusted.
+- **Files reach `public/` only through the store's atomic writes**, because the server reads the tree while publish writes it.
+- **Values interpolated into a plist are XML-escaped.** Manifests, the launch agent and export options are built by hand from untrusted values. The systemd unit has its own quoting rules, in `internal/app/supervisor_linux.go`.

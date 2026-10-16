@@ -11,9 +11,6 @@ import (
 	"github.com/jonathan-lor/otata/internal/artifact"
 )
 
-// Every path the app writes or serves is spelled here and nowhere else, all
-// of it under the root, and a slug that fails validation yields no path at
-// all, so a caller that forgot to validate cannot reach outside by accident.
 func TestLayoutIsUnderTheRootAndRefusesBadSlugs(t *testing.T) {
 	root := t.TempDir()
 	store, err := Open(root)
@@ -56,8 +53,6 @@ func TestLayoutIsUnderTheRootAndRefusesBadSlugs(t *testing.T) {
 	}
 }
 
-// A record from before the icon had a name still names the icon it has, and
-// one without an icon names nothing, so a JSON reader sees the fact spelled out.
 func TestRecordSpellsOutTheIconName(t *testing.T) {
 	store, err := Open(t.TempDir())
 	if err != nil {
@@ -84,8 +79,6 @@ func TestRecordSpellsOutTheIconName(t *testing.T) {
 	}
 }
 
-// The icon's name changes with its format, so the one a new build does not
-// name is removed, and a build that ships none leaves none behind.
 func TestPruneStaleIconsKeepsOnlyTheNamedOne(t *testing.T) {
 	store, err := Open(t.TempDir())
 	if err != nil {
@@ -130,8 +123,6 @@ func names(t *testing.T, dir string) []string {
 	return out
 }
 
-// A slug becomes both a path component and a URL segment. An unvalidated one
-// let `otata forget ..` run RemoveAll on the entire store and return success.
 func TestValidateSlug(t *testing.T) {
 	valid := []string{"a", "myapp", "my-app", "app2", "a-b-c-1"}
 	for _, s := range valid {
@@ -150,7 +141,6 @@ func TestValidateSlug(t *testing.T) {
 	}
 }
 
-// Remove is the destructive path. It must refuse before RemoveAll.
 func TestRemoveRefusesTraversal(t *testing.T) {
 	base := t.TempDir()
 	victim := filepath.Join(base, "victim")
@@ -190,7 +180,6 @@ func TestPutRecordRefusesBadSlug(t *testing.T) {
 	}
 }
 
-// Records must survive a corrupt neighbor.
 func TestRecordsSkipsCorrupt(t *testing.T) {
 	store, err := Open(t.TempDir())
 	if err != nil {
@@ -212,7 +201,6 @@ func TestRecordsSkipsCorrupt(t *testing.T) {
 	}
 }
 
-// Newest first. After publishing, the app you probably want is on top.
 func TestRecordsSortNewestFirst(t *testing.T) {
 	store, err := Open(t.TempDir())
 	if err != nil {
@@ -235,8 +223,6 @@ func TestRecordsSortNewestFirst(t *testing.T) {
 	}
 }
 
-// A served file is world-readable. The staging and the rename are
-// atomicfile's, tested there; the mode is this package's to choose.
 func TestWriteFileIsWorldReadable(t *testing.T) {
 	store, err := Open(t.TempDir())
 	if err != nil {
@@ -255,9 +241,6 @@ func TestWriteFileIsWorldReadable(t *testing.T) {
 	}
 }
 
-// Pruning removes the payloads a rename left behind and nothing else: not the
-// pages beside them, and not a file whose extension is another platform's,
-// since the extension is what marks a payload as this platform's.
 func TestPruneStalePayloadsRemovesOnlyThisPlatformsOldPayloads(t *testing.T) {
 	store, err := Open(t.TempDir())
 	if err != nil {
@@ -299,8 +282,6 @@ func TestClearBuildingIsIdempotent(t *testing.T) {
 	}
 }
 
-// The marker is the lock between two publishes of one slug. Claiming must be
-// exclusive, report who holds it, and leave the holder's marker untouched.
 func TestClaimBuildingIsExclusive(t *testing.T) {
 	store, err := Open(t.TempDir())
 	if err != nil {

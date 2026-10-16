@@ -15,9 +15,7 @@ const DefaultPort = 8787
 
 type Manual struct {
 	BaseURL string `json:"base_url"`
-	// KeepPrefix says the proxy forwards the base URL's path unchanged instead
-	// of stripping it, so the server has to strip it. False is the common
-	// case for external proxies.
+	// KeepPrefix means the proxy forwards the base URL's path, so the server strips it.
 	KeepPrefix bool `json:"keep_prefix,omitempty"`
 }
 
@@ -45,8 +43,7 @@ func Default() Config {
 
 func Path(root string) string { return filepath.Join(root, "config.json") }
 
-// LoadFile reads only what is on disk. Writing config back uses this, so a
-// one-off OTATA_PORT for a single command is never persisted.
+// LoadFile reads the file alone, without OTATA_PORT, for writing config back.
 func LoadFile(root string) (Config, error) {
 	c := Default()
 	data, err := os.ReadFile(Path(root))
@@ -72,9 +69,7 @@ func LoadFile(root string) (Config, error) {
 	return c, nil
 }
 
-// Load is the on-disk config with environment overrides applied. These are
-// documented, and an error hint tells the user to set OTATA_PORT, so they have
-// to do something.
+// Load is the on-disk config with OTATA_PORT applied.
 func Load(root string) (Config, error) {
 	c, err := LoadFile(root)
 	if err != nil {
@@ -90,8 +85,7 @@ func Load(root string) (Config, error) {
 	return c, nil
 }
 
-// Save writes atomically. A torn config makes every command fail, including
-// doctor --fix, so a partial write here is unrecoverable without hand-editing.
+// Save writes atomically, since a torn config breaks every command.
 func Save(root string, c Config) error {
 	data, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {

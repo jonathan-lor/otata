@@ -8,12 +8,8 @@ import (
 	"path/filepath"
 )
 
-// Write stages in stageDir, then renames into place with perm applied.
-// stageDir must be on the same filesystem as dest because that's what makes the
-// rename atomic instead of a copy. It is a parameter, not always the
-// destination's directory, because staging beside a served destination would
-// make the half-written file momentarily fetchable. Storage stages in its
-// tmp dir for exactly that reason.
+// Write stages in stageDir, then renames into place with perm. stageDir must
+// be on dest's filesystem for the rename to be atomic.
 func Write(stageDir, dest string, perm os.FileMode, write func(io.Writer) error) error {
 	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 		return err

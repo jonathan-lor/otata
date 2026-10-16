@@ -83,6 +83,8 @@ func TestDetailReadsAsADate(t *testing.T) {
 	}{
 		{"far off", at(83 * 24 * time.Hour), "profile expires 2026-11-11, in 83 days"},
 		{"tomorrow", at(30 * time.Hour), "profile expires tomorrow, 2026-08-21"},
+		{"tomorrow, under a day away", at(23 * time.Hour), "profile expires tomorrow, 2026-08-21"},
+		{"two dates away, under two days", at(47 * time.Hour), "profile expires 2026-08-22, in 2 days"},
 		{"today", at(6 * time.Hour), "profile expires today, 2026-08-20"},
 		{"expired", at(-48 * time.Hour), "profile expired 2026-08-18, signing no longer works"},
 	}
@@ -90,6 +92,16 @@ func TestDetailReadsAsADate(t *testing.T) {
 		if got := c.in.Detail(now); got != c.want {
 			t.Errorf("%s: Detail = %q, want %q", c.name, got, c.want)
 		}
+	}
+}
+
+// The date and the day count follow now's time zone, not the profile's UTC.
+func TestDetailUsesNowsTimeZone(t *testing.T) {
+	pacific := time.FixedZone("PDT", -7*60*60)
+	now := time.Date(2026, 8, 20, 20, 0, 0, 0, pacific)
+	s := newSigning("p", time.Date(2026, 8, 21, 5, 0, 0, 0, time.UTC), time.Time{})
+	if got, want := s.Detail(now), "profile expires today, 2026-08-20"; got != want {
+		t.Errorf("Detail = %q, want %q", got, want)
 	}
 }
 

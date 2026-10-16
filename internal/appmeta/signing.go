@@ -153,8 +153,10 @@ func (s Signing) Detail(now time.Time) string {
 		}
 		return "signed by " + s.SignerName()
 	}
-	date := s.Expires.Format("2006-01-02")
-	days := int(s.Expires.Sub(now).Hours() / 24)
+	// Date and count in now's zone, so the word and the date agree.
+	expires := s.Expires.In(now.Location())
+	date := expires.Format("2006-01-02")
+	days := calendarDays(now, expires)
 	switch {
 	case !s.Expires.After(now):
 		return fmt.Sprintf("%s expired %s, signing no longer works", s.Binder, date)
@@ -165,6 +167,16 @@ func (s Signing) Detail(now time.Time) string {
 	default:
 		return fmt.Sprintf("%s expires %s, in %d days", s.Binder, date, days)
 	}
+}
+
+// calendarDays counts calendar dates from a to b, which share a zone.
+func calendarDays(a, b time.Time) int {
+	// UTC midnights, so a DST change can't make a day 23 hours.
+	midnight := func(t time.Time) time.Time {
+		y, m, d := t.Date()
+		return time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
+	}
+	return int(midnight(b).Sub(midnight(a)).Hours() / 24)
 }
 
 // Expired reports whether the deadline has passed.

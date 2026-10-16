@@ -2,10 +2,7 @@
 
 ## How does the iOS install actually work?
 
-`itms-services://` is Apple's method for installing a signed app from a web-hosted manifest.
-The browser hands the manifest URL to the iOS install daemon, which downloads the `.ipa` and installs it.
-Both the manifest and the payload must be served over HTTPS with a publicly trusted certificate; self-signed is refused.
-The built-in Tailscale node obtains a trusted certificate for its tailnet hostname.
+The install link is an `itms-services://` URL, Apple's way to install a signed app from a web-hosted manifest. The browser hands the manifest URL to iOS, which downloads the `.ipa` and installs it. Both must be served over HTTPS with a publicly trusted certificate, which the embedded Tailscale node gets for its tailnet hostname. A build signed by a different team can't replace the installed app, since iOS requires the same team for an upgrade, so delete the old copy first.
 
 ```
 phone (on the tailnet)
@@ -16,127 +13,35 @@ phone (on the tailnet)
 
 ## How does the Android install work?
 
-The app's page links the `.apk` itself. The browser
-downloads it, and tapping the download hands it to Android's package
-installer. The first time, Android asks to allow installs from that browser.
+The app's page links the `.apk` itself. The browser downloads it, and tapping the download hands it to Android's package installer. The first time, Android asks you to allow installs from that browser.
 
-Android identifies an installed app by its package name and its signing
-certificate. A build signed by the same certificate replaces the installed
-one in place; a build signed by any other is refused until the installed
-copy is uninstalled. The debug keystore is one such certificate, generated
-per machine, so debug builds from two computers cannot replace each other
-unless `~/.android/debug.keystore` is copied between them. otata verifies
-the signature before serving an APK, because an unsigned one, which a release
-build without a `signingConfig` produces, would fail on every tap.
+Android identifies an app by its package name and signing certificate. A build signed with the same certificate replaces the installed one, and one signed with any other is refused until you uninstall the old copy. Each machine generates its own debug keystore, so debug builds from two computers can't replace each other unless you copy `~/.android/debug.keystore` between them. otata verifies an APK's signature before serving it, since an unsigned one would fail on every tap.
 
 ## Is using `itms-services://` against Apple's rules?
 
-No. The scheme installs any non-App-Store build, not just in-house
-enterprise apps. Apple documents the manifest mechanism and its HTTPS
-requirement in the [Apple Platform Deployment
-guide](https://support.apple.com/guide/deployment/depce7cefc4d/web), and
-Xcode generates the same manifest for `release-testing` and `debugging`
-exports. `xcodebuild -help` describes the `manifest` export option as for
-"non-App Store exports", not enterprise ones. What the [Apple Developer
-Program License
-Agreement](https://developer.apple.com/support/terms/apple-developer-program-license-agreement/)
-restricts is *who* may receive a signed build (§7.3, "Distribution on
-Registered Devices (Ad Hoc Distribution)"): your registered devices, up
-to 100 per device type per membership year, for testing. It doesn't enforce
-anything about how the bytes travel. otata serves builds signed under your own account
-to your own registered devices, which is that permitted distribution. The
-"employees only" restriction belongs to the separate Enterprise Program
-agreement, which otata does not involve.
-
-## How does `otata publish` decide what to build?
-
-- **Platform**: never discovered. `--platform ios|android` is required, because a
-  Mac builds for both and a default there would be a guess. With `--artifact`
-  the payload's extension says which platform it is.
-- **Project**: on iOS, the single `.xcworkspace` in the current directory,
-  else the single `.xcodeproj`; `ios/`, `iosApp/` and `apps/ios/` are searched
-  too. On Android, the Gradle root: the directory holding
-  `settings.gradle(.kts)`, at the top or in `android/`.
-- **Scheme**: only schemes that archive an app count — each `.xcscheme` is
-  read for a `.app` buildable marked `buildForArchiving="YES"`, which drops
-  package schemes. It prefers a scheme named after the project, else a lone
-  scheme, else it asks for `--scheme` and lists the candidates.
-- **Module and flavor** (Android): the application module named with
-  `--module`, else the lone one, else `:app`; the product flavor named with
-  `--flavor`, else the lone one, else none where the module defines none.
-  Anything else asks and lists the candidates. Gradle itself is asked,
-  through an init script, so build scripts, convention plugins and version
-  catalogs are never parsed.
-- **Team** (iOS): whichever automatic signing chose, read off the payload's
-  profile; `list` and `status` name it. On Android the equivalent is the
-  signing certificate, read off the APK and verified.
-- **Slug**: the directory name, with `-android` appended for an Android
-  build; a slug another project owns is refused, not overwritten.
+No. Apple documents the manifest install in its [Platform Deployment guide](https://support.apple.com/guide/deployment/depce7cefc4d/web), and Xcode writes the same manifest for its `release-testing` and `debugging` exports. The [Developer Program License Agreement](https://developer.apple.com/support/terms/apple-developer-program-license-agreement/) limits who may receive a signed build (§7.3): your registered devices, up to 100 per device type per membership year, for testing. otata serves builds signed by your account to your registered devices, which is exactly that. The "employees only" rule belongs to the separate Enterprise Program, which otata doesn't use.
 
 ## What does a cross-platform project need before its first publish?
 
-Flutter, React Native and Kotlin Multiplatform keep an Xcode project in
-`ios/` or `iosApp/`, where discovery already looks, so `otata publish` builds them
-like a native app. Missing prerequisites are reported before the archive as
-`needs_setup` with the command to run. otata has been verified on Xcode 26.2 with Flutter
-3.47, React Native 0.87 and the JetBrains KMP template. The iOS half of a
-KMP project needs no Android SDK.
-
-Their Android projects build with `--platform android` by the same rule:
-Flutter's and React Native's in `android/`, KMP's at the root. Before Gradle
-runs, a Flutter project without `flutter.sdk` in `android/local.properties`
-is told to run `flutter pub get`, and a React Native project without
-`node_modules` to run `npm install`.
+Flutter, React Native and Kotlin Multiplatform keep their Xcode project in `ios/` or `iosApp/` and their Android project in `android/` or at the root, where discovery already looks. Anything missing is reported before the build as `needs_setup`, with the command to run. The iOS side has been verified on Xcode 26.2 with Flutter 3.47, React Native 0.87 and the JetBrains KMP template.
 
 | Framework | Needed before the first publish | Worth knowing |
 | --- | --- | --- |
-| Flutter | nothing after `flutter create`; `flutter build ios --config-only` in a fresh clone | `ios/Flutter/Generated.xcconfig` is generated and gitignored, so no clone has one. Iterate with `--config Profile` and not `Debug` |
-| React Native | `pod install` in `ios/` | until it runs there is no `.xcworkspace`, and the `.xcodeproj` beside it cannot link |
-| Kotlin Multiplatform | a JDK 17+, and a team in `iosApp/Configuration/Config.xcconfig` | the first build downloads the Kotlin/Native toolchain: twelve minutes here, four on a warm cache |
-
-## How do I make a project always build another configuration?
-
-A project that should always build another way (`Debug` for its `#if DEBUG`
-tooling; `Profile` on Flutter, where `Debug` cannot launch from the home
-screen) should record the flag in its agent instructions (AGENTS.md, CLAUDE.md, etc.) so it
-travels with every publish. Each build records the configuration it was
-built with, and `list` shows it.
+| Flutter | Nothing after `flutter create`. A fresh clone needs `flutter build ios --config-only` for iOS and `flutter pub get` for Android | Iterate on iOS with `--config Profile`, since a `Debug` build can't launch from the home screen. `flutter create` run without a terminal (by an agent, say) picks the first signing identity it finds, often your free personal team. Set the team with `flutter config --select-ios-signing-settings` or in Xcode |
+| React Native | `pod install` in `ios/`. For Android, `npm install` if there's no `node_modules` | Until `pod install` runs there is no `.xcworkspace`, and the `.xcodeproj` beside it can't link. An iOS `--config Debug` build embeds the Mac's LAN address for Metro. It runs anywhere, but only reloads on that network, and it's nearly three times the size |
+| Kotlin Multiplatform | A JDK 17+, and a team in `iosApp/Configuration/Config.xcconfig` | The first build downloads the Kotlin/Native toolchain: twelve minutes here, four on a warm cache. The iOS side needs no Android SDK |
 
 ## How do I know the build I tap is the one just published?
 
-iOS installs without confirmation, so tapping before the latest build lands will silently
-install the *previous* one. What closes that:
-
-- Every entry shows its age ("40 seconds ago") beside its commit, computed on
-  the phone from the build's timestamp; without script it shows the absolute
-  time.
-- An app mid-build says so and cannot be tapped; the page refreshes itself
-  while any build runs.
-- The build marker records its process, so `doctor --fix` can clear one whose
-  process is gone or older than any build could be.
-- The marker is also a lock: a second publish of the same slug is refused
-  with `build_in_progress`.
+iOS installs without asking, so tapping too early silently installs the *previous* build. To prevent that, every app shows its age ("40 seconds ago") beside its commit, and an app mid-build says so and can't be tapped. The page refreshes itself while a build runs. A second publish of the same app is refused with `build_in_progress` until the first one finishes.
 
 ## What exactly does `doctor` check?
 
-It checks otata's whole path: server up and serving this root, transport
-ready, no build marker left by a dead process, the index and every manifest
-and payload answering over the real URL, signing unexpired. It exits
-non-zero if anything is wrong, and every failing check says how to fix it.
-Under `--json`, unhealthy is `ok: false` with the `unhealthy` code, and
-`data.checks` still carries every check.
+The whole path: the server is up and serving this root, the transport is ready, no build marker is left by a dead process, the index and every manifest and payload answer over the real URL, and signing hasn't expired. It exits non-zero if anything fails, and every failing check says how to fix it. Under `--json`, a failure is `ok: false` with the `unhealthy` code, and `data.checks` still lists every check.
 
-`otata doctor --fix` is what you should reach for remotely and after a reboot.
-It repairs first (reloads the launch agent or systemd unit, waits for transport
-readiness, clears stale markers, regenerates the pages, restarts a server
-serving a `public/` since recreated), then runs the same checks, so the exit
-code reports what is still broken. It will not replace a server belonging to
-a different `OTATA_ROOT`. `otata restart` does that explicitly.
+`otata doctor --fix` is the one to reach for remotely and after a reboot. It repairs first (reloads the launch agent or systemd unit, waits for the transport, clears stale markers, regenerates the pages, restarts a server whose `public/` was recreated), then runs the same checks. It won't replace a server for a different `OTATA_ROOT`. `otata restart` does that.
 
-An iOS build stops being installable when its profile or certificate expires,
-whichever is earlier. `doctor` warns inside 30 days and fails past the deadline.
-An Android build's certificate is nominally good for decades, so `doctor`
-names the signer and counts nothing down.
+An iOS build stops installing when its profile or certificate expires, whichever comes first. `doctor` warns 30 days ahead and fails past the deadline. An Android certificate is good for decades, so `doctor` just names the signer.
 
 ```sh
 $ otata doctor
@@ -147,43 +52,26 @@ $ otata doctor
 
 ## When is the server up?
 
-Only while the computer is awake and you are logged in. It runs under
-launchd on a Mac and under your own systemd on Linux: `otata autostart on`
-installs the unit once. It returns at login and restarts if it exits.
-`otata stop` unloads it but leaves it installed (`otata status` says so);
-`otata start`, `otata publish` and `otata doctor --fix` bring it back through
-the manager, and with no unit installed they refuse and name the command. The
-only other server is `otata serve` in a foreground terminal, alive as long
-as the terminal.
+While the computer is awake and you're logged in. `otata autostart on` installs a launch agent on a Mac or a systemd user unit on Linux, which starts the server at login and restarts it if it crashes. Nothing starts before login. FileVault keeps a Mac's disk locked until someone types the password, and a Linux user's systemd waits for a login unless [lingering](getting-started.md#3-enroll-otata) is on.
 
-One unit exists per user, embedding the `OTATA_ROOT` and `OTATA_PORT`
-it was installed with: a shell with a scratch root sees
-`autostart off`, cannot stop it, and is refused `autostart on`. Nothing
-returns before login. On a Mac, FileVault keeps the volume encrypted until
-someone types the password. On Linux, a user's systemd starts at that user's
-first login, an SSH session included, and stops at the last logout, taking
-the server with it, unless `loginctl enable-linger` says otherwise. What to
-set up before leaving the machine — sleep, the keychain
-prompt, lingering — is in [otata-via-ssh.md](otata-via-ssh.md#initial-setup-on-the-mac)
-and its [Linux section](otata-via-ssh.md#on-linux).
+`otata stop` unloads the unit but leaves it installed. `otata start`, `otata publish` and `otata doctor --fix` bring it back. `brew upgrade` stops it too, because Homebrew runs the old cask's uninstall steps, and it returns at next login or with `otata start`. Without autostart, the only server is a foreground `otata serve`, which lives as long as its terminal.
+
+There's one unit per user, tied to the `OTATA_ROOT` and `OTATA_PORT` it was installed with. A shell with a different root sees autostart off, can't stop that unit, and is refused `autostart on`.
+
+To leave a machine serving unattended, see [otata via SSH](otata-via-ssh.md).
 
 ## What's in `~/.otata`?
 
 | Path | Holds |
 | --- | --- |
 | `public/` | The only tree ever served: the index, and a directory per app with its page, manifest, icon and payload |
-| `state/` | App records and build markers; `tsnet/` holds the private Tailscale identity and certificate cache |
+| `state/` | App records and build markers, plus `tsnet/` with the private Tailscale identity and certificate cache |
 | `build/` | Archives, exports and the build log, per app |
 | `tmp/` | Where publishing stages a file before renaming it into `public/`, so a client can never fetch a half-written one |
 | `bin/` | A copy of the otata binary, present only when the installed one sits where the service manager cannot run it: a TCC-protected directory on a Mac, a path systemd refuses on Linux |
-| `config.json` | The port, serve path and selected transport |
+| `config.json` | The port, the selected transport, the Tailscale hostname and the manual proxy settings |
 | `server.log` | The background server's own log and its access log |
 
 ## Why not TestFlight or Firebase App Distribution?
 
-otata is much faster than TestFlight (even TestFlight Internal Testing!) and Firebase App Distribution, because those are intended
-as distribution channels for testing and involve additional costs of archiving, auth, uploads to Apple/Google servers, and their respective processing.
-Most notably, the required app archive for these paths *always* recompiles every app target, and is significantly slower than the incremental build that otata defaults to.
-For a real nine-target app, archiving took ~100s while incremental rebuild took ~4s.
-
-Of course, YMMV depending on your specific circumstances, so benchmarking the speed difference yourself is encouraged!
+otata is much faster than TestFlight (even Internal Testing!) and Firebase App Distribution. Those are distribution channels that archive, upload to Apple's or Google's servers, and process every build. The archive alone recompiles every target: on a real nine-target app it took ~100s, against ~4s for otata's default incremental build. YMMV, so benchmarking it yourself is encouraged!

@@ -1,27 +1,14 @@
 # Getting Started
 
-This guide sets up otata with Tailscale, on a Mac or a Linux machine, for iOS
-and Android. Serving through your own HTTPS proxy instead of Tailscale is covered in [manual transports](manual-transports.md).
-
-**Upgrading? Tailscale now serves at the node's root URL. Read the
-[tsnet upgrade steps](tailscale.md#upgrading-from-a-prefixed-tsnet-release), or
-the [host integration upgrade steps](tailscale.md#upgrading-from-the-host-integration)
-if you used an older host-backed release.**
+This guide sets up otata with Tailscale on a Mac or Linux machine, for iOS and Android. To serve through your own HTTPS proxy instead, see [manual transports](manual-transports.md).
 
 ## 1. Tailscale on your phone
 
-Install Tailscale [on your iPhone](https://tailscale.com/docs/install/ios) or
-[on your Android phone](https://tailscale.com/docs/install/android) and sign in
-to the tailnet you will enroll otata in.
+Install Tailscale [on your iPhone](https://tailscale.com/docs/install/ios) or [on your Android phone](https://tailscale.com/docs/install/android) and sign in to the tailnet you will enroll otata in.
 
-## 2. Turn on HTTPS certificates
+Then open the [Tailscale admin console](https://login.tailscale.com/admin/dns), go to **DNS**, and turn on **MagicDNS** and **HTTPS Certificates**. A new tailnet has HTTPS certificates off, and otata needs them to serve trusted HTTPS.
 
-Open the [Tailscale admin console](https://login.tailscale.com/admin/dns), go to **DNS**,
-and enable **HTTPS Certificates**. A new tailnet has them off, and
-otata needs them to serve trusted HTTPS. The same page has **MagicDNS**, which
-HTTPS certificates require, so turn that on too if it isn't already.
-
-## 3. Install otata
+## 2. Install otata
 
 On Mac:
 
@@ -41,73 +28,44 @@ Or, on either:
 go install github.com/jonathan-lor/otata@latest
 ```
 
-## 4. Enroll otata
+## 3. Enroll otata
+
+otata joins your tailnet as its own device, named `otata`. To pick another name, run `otata transport use tailscale --hostname <name>` first.
 
 ```sh
 otata autostart on
 otata transport login
 ```
 
-Open the printed login URL and enroll otata in the same tailnet as your phone.
-Approve the device if required. Run `otata status` and wait since
-first certificate issuance can take a minute. `otata doctor` will verify the
-served URLs. To customize the device name before starting, use
-`otata transport use tailscale --hostname otata-builds`.
+Open the printed login URL, enroll otata in the same tailnet as your phone, and approve the device if your tailnet requires it. Then wait for `otata status` to report ready, since the first certificate can take a minute.
 
-`autostart on` runs the file server under launchd on a Mac and under your
-own systemd on Linux, so it starts at login and comes back if it exits.
-Without it the server only lives as long as a foreground `otata serve`.
+`autostart on` runs the server under launchd on a Mac or your user's systemd on Linux, so it comes back at login and after a crash.
 
-On Linux, a user's systemd runs only while that user is logged in, an SSH
-session included, so a machine that should serve after a reboot with nobody
-logged in, or that you only ever reach over SSH, needs lingering turned on
-once:
+On Linux, turn on lingering once as well. Otherwise the server stops when your last session ends, SSH included, and doesn't start after a reboot until you log in:
 
 ```sh
 sudo loginctl enable-linger $USER
 ```
 
-## 5. iOS: sign the app with a paid team
+## 4. iOS: signing and Developer Mode
 
-Open the project in Xcode once, and under **Signing & Capabilities** select your
-team. This has to be a paid Apple Developer account ($99/year). iOS refuses to
-install a build signed by a free personal team over the air, and otata refuses
-to publish one as well instead of giving you a link that won't work.
+Open the project in Xcode once and select your team under **Signing & Capabilities**. It has to be a paid Apple Developer account ($99/year). otata refuses to publish a build signed by a free personal team, because iOS won't install it over the air.
 
-Connect the phone to the Mac once and let Xcode register it to the team.
-`otata publish` passes `-allowProvisioningUpdates`, so xcodebuild can create and
-update the provisioning profile on its own from then on, but it can only do that
-for a device the team already knows about.
+Connect the phone to the Mac once so Xcode registers it with the team. After that, `otata publish` keeps the provisioning profile up to date on its own.
 
-While you're here, answer the keychain prompt on the first local build with **Always Allow**.
-`codesign` blocks on that dialog, and you probably won't be there to click it during a remote publish.
+Do your first publish at the Mac and answer the keychain prompt with **Always Allow**. `codesign` waits on that dialog, and nobody will be there to click it during a remote publish.
 
-## 6. iOS: Developer Mode on your iPhone
+On the phone, turn on Settings -> Privacy & Security -> **Developer Mode**. The option only appears once the phone has been connected to a Mac running Xcode.
 
-Settings -> Privacy & Security -> **Developer Mode**. 
-If you don't see the option to enable Developer Mode, connect your phone to the Mac once.
-iOS only shows it after connecting to a Mac running Xcode.
+## 5. Android: a JDK and the SDK
 
-## 7. Android: a JDK and the SDK
+The project's own Gradle wrapper builds the app. It needs:
 
-The project's own Gradle wrapper does the building, and it needs a JDK 17 or
-newer (`java -version` says which you have) and the Android SDK. Set
-`ANDROID_HOME` to the SDK's directory, or let the project's `local.properties`
-name it in `sdk.dir`, which Android Studio writes for you. The SDK's
-build-tools are also what read the finished APK, so a machine with neither
-cannot publish an Android build at all.
+- **A JDK 17 or newer.** `java -version` says which you have.
+- **The Android SDK.** Set `ANDROID_HOME` to its directory, or let `sdk.dir` in the project's `local.properties` name it (Android Studio writes that for you). Accept its licenses once with `sdkmanager --licenses`, from `cmdline-tools/latest/bin` under the SDK, or with Android Studio's SDK Manager. Gradle then downloads whatever else the project asks for.
+- **A signing config for release builds.** Debug builds are signed with the machine's debug keystore, so `--config Debug` works on a fresh project. The default `Release` needs a `signingConfig` in the module's build script, because Android won't install an unsigned APK.
 
-Gradle downloads whatever platform and build-tools the project asks for, once
-the SDK's licenses are accepted: `sdkmanager --licenses`, from
-`cmdline-tools/latest/bin` under the SDK, or Android Studio's SDK Manager.
-
-A debug build is signed by the debug keystore every machine has, so
-`--config Debug` publishes from a fresh project with no setup. The default
-`Release` needs a `signingConfig` in the module's build script, because
-Android will not install an unsigned APK; until one exists, otata refuses a
-release build with `needs_setup` before running it.
-
-## 8. Publish
+## 6. Publish
 
 ```sh
 cd ~/path/to/MyApp
@@ -115,16 +73,9 @@ otata publish --platform ios       # on a Mac
 otata publish --platform android   # on a Mac or Linux; --config Debug on a fresh project
 ```
 
-Two URLs will be printed: one for the app you just ran `otata publish` for, and a root URL for every app you've published.
-Open up either on the phone and tap **Install**.
+otata prints two URLs: one for the app you just published and one listing every app. Open either on the phone and tap **Install**. An iPhone installs from there. On Android the browser downloads the APK, so tap the download if nothing opens on its own.
 
-On an iPhone, iOS installs from there. On an Android phone, the browser
-downloads the APK; tap the download if nothing opens on its own.
-
-And that's it! From here, it's just `otata publish --platform ios` or
-`otata publish --platform android` per build.
-
-As a reminder, otata includes an [agent skill](../skills/otata/SKILL.md).
+And that's it! From here, every build is just another `otata publish`. Your agent can run it for you with the [agent skill](../skills/otata/SKILL.md).
 
 ## When something goes wrong
 
@@ -132,5 +83,10 @@ As a reminder, otata includes an [agent skill](../skills/otata/SKILL.md).
 otata doctor --fix
 ```
 
-It'll repair what it can, then verify every URL and name anything still broken.
-[What exactly does doctor check?](FAQ.md#what-exactly-does-doctor-check) goes into more depth on `otata doctor`.
+It repairs what it can, then verifies every URL and names anything still broken. See [what doctor checks](FAQ.md#what-exactly-does-doctor-check) for the details. Past that, the logs say what happened:
+
+```sh
+tail -f ~/.otata/server.log                     # server and access log
+tail -50 ~/.otata/build/<slug>/xcodebuild.log   # or gradle.log for an Android build
+journalctl --user -u otata -n 50                # Linux: what systemd saw
+```

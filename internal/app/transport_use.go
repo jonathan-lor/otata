@@ -8,7 +8,6 @@ import (
 )
 
 // TransportSelection is what `otata transport use` was asked for.
-// The manual fields only apply to the manual transport.
 type TransportSelection struct {
 	Name       string
 	BaseURL    string
@@ -16,9 +15,8 @@ type TransportSelection struct {
 	Hostname   string
 }
 
-// UseTransport selects the transport every later command will serve through,
-// persists the choice, and restarts a server whose transport settings changed.
-// Pages are regenerated once the selected transport is ready.
+// UseTransport validates and saves a transport selection, restarting the
+// server if the change affects it.
 func (a *App) UseTransport(sel TransportSelection, progress func(string)) error {
 	if progress == nil {
 		progress = func(string) {}
@@ -29,7 +27,6 @@ func (a *App) UseTransport(sel TransportSelection, progress func(string)) error 
 	if sel.Name != "manual" && (sel.BaseURL != "" || sel.KeepPrefix) {
 		return cli.Fail(cli.CodeInvalidArgs, "--base-url and --keep-prefix apply only to manual")
 	}
-	// Everything gets validated before anything is changed.
 	var manual *config.Manual
 	switch sel.Name {
 	case "tailscale":
@@ -52,7 +49,6 @@ func (a *App) UseTransport(sel TransportSelection, progress func(string)) error 
 			WithHint("tailscale or manual")
 	}
 
-	// Build a Transport instance candidate for the requested transport
 	next := a.Config
 	next.Transport = sel.Name
 	if manual != nil {
@@ -63,21 +59,17 @@ func (a *App) UseTransport(sel TransportSelection, progress func(string)) error 
 	}
 	candidate := a.transportFor(next)
 
-	// The common sanity guard against letting a public transport through.
-	// Public transports are not yet supported.
 	if err := a.guard(candidate); err != nil {
 		return err
 	}
 
-	// The server strips whatever prefix the transport forwards, and reads that
-	// once at startup, so if this change moves it, the server is restarted
-	// below rather than left serving the old contract.
+	// The server reads the prefix and node settings at startup, so changing
+	// either restarts it.
 	previousPrefix := a.IncomingPrefix()
 	nodeChanged := (a.Config.Transport == "tailscale" || sel.Name == "tailscale") &&
 		(a.Config.Transport != sel.Name || a.Config.TSNetHostname() != next.TSNetHostname())
 
-	// Persist what was on disk plus this change, so an environment override for
-	// this one invocation does not become permanent.
+	// Save over what's on disk, so an OTATA_PORT override isn't persisted.
 	onDisk, err := config.LoadFile(a.Root)
 	if err != nil {
 		return cli.Failf(cli.CodeInternal, "%v", err)
@@ -99,8 +91,7 @@ func (a *App) UseTransport(sel TransportSelection, progress func(string)) error 
 				return err
 			}
 		} else {
-			// A foreground `otata serve` was stopped so it cannot keep serving the old contract.
-			// Only its own terminal can restart it, and a stopped server is a safe state.
+			// Only its own terminal can restart a foreground `otata serve`.
 			progress("the transport or incoming prefix changed; run 'otata serve' again to serve it")
 		}
 	}
@@ -111,7 +102,7 @@ func (a *App) UseTransport(sel TransportSelection, progress func(string)) error 
 		}
 		return nil
 	}
-	// Manifests embed the base URL, so switching transports invalidates every published app until something regenerates them.
+	// Manifests embed the base URL, so regenerate them now.
 	if tr, err := a.Transport(); err == nil {
 		if baseURL, err := tr.Ensure(a.Config.Port); err == nil {
 			if err := a.Reindex(baseURL); err != nil {

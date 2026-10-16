@@ -11,7 +11,7 @@ import (
 	"github.com/jonathan-lor/otata/internal/storage"
 )
 
-// deadPID is a pid that is certainly not running, like a child that has already been reaped.
+// deadPID returns the pid of a child that has already been reaped.
 func deadPID(t *testing.T) int {
 	t.Helper()
 	cmd := exec.Command("true")
@@ -21,8 +21,6 @@ func deadPID(t *testing.T) int {
 	return cmd.Process.Pid
 }
 
-// One rule decides whether a marker still means a build is running, and both
-// the publish lock and doctor's reconciliation use it.
 func TestMarkerStale(t *testing.T) {
 	now := time.Now()
 	live := artifact.Building{Slug: "a", Started: now.Add(-time.Minute), PID: os.Getpid()}
@@ -33,13 +31,12 @@ func TestMarkerStale(t *testing.T) {
 	if !markerStale(dead, now) {
 		t.Error("a marker whose process is gone was believed")
 	}
-	// PIDs are reused after a reboot. A marker older than any build could be
-	// is stale even when its pid happens to be alive again.
+	// A pid reused after a reboot can't keep an ancient marker alive.
 	reused := artifact.Building{Slug: "a", Started: now.Add(-maxBuildAge - time.Minute), PID: os.Getpid()}
 	if !markerStale(reused, now) {
 		t.Error("an ancient marker with a (reused) live pid was believed forever")
 	}
-	// A marker with no pid predates the check: only its age can be judged.
+	// A marker with no pid is judged by age alone.
 	legacyFresh := artifact.Building{Slug: "a", Started: now.Add(-time.Hour)}
 	legacyOld := artifact.Building{Slug: "a", Started: now.Add(-maxBuildAge - time.Hour)}
 	if markerStale(legacyFresh, now) || !markerStale(legacyOld, now) {
@@ -47,9 +44,7 @@ func TestMarkerStale(t *testing.T) {
 	}
 }
 
-// A process that exists but refuses the probe signal (another user's, which
-// is what pid 1 is to anyone but root) is alive. Reading the refusal as
-// "gone" would clear a marker whose publish is still running.
+// pid 1 belongs to root, so the probe signal gets EPERM.
 func TestProcessAliveTreatsAnotherUsersProcessAsAlive(t *testing.T) {
 	if !processAlive(1) {
 		t.Error("pid 1 was judged dead")
@@ -62,8 +57,6 @@ func TestProcessAliveTreatsAnotherUsersProcessAsAlive(t *testing.T) {
 	}
 }
 
-// A second publish of a slug that a live publish holds is refused with a code
-// an agent can wait on; one whose holder is gone is taken over.
 func TestClaimBuildRefusesALiveHolderAndTakesOverADeadOne(t *testing.T) {
 	store, err := storage.Open(t.TempDir())
 	if err != nil {
@@ -88,7 +81,7 @@ func TestClaimBuildRefusesALiveHolderAndTakesOverADeadOne(t *testing.T) {
 		t.Errorf("the holder's marker was disturbed: %+v", markers[slug])
 	}
 
-	// The holder dies without clearing; the next publish takes over.
+	// The holder dies without clearing its marker.
 	if err := store.ClearBuilding(slug); err != nil {
 		t.Fatal(err)
 	}
@@ -106,8 +99,6 @@ func TestClaimBuildRefusesALiveHolderAndTakesOverADeadOne(t *testing.T) {
 	}
 }
 
-// Forget while a live build holds the slug would be undone by that build
-// finishing, so it is refused with the same code.
 func TestForgetRefusesWhileBuilding(t *testing.T) {
 	store, err := storage.Open(t.TempDir())
 	if err != nil {

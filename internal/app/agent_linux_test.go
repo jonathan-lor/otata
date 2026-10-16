@@ -13,11 +13,8 @@ import (
 	"testing"
 )
 
-// hostileSpec carries what a home directory or install path can hold and a
-// unit file has to survive: spaces, an ampersand, angle brackets, quotes, a
-// backslash, a dollar and a percent, which is systemd's specifier character.
-// The program stays within what systemd will exec, which excludes quotes and
-// backslashes.
+// hostileSpec is full of characters a unit file has to survive. The program
+// avoids quotes and backslashes, which systemd won't exec.
 func hostileSpec(program string) agentSpec {
 	return agentSpec{
 		Program: program,
@@ -27,8 +24,6 @@ func hostileSpec(program string) agentSpec {
 	}
 }
 
-// What Install writes, Installed reads back exactly, and the unit carries the
-// two settings the promise rests on: back after a crash, and started at login.
 func TestUnitFileRoundTrips(t *testing.T) {
 	spec := hostileSpec("/opt/a & b %p ${HOME} <x>/otata")
 	unit, err := unitFile(spec)
@@ -53,12 +48,8 @@ func TestUnitFileRoundTrips(t *testing.T) {
 	}
 }
 
-// systemd's own parser is the oracle for the escaping. verify resolves the
-// program path and checks that it is executable, so a path that decoded
-// wrongly is reported as missing, and the check runs offline against a link
-// to this test binary under a hostile directory name. Skipped where
-// systemd-analyze or a session is absent, which is a machine that could not
-// run the unit either.
+// systemd-analyze verify is the oracle for the escaping. A program path that
+// decoded wrongly is reported as missing.
 func TestUnitFileIsReadBySystemdAsWritten(t *testing.T) {
 	if _, err := exec.LookPath("systemd-analyze"); err != nil {
 		t.Skip("systemd-analyze is not installed")
@@ -89,9 +80,8 @@ func TestUnitFileIsReadBySystemdAsWritten(t *testing.T) {
 			t.Fatal(err)
 		}
 		out, err := exec.Command("systemd-analyze", "--user", "verify", path).CombinedOutput()
-		// verify exits 0 while dropping a malformed Environment= line with
-		// "Invalid syntax, ignoring", so a complaint about this unit is a
-		// failure whatever the status. Other units' warnings name their own paths.
+		// verify exits 0 even when it drops a malformed line, so any complaint
+		// about this unit is a failure.
 		if err == nil {
 			for line := range strings.Lines(string(out)) {
 				if strings.HasPrefix(line, path) || strings.HasPrefix(line, unitName+":") {
@@ -105,17 +95,12 @@ func TestUnitFileIsReadBySystemdAsWritten(t *testing.T) {
 	if out, err := verify(hostileSpec(program)); err != nil {
 		t.Fatalf("systemd rejected the unit: %v\n%s", err, out)
 	}
-	// The oracle is live: the same unit naming a program that is not there is refused.
+	// Check that the oracle does reject a missing program.
 	if out, err := verify(hostileSpec(filepath.Join(dir, "missing"))); err == nil {
 		t.Errorf("systemd accepted a unit whose program does not exist:\n%s", out)
 	}
 }
 
-// systemd will not run a program from a path holding a quote or backslash, a
-// control character or invalid UTF-8, so Install says so up front as the
-// program's refusal, which is what sends EnableAutostart to a staged copy.
-// The same in any other value would have systemd drop the line, and no copy
-// would help, so that is an ordinary error.
 func TestUnitFileRefusesWhatSystemdCannotRun(t *testing.T) {
 	for _, program := range []string{`/x/Jon's tools/otata`, `/x/say "hi"/otata`, `/x/back\slash/otata`, "/x/new\nline/otata", "/x/\xff/otata"} {
 		_, err := unitFile(hostileSpec(program))
@@ -136,10 +121,8 @@ func TestUnitFileRefusesWhatSystemdCannotRun(t *testing.T) {
 	}
 }
 
-// The lexer reads systemd's own syntax, so a unit another hand has edited
-// reads as systemd reads it: single quotes, escapes outside quotes, several
-// assignments on one Environment= line, a prefix on the program, and an
-// empty ExecStart= or Environment= resetting the earlier ones.
+// A hand-edited unit, with single quotes, escapes, several assignments on one
+// line, an exec prefix, and empty assignments that reset earlier ones.
 func TestParseUnitFileReadsSystemdsOwnSyntax(t *testing.T) {
 	unit := `
 [Unit]
@@ -186,11 +169,10 @@ func TestUnitWords(t *testing.T) {
 		{`tab\there`, []string{"tab\there"}},
 		{`100%% "50%% off"`, []string{"100%", "50% off"}},
 		{"tab\tsplit", []string{"tab", "split"}},
-		// An escape systemd does not know is kept as written, backslash and
-		// all, so it neither joins two words nor eats a percent.
+		// Unknown escapes are kept as written.
 		{`a\ b`, []string{`a\ b`}},
 		{`x\%%`, []string{`x\%`}},
-		// An unbalanced quote is no value at all, as systemd drops it.
+		// systemd drops a value with an unbalanced quote.
 		{`"unterminated`, nil},
 		{`a 'b`, nil},
 		{``, nil},
@@ -203,9 +185,6 @@ func TestUnitWords(t *testing.T) {
 	}
 }
 
-// The words systemd prints for a unit's state, mapped onto the two questions
-// App asks: is the manager running it or trying to, and did the user switch
-// it off.
 func TestSystemdStateWords(t *testing.T) {
 	for state, want := range map[string]bool{
 		"active": true, "activating": true, "reloading": true,
@@ -226,13 +205,8 @@ func TestSystemdStateWords(t *testing.T) {
 	}
 }
 
-// A shell with no reachable user manager (cron, sudo -u, a container with
-// the home mounted) still has the unit file, which is what runs at next
-// login. Installed reads it and Remove deletes it, nothing is asked of a
-// manager that is not there, and the hint says why autostart is refused.
-// Answering with none in this state hid the unit and made `autostart off`
-// a no-op. The unit directory is redirected, so nothing here touches the
-// real one, and the manager is never spawned.
+// Without a reachable user manager (cron, sudo -u), the unit file can still be
+// read and removed. XDG_CONFIG_HOME is redirected, so the real unit is safe.
 func TestUnreachableManagerStillReadsAndRemovesTheUnit(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	spec := hostileSpec("/opt/otata")
@@ -277,8 +251,7 @@ func TestUnreachableManagerStillReadsAndRemovesTheUnit(t *testing.T) {
 		t.Error("Installed still reports the removed unit")
 	}
 
-	// A mask is the user's switch, not otata's unit: it reads as no unit,
-	// and Remove leaves it where it is.
+	// A user's mask reads as no unit, and Remove leaves it alone.
 	if err := os.Symlink(os.DevNull, path); err != nil {
 		t.Fatal(err)
 	}

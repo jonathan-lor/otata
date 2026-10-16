@@ -19,8 +19,7 @@ import (
 	"golang.org/x/net/html"
 )
 
-// Reindexing must update install links to the current base URL for Tailscale
-// and for manual proxies that strip or forward the configured prefix.
+// After a reindex, every install link resolves, for each kind of routing.
 func TestReindexedInstallURLsFollowTransportRouting(t *testing.T) {
 	t.Setenv("OTATA_PATH", "/obsolete-service-path")
 	for _, tc := range []struct {
@@ -49,7 +48,7 @@ func TestReindexedInstallURLsFollowTransportRouting(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			// App slugs are independent of the transport; "otata" must route to its app.
+			// A slug named "otata" must route to its app, not be taken for a prefix.
 			for _, r := range []artifact.Record{
 				{Slug: "otata", Platform: artifact.IOS, PayloadName: "App.ipa", BuiltAt: time.Now(), HasIcon: true},
 				{Slug: "droid", Platform: artifact.Android, PayloadName: "App.apk", BuiltAt: time.Now()},

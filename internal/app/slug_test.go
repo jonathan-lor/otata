@@ -9,9 +9,6 @@ import (
 	"github.com/jonathan-lor/otata/internal/storage"
 )
 
-// The default name is the directory's, and for any platform but iOS the
-// platform is appended, so one project's builds sit side by side. iOS keeps
-// the bare name every existing store already uses.
 func TestDefaultSlug(t *testing.T) {
 	cases := []struct {
 		dir      string
@@ -33,11 +30,6 @@ func TestDefaultSlug(t *testing.T) {
 	}
 }
 
-// One slug is one payload. The same project republishing the same platform
-// is the ordinary case; another project is refused as before; and the same
-// project's build for another platform is refused with the name it should
-// use instead, so an explicit --slug shared by both cannot make each publish
-// replace the other's.
 func TestCheckSlugRefusesAnotherPlatformsBuild(t *testing.T) {
 	store, err := storage.Open(t.TempDir())
 	if err != nil {

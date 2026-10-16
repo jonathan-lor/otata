@@ -9,8 +9,6 @@ import (
 	"testing"
 )
 
-// The plist embeds everything the agent needs to serve what the installing
-// command saw, and survives values launchctl would otherwise choke on.
 func TestLaunchPlistEmbedsRootAndPort(t *testing.T) {
 	raw := launchPlist(agentSpec{Program: "/Users/a & b/bin/otata", Root: "/Users/a & b/.otata", Port: 9123, Log: "/tmp/server.log"})
 	cmd := exec.Command("plutil", "-convert", "json", "-o", "-", "-")
@@ -39,16 +37,13 @@ func TestLaunchPlistEmbedsRootAndPort(t *testing.T) {
 	if len(plist.ProgramArguments) != 2 || plist.ProgramArguments[0] != "/Users/a & b/bin/otata" || plist.ProgramArguments[1] != "serve" {
 		t.Errorf("ProgramArguments = %v", plist.ProgramArguments)
 	}
-	// The dict form, not the plain true. A deliberate exit 0 must stay down.
+	// A deliberate exit 0 must stay down.
 	if plist.KeepAlive.SuccessfulExit == nil || *plist.KeepAlive.SuccessfulExit {
 		t.Error("KeepAlive.SuccessfulExit is not false")
 	}
 }
 
-// disabledIn parses `launchctl print-disabled` output, whose lines this is
-// copied from a real machine: `=> disabled`/`=> enabled` on current macOS,
-// with `=> true` the older spelling of disabled. Reading it wrong either
-// hides a Login Items toggle-off or reports every agent as disabled.
+// The output is copied from a real machine. Older macOS spells disabled as true.
 func TestDisabledIn(t *testing.T) {
 	const current = `	disabled services = {
 		"com.apple.Siri.agent" => disabled

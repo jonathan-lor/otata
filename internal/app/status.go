@@ -13,33 +13,22 @@ import (
 type StatusResult struct {
 	Root string `json:"root"`
 	Port int    `json:"port"`
-	// Version is this binary's; ServerVersion is what the running server
-	// reported. They can differ when an upgrade replaced the binary on disk and
-	// the long-lived server still runs the old image.
-	// ServerOutdated flags it so an agent doesn't need to compare strings.
+	// ServerVersion differs from Version when an upgrade replaced the binary
+	// under a running server, which ServerOutdated flags.
 	Version        string `json:"version"`
 	ServerVersion  string `json:"server_version,omitempty"`
 	ServerOutdated bool   `json:"server_outdated,omitempty"`
 	ServerRunning  bool   `json:"server_running"`
-	// ServerOtherRoot is set when an otata server holds the port but serves a
-	// different store, so "down" isn't read as "nothing there".
+	// ServerOtherRoot means an otata server for another root holds the port.
 	ServerOtherRoot bool `json:"server_other_root,omitempty"`
-	// Autostart is whether the server returns at login: the unit is installed.
-	// AutostartLoaded is whether the manager currently runs it: false after
-	// `otata stop`, which stops the unit but leaves it installed. One field
-	// answering the second question while labeled as the first made status say
-	// "off" about a server that would come back at next login.
+	// Autostart means the unit is installed. AutostartLoaded means the manager
+	// is running it, which `otata stop` turns off.
 	Autostart       bool `json:"autostart"`
 	AutostartLoaded bool `json:"autostart_loaded"`
-	// AutostartDisabled is set when the user has switched the unit off at the
-	// manager's own level: the Login Items toggle or `launchctl disable` on
-	// macOS, `systemctl --user disable` or `mask` on Linux. The definition
-	// alone says autostart is on, while nothing will run it at login until it
-	// is re-enabled, so the two cannot be conflated.
+	// AutostartDisabled means the user switched the installed unit off (Login
+	// Items, launchctl disable, systemctl disable or mask).
 	AutostartDisabled bool `json:"autostart_disabled,omitempty"`
-	// AutostartOtherRoot is set when the user's one unit serves a
-	// different root or port than this invocation, so "off" is not read as
-	// "nothing installed", and so it is clear why `autostart on` refuses.
+	// AutostartOtherRoot names what the user's one unit serves when it isn't this root.
 	AutostartOtherRoot string                       `json:"autostart_other_root,omitempty"`
 	AutostartProgram   string                       `json:"autostart_program,omitempty"`
 	AutostartStale     bool                         `json:"autostart_stale,omitempty"`
@@ -47,8 +36,7 @@ type StatusResult struct {
 	Apps               []artifact.Record            `json:"apps"`
 	Building           map[string]artifact.Building `json:"building,omitempty"`
 
-	// The supervisor's own words for the human rendering: what the unit is
-	// called, and where a disabled one is switched back on.
+	// For the human output.
 	kind, disabledHint string
 }
 
@@ -74,8 +62,7 @@ func (r StatusResult) Human(w io.Writer) {
 	if r.AutostartOtherRoot != "" {
 		cli.Line(w, "           the %s serves %s, not this root", kind, r.AutostartOtherRoot)
 	}
-	// Disabled trumps not-loaded. otata will not reload a disabled unit, so
-	// the not-loaded line's advice would prescribe a dead end.
+	// A disabled unit won't reload, so don't suggest 'otata start' for it.
 	switch {
 	case r.Autostart && r.AutostartDisabled:
 		cli.Line(w, "           \033[1;33mthe %s is disabled\033[0m; %s", kind, r.disabledHint)
@@ -85,8 +72,6 @@ func (r StatusResult) Human(w io.Writer) {
 	if r.AutostartStale {
 		cli.Line(w, "           \033[1;33mthe %s runs a stale copy\033[0m; re-run 'otata autostart on'", kind)
 	}
-	// "not ready", not "not wired": the detail line below says which, and a
-	// logged-out tailscale is not a wiring problem.
 	cli.Line(w, "transport: %s (%s) %s", r.Transport.Name, r.Transport.Visibility,
 		boolWord(r.Transport.Ready, "ready", "not ready"))
 	if r.Transport.BaseURL != "" {
@@ -112,7 +97,6 @@ func boolWord(b bool, yes, no string) string {
 func (a *App) Status() (*StatusResult, error) {
 	res := &StatusResult{Root: a.Root, Port: a.Config.Port,
 		Version: version.String(), Autostart: a.AutostartEnabled()}
-	// One probe answers running, other-root and version at once.
 	p, ok := a.probeServer("/")
 	res.ServerRunning = ok && p.Root == a.RootDigest()
 	if res.ServerRunning {

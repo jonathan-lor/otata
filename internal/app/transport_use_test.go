@@ -10,8 +10,7 @@ import (
 	"github.com/jonathan-lor/otata/internal/storage"
 )
 
-// freshApp is an App on a scratch root with nothing configured. Port 1 so a
-// probe, should one happen, finds nothing rather than a real server.
+// freshApp is an App on a scratch root, on port 1 where nothing listens.
 func freshApp(t *testing.T) *App {
 	t.Helper()
 	root := t.TempDir()
@@ -26,8 +25,6 @@ func freshApp(t *testing.T) *App {
 
 func quiet(string) {}
 
-// Selecting the manual transport persists exactly that selection and
-// regenerates the pages against its base URL.
 func TestUseTransportPersistsAndReindexes(t *testing.T) {
 	a := freshApp(t)
 	sel := TransportSelection{Name: "manual", BaseURL: "https://box.example.com/otata"}
@@ -41,7 +38,7 @@ func TestUseTransportPersistsAndReindexes(t *testing.T) {
 	if onDisk.Transport != "manual" || onDisk.Manual == nil || onDisk.Manual.BaseURL != sel.BaseURL {
 		t.Errorf("config on disk = %+v, want the manual selection", onDisk)
 	}
-	// The one-off port override must not have been persisted with it.
+	// freshApp's port 1 stands in for an override, which must not be saved.
 	if onDisk.Port != config.DefaultPort {
 		t.Errorf("port %d was persisted; the file should keep its own", onDisk.Port)
 	}
@@ -54,8 +51,6 @@ func TestUseTransportPersistsAndReindexes(t *testing.T) {
 	}
 }
 
-// A selection that is refused changes nothing: no config is written and no
-// page generated. The usage errors are the caller's, so they exit 2.
 func TestUseTransportRefusesBadSelectionsBeforeChangingAnything(t *testing.T) {
 	cases := []struct {
 		name string

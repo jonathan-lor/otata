@@ -27,9 +27,8 @@ func (a *App) serveTSNet(handler http.Handler) error {
 	defer local.Close()
 	localDone := make(chan error, 1)
 	nodeDone := make(chan error, 1)
-	// A successful local identity probe must imply the control API exists.
-	// The callback runs before tsnet initializes, preserving visibility during
-	// enrollment and slow startup without exposing a missing control receipt.
+	// Start the local listener only once the control API exists, so any server
+	// that answers a probe can also report its status.
 	go func() {
 		nodeDone <- tsnetnode.Run(ctx, tsnetnode.Options{
 			Dir:          a.tsnetDir(),
@@ -42,8 +41,7 @@ func (a *App) serveTSNet(handler http.Handler) error {
 	}()
 	select {
 	case <-ctx.Done():
-		// Keep the local identity listener alive until the node has released
-		// its state lock, so stop/start cannot race against that release.
+		// Keep answering locally until the node releases its state lock.
 		err = <-nodeDone
 	case err = <-localDone:
 		cancel()

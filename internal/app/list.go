@@ -14,16 +14,11 @@ type ListResult struct {
 	Apps     []artifact.Record            `json:"apps"`
 	Building map[string]artifact.Building `json:"building,omitempty"`
 	IndexURL string                       `json:"index_url,omitempty"`
-	// ServerRunning is whether the URL above answers right now. The list is
-	// read from disk and is correct either way (`stop` unpublishes nothing),
-	// but a URL printed for tapping must not look live when it is not.
+	// ServerRunning keeps the URL from looking live when the server is down.
 	ServerRunning bool `json:"server_running"`
 }
 
-// listColumns is the single format the header and every row go through, so a
-// column cannot be labeled at one width and printed at another. The size is
-// rendered to a string first for the same reason: "%6.1f MB" and a heading for
-// it would be two formats to keep in agreement.
+// listColumns formats the header and every row, so the widths always agree.
 const listColumns = "%-18s %-20s %-9s %-8s %-11s %9s  %-16s %s"
 
 func (r ListResult) Human(w io.Writer) {
@@ -31,8 +26,6 @@ func (r ListResult) Human(w io.Writer) {
 	if len(r.Apps) == 0 {
 		cli.Line(w, "nothing published yet; run 'otata publish' inside a project")
 	} else {
-		// Dim: a header is orientation, not content, findable when wanted,
-		// and ignorable once the columns are known.
 		cli.Line(w, "\033[2m"+listColumns+"\033[0m",
 			"SLUG", "APP", "VERSION", "CONFIG", "SIGNER", "SIZE", "COMMIT", "BUILT")
 	}
@@ -58,8 +51,7 @@ func (r ListResult) Human(w io.Writer) {
 	}
 }
 
-// orDash distinguishes an absent value from a blank one. A payload with no
-// readable signature has no signer recorded, which is not "signed by nobody".
+// orDash shows an unknown value as "-" rather than blank.
 func orDash(s string) string {
 	if s == "" {
 		return "-"

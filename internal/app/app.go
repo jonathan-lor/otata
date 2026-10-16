@@ -1,4 +1,5 @@
-// Package app brings everything together. It's the only place that knows about storage, transport, builder and render at the same time.
+// Package app implements the commands. It is the one package that ties
+// storage, transport, builder and render together.
 package app
 
 import (
@@ -29,15 +30,13 @@ type App struct {
 	Config config.Config
 	Store  *storage.Store
 
-	// transport is the selection Config describes, built once per process.
+	// transport caches the transport Config selects.
 	transport    transport.Transport
 	transportSet bool
 
-	// supervisor is the abstraction for how the background server is kept alive.
-	// launchd on macOS and the user's systemd on Linux.
+	// sup keeps the background server alive: launchd on macOS, systemd on Linux.
 	sup supervisor
-	// bindWait, when set, replaces every wait for a loaded unit to bind the
-	// port. Tests set it so a unit that never binds is judged in milliseconds.
+	// bindWait, when set, overrides every wait for a unit to bind the port.
 	bindWait time.Duration
 }
 
@@ -62,16 +61,8 @@ func Open() (*App, error) {
 	return &App{Root: root, Config: cfg, Store: store}, nil
 }
 
-// ---------- transport ----------
-
-/*
-selectTransport picks the transport WITHOUT the visibility guard. Callers
-needing only its metadata (the server asking which prefix is stripped) must
-work even when publishing through it would be refused, and must use the same
-rule Transport() does.
-
-The selection is read from config; fresh stores default to embedded Tailscale.
-*/
+// selectTransport returns the configured transport without Transport's
+// visibility guard, for callers that only need its metadata.
 func (a *App) selectTransport() transport.Transport {
 	if !a.transportSet {
 		a.setTransport(a.transportFor(a.Config))
@@ -79,13 +70,12 @@ func (a *App) selectTransport() transport.Transport {
 	return a.transport
 }
 
-// setTransport installs a transport already built from Config.
 func (a *App) setTransport(t transport.Transport) {
 	a.transport, a.transportSet = t, true
 }
 
-// transportFor is the one rule that turns a config into a transport. It is
-// passed a config so a selection can be validated before persisting it.
+// transportFor builds the transport cfg selects, or nil. It takes a config
+// rather than reading a.Config so a selection can be checked before it is saved.
 func (a *App) transportFor(cfg config.Config) transport.Transport {
 	switch cfg.Transport {
 	case "tailscale":
@@ -104,7 +94,7 @@ func (a *App) tsnetIdentity(cfg config.Config) tsnetnode.Identity {
 	return tsnetnode.Identity{Root: a.RootDigest(), Port: cfg.Port, Hostname: cfg.TSNetHostname()}
 }
 
-// Transport resolves the selected transport and enforces the visibility guard.
+// Transport returns the selected transport, refusing a public one.
 func (a *App) Transport() (transport.Transport, error) {
 	t := a.selectTransport()
 	if t == nil {
@@ -113,7 +103,7 @@ func (a *App) Transport() (transport.Transport, error) {
 			return nil, cli.Fail(cli.CodeNoTransport, "manual transport selected but no base URL configured").
 				WithHint("otata transport use manual --base-url https://example.com/otata")
 		default:
-			// A hand-edited config; the closed set is the same one 'transport use' accepts.
+			// Only a hand-edited config gets here.
 			return nil, cli.Failf(cli.CodeNoTransport, "config selects unknown transport %q", a.Config.Transport).
 				WithHint("run 'otata transport use tailscale' or 'otata transport use manual --base-url <url>'")
 		}
@@ -121,7 +111,7 @@ func (a *App) Transport() (transport.Transport, error) {
 	return t, a.guard(t)
 }
 
-// guard refuses a public transport. None ships with an access guard, so choosing one is refused.
+// guard refuses public transports, since none has an access guard yet.
 func (a *App) guard(t transport.Transport) error {
 	if t.Visibility() != transport.Public {
 		return nil
@@ -131,12 +121,8 @@ func (a *App) guard(t transport.Transport) error {
 		WithHint("use Tailscale or a private HTTPS proxy")
 }
 
-// ---------- server lifecycle ----------
-
-// RootDigest identifies this store by location. The server sends it on every
-// response and ServerRunning requires a match, so an otata server on the port
-// is not enough and must serve the tree publish writes into. Normalized so a
-// symlinked ~/.otata is one store and hashed so no local path rides in a header.
+// RootDigest identifies this store by its resolved path, hashed so no path
+// leaks into the server's response headers. ServerRunning requires a match.
 func (a *App) RootDigest() string { return rootDigest(a.Root) }
 
 func rootDigest(root string) string {
@@ -155,24 +141,16 @@ type serverProbe struct {
 	PID     int
 	Root    string // RootDigest of the store it serves
 	Version string // the build it is running, "" if it does not say
-	Status  int    // for the GET probeServer was asked to make
+	Status  int    // HTTP status for the probed path
 }
 
-// describe names the server for an error or a repair.
 func (p serverProbe) describe() string {
 	return fmt.Sprintf("an otata server for a different OTATA_ROOT (pid %d)", p.PID)
 }
 
-/*
-probeServer asks the listener to identify itself. ok means it is an otata
-server at all, and whether it is the right one is the caller's question.
-
-The identity headers ride on every response. 404s are included, so identity
-callers pass "/" and stay cheap in their polling loops. Status is only
-meaningful for a path the server is expected to serve, which under a
-keep-prefix manual transport is never the bare root since
-judging health by GET / declared every healthy keep-prefix server broken.
-*/
+// probeServer asks the listener on the port to identify itself. ok means it
+// is an otata server, whichever root it serves. Every response carries the
+// identity headers, even a 404, so callers that only want identity probe "/".
 func (a *App) probeServer(path string) (serverProbe, bool) {
 	client := &http.Client{Timeout: time.Second}
 	resp, err := client.Get(fmt.Sprintf("http://127.0.0.1:%d%s", a.Config.Port, path))
@@ -193,22 +171,19 @@ func (a *App) probeServer(path string) (serverProbe, bool) {
 	return p, true
 }
 
-// ServerRunning reports whether the server for THIS root is on the port, not
-// merely that something is listening, and not merely that otata is.
+// ServerRunning reports whether this root's server holds the port.
 func (a *App) ServerRunning() bool {
 	p, ok := a.probeServer("/")
 	return ok && p.Root == a.RootDigest()
 }
 
-// serverPID returns the pid of whichever otata server holds the port,
-// regardless of root. Stopping cares about ownership, not about which store.
+// serverPID returns the pid of whichever otata server holds the port, for any root.
 func (a *App) serverPID() (int, bool) {
 	p, ok := a.probeServer("/")
 	return p.PID, ok
 }
 
-// otherRootServer reports an otata server on the port that serves a different store.
-// This could be the state a stray OTATA_ROOT leaves, or a test run beside the real thing.
+// otherRootServer reports an otata server on the port that serves another root.
 func (a *App) otherRootServer() (serverProbe, bool) {
 	p, ok := a.probeServer("/")
 	if !ok || p.Root == a.RootDigest() {
@@ -217,8 +192,7 @@ func (a *App) otherRootServer() (serverProbe, bool) {
 	return p, true
 }
 
-// PortBusy reports whether anything at all holds the port, so a foreign
-// listener gets named rather than silently trusted or killed.
+// PortBusy reports whether anything at all is listening on the port.
 func (a *App) PortBusy() bool {
 	conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", a.Config.Port), 400*time.Millisecond)
 	if err != nil {
@@ -228,8 +202,6 @@ func (a *App) PortBusy() bool {
 	return true
 }
 
-// ---------- project identity ----------
-
 var nonSlug = regexp.MustCompile(`[^a-z0-9]+`)
 
 func Slugify(name string) string {
@@ -237,11 +209,8 @@ func Slugify(name string) string {
 	return strings.Trim(s, "-")
 }
 
-// DefaultSlug is the name a project publishes under when --slug is absent:
-// its directory name, and for every platform but iOS that name with the
-// platform appended, so a cross-platform project's builds sit side by side
-// (myapp and myapp-android) instead of overwriting each other. iOS keeps the
-// bare name.
+// DefaultSlug is the directory name, with the platform appended for anything
+// but iOS so one project's builds sit side by side (myapp, myapp-android).
 func DefaultSlug(dir string, platform artifact.Platform) string {
 	slug := Slugify(filepath.Base(dir))
 	if platform != artifact.IOS {
@@ -255,8 +224,7 @@ func DefaultSlug(dir string, platform artifact.Platform) string {
 func (a *App) CheckSlug(slug, projectPath string, platform artifact.Platform) error {
 	rec, ok, err := a.Store.Record(slug)
 	if err != nil {
-		// Failing open here lets a second project silently overwrite the first's
-		// published app, which is exactly what ProjectPath exists to prevent.
+		// Fail closed: an unreadable record could belong to another project.
 		return cli.Failf(cli.CodeSlugConflict,
 			"a record already exists for %q but cannot be read: %v", slug, err).
 			WithHint("run 'otata forget " + slug + "' to clear it, or pass --slug")
@@ -269,10 +237,6 @@ func (a *App) CheckSlug(slug, projectPath string, platform artifact.Platform) er
 			"slug %q already belongs to %s", slug, rec.ProjectPath).
 			WithHint("pass --slug to publish under a different name")
 	}
-	// One slug is one payload. The same project's build for another platform
-	// belongs beside this one, under the name DefaultSlug gives it, not in
-	// its place; an explicit --slug shared by both would otherwise make each
-	// publish silently replace the other's.
 	if rec.Platform != "" && rec.Platform != platform {
 		return cli.Failf(cli.CodeSlugConflict,
 			"slug %q holds this project's %s build; this is an %s build", slug, rec.Platform, platform).
@@ -281,7 +245,6 @@ func (a *App) CheckSlug(slug, projectPath string, platform artifact.Platform) er
 	return nil
 }
 
-// GitInfo reads what makes one build distinguishable from another at a glance.
 func GitInfo(dir string) (commit, branch string, dirty bool) {
 	run := func(args ...string) string {
 		cmd := exec.Command("git", args...)
@@ -298,9 +261,8 @@ func GitInfo(dir string) (commit, branch string, dirty bool) {
 	return
 }
 
-// Manifest is the plist iOS fetches to learn what it is installing.
-// Every interpolated value is XML-escaped and comes from the payload's Info.plist,
-// which is untrusted for --artifact and arbitrary otherwise.
+// Manifest is the plist iOS fetches to install r. Every value comes from the
+// payload's Info.plist, so all of them are XML-escaped.
 func Manifest(r artifact.Record, baseURL string) []byte {
 	appBase := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), r.Slug)
 	var assets strings.Builder

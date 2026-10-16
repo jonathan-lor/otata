@@ -14,16 +14,13 @@ import (
 	"github.com/jonathan-lor/otata/internal/storage"
 )
 
-// A background server exists only under launchd or systemd. With no agent installed for
-// this root, StartServer refuses and names the setup command.
-// Port 1 is used because nothing can be listening there.
 func TestStartServerRefusesWithoutAutostart(t *testing.T) {
 	root := t.TempDir()
 	store, err := storage.Open(root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	a := &App{Root: root, Store: store, Config: config.Config{Port: 1}}
+	a := &App{Root: root, Store: store, Config: config.Config{Port: 1}} // nothing listens on port 1
 
 	err = a.StartServer()
 	if err == nil {
@@ -46,8 +43,8 @@ func TestStopServerWaitsForEmbeddedNodeShutdown(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Otata", "1")
 		w.Header().Set("X-Otata-Root", a.RootDigest())
-		// No PID: if StopServer stops waiting too soon, it must fail instead
-		// of signaling the test process while the service is shutting down.
+		// No pid, so a StopServer that gives up too soon fails instead of
+		// signaling the test process.
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
@@ -57,8 +54,7 @@ func TestStopServerWaitsForEmbeddedNodeShutdown(t *testing.T) {
 		installed: &agentSpec{Root: a.Root, Port: a.Config.Port},
 	}}
 	sup.stop = func() error {
-		// Longer than the old three-second stop budget, within tsnet's
-		// five-second log-flush timeout. Unload can return before exit.
+		// Within tsnet's five-second close, and after Unload has returned.
 		timer := time.AfterFunc(3500*time.Millisecond, server.Close)
 		t.Cleanup(func() { timer.Stop() })
 		return nil

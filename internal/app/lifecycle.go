@@ -29,16 +29,14 @@ func (a *App) Serve() error {
 	return http.Serve(ln, srv)
 }
 
-// StartServer brings the server up through the service manager's unit, which is the only way a
-// background server exists. Everything that needs the server comes through
-// here. With no unit installed, it refuses and tells you the command to run.
+// StartServer brings the server up through its unit, the only way a background
+// server runs. With no unit installed, it refuses with the setup command.
 func (a *App) StartServer() error {
-	// One probe answers both "is ours up" and "is another root's there".
 	if p, ok := a.probeServer("/"); ok {
 		if p.Root == a.RootDigest() {
 			return nil
 		}
-		// Publish must not kill the server of another store because an environment variable was set in this shell.
+		// Never replace another root's server implicitly.
 		return cli.Failf(cli.CodeServerDown, "port %d is held by %s", a.Config.Port, p.describe()).
 			WithHint("run 'otata restart' to replace it with one for " + a.Root + ", or set OTATA_PORT to a free port")
 	}
@@ -54,19 +52,12 @@ func (a *App) StartServer() error {
 	return a.reloadAgent()
 }
 
-// StopServer stops *only* our server.
-// It identifies the process over HTTP instead of something like lsof,
-// since a process holding a port doesn't necessarily mean it's otata.
+// StopServer stops the otata server on the port, which it identifies over
+// HTTP, so it never signals another process.
 func (a *App) StopServer() error {
-	// The manager respawns anything we signal while it runs the unit, so
-	// while the unit is loaded, stopping goes through the manager, not a signal.
-	// The waits below ask whether ANY otata server still holds the port, not
-	// whether ours does. A server for another root never counts as running,
-	// and waiting on that would declare it stopped while it was still alive.
+	// Wait for any otata server to leave the port, not just this root's.
 	gone := func() bool { _, ours := a.serverPID(); return !ours }
-	// tsnet may spend up to five seconds flushing logs during Close. Keep
-	// waiting for local identity to disappear so restart cannot race the
-	// embedded node's state lock or report a healthy shutdown as a failure.
+	// tsnet can take five seconds to close, so the wait covers that.
 	waitForStop := func() bool {
 		deadline := time.Now().Add(10 * time.Second)
 		for {
@@ -80,9 +71,7 @@ func (a *App) StopServer() error {
 		}
 	}
 
-	// A server another root's unit keeps alive cannot be stopped from here.
-	// Signaling it only makes the manager respawn it, and removing the unit
-	// is that root's `autostart off`.
+	// Another root's unit would just respawn its server.
 	if spec, loaded := a.foreignAgentLoaded(); loaded {
 		if p, held := a.otherRootServer(); held && agentRootDigest(spec) == p.Root {
 			return cli.Failf(cli.CodeServerDown,

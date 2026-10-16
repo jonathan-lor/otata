@@ -7,7 +7,6 @@ import (
 	"time"
 )
 
-// One unit exists per user. Whether it belongs to this root is decided by what it embeds.
 func TestAgentMatches(t *testing.T) {
 	home, _ := os.UserHomeDir()
 	defaultRoot := filepath.Join(home, ".otata")
@@ -23,7 +22,6 @@ func TestAgentMatches(t *testing.T) {
 		{"same root and port", agentSpec{Root: other, Port: 8787}, other, 8787, true},
 		{"same root, other port", agentSpec{Root: other, Port: 8787}, other, 9000, false},
 		{"other root", agentSpec{Root: other, Port: 8787}, defaultRoot, 8787, false},
-		// Every unit this binary writes embeds the port, so one without is hand-made and claims nothing.
 		{"no embedded port never matches", agentSpec{Root: other}, other, 9000, false},
 		{"no embedded root means the default root", agentSpec{Port: 8787}, defaultRoot, 8787, true},
 		{"no embedded root is not a scratch root", agentSpec{Port: 8787}, other, 8787, false},
@@ -54,10 +52,6 @@ func TestDescribeAgent(t *testing.T) {
 	}
 }
 
-// The drift check hashes two binaries only when nothing cheaper settles it:
-// one file under two names is no drift, a size difference is, and the same
-// size and time is the same content, which is what the staged copy promises
-// by carrying its source's time.
 func TestFilesDiffer(t *testing.T) {
 	dir := t.TempDir()
 	write := func(name, body string) string {
@@ -78,8 +72,8 @@ func TestFilesDiffer(t *testing.T) {
 	if !filesDiffer(orig, write("shorter", "v1")) {
 		t.Error("a size difference went unnoticed")
 	}
-	// Same size, different content, different time: only hashing tells. The
-	// time is set explicitly; two writes in a row can share a timestamp tick.
+	// Same size, different content: only the hash tells. The time is set
+	// explicitly, since two writes in a row can share a timestamp.
 	info, _ := os.Stat(orig)
 	rebuilt := write("rebuilt", "binary-v2")
 	if err := os.Chtimes(rebuilt, info.ModTime().Add(time.Hour), info.ModTime().Add(time.Hour)); err != nil {

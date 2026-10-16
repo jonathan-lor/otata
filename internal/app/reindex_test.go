@@ -10,7 +10,6 @@ import (
 	"github.com/jonathan-lor/otata/internal/storage"
 )
 
-// The masthead names the host the phone reached, port and all.
 func TestHostOf(t *testing.T) {
 	cases := map[string]string{
 		"https://host.tailnet.ts.net/otata": "host.tailnet.ts.net",
@@ -25,9 +24,6 @@ func TestHostOf(t *testing.T) {
 	}
 }
 
-// A manifest is written only for the platform that installs from one. An
-// Android app's page links its payload, and a manifest beside it would be a
-// file nothing fetches that doctor would then go on to probe.
 func TestReindexWritesManifestsOnlyForIOS(t *testing.T) {
 	store, err := storage.Open(t.TempDir())
 	if err != nil {

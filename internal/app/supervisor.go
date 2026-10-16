@@ -1,13 +1,8 @@
 package app
 
-/*
-supervisor is whatever keeps the background server alive on this OS: launchd
-on macOS, the user's own systemd manager on Linux, nothing where neither is
-reachable.
-
-One unit exists per user, and it embeds the root, port and serve path it was
-installed with, so a unit for another root is not this root's autostart.
-*/
+// supervisor keeps the background server alive: launchd on macOS, the user's
+// systemd on Linux, or none. There is one unit per user, embedding the root
+// and port it was installed with.
 type supervisor interface {
 	// Available reports whether a service manager exists here at all.
 	Available() bool
@@ -15,38 +10,28 @@ type supervisor interface {
 	Kind() string
 	// Installed is the unit this user has, if any, and what it says it runs.
 	Installed() (agentSpec, bool)
-	// Loaded reports whether the manager is running the unit, or trying to,
-	// whoever it belongs to: the state in which signaling the server only
-	// gets it respawned.
+	// Loaded reports whether the manager is running the unit, whichever root it serves.
 	Loaded() bool
-	// Disabled reports whether the user switched the unit off at the
-	// manager's own level, so that it will not return at login, whether or
-	// not the manager would still load it now.
+	// Disabled reports whether the user switched the unit off in the manager.
 	Disabled() bool
 	// Enable clears that switch. Only an explicit `autostart on` may.
 	Enable()
-	// Install writes the unit's definition, replacing any, such that the
-	// manager would run it at next login. It loads nothing now. A program
-	// the manager cannot run from where it is may be refused up front, as
-	// an errAgentProgram.
+	// Install writes the unit to run at next login without loading it. It may
+	// refuse the program up front with errAgentProgram.
 	Install(spec agentSpec) error
-	// Load asks the manager to run the installed unit. Binding the port is
-	// no part of the answer; the caller waits for that.
+	// Load starts the installed unit. The caller waits for it to bind.
 	Load() error
-	// Unload stops the manager managing the unit, leaving it installed. Not
-	// loaded is not an error.
+	// Unload stops the unit and leaves it installed.
 	Unload() error
-	// Remove unloads the unit and deletes its definition. Nothing installed
-	// is not an error.
+	// Remove unloads and deletes the unit.
 	Remove() error
 	// StartHint is what to run when the server is down and no unit is installed.
 	StartHint() string
-	// DisabledHint is where the user switched the unit off, and how to switch it back.
+	// DisabledHint says how to undo the user's switch.
 	DisabledHint() string
 }
 
-// autostart is this process's supervisor, made on first use so an App built
-// by hand, as the tests do, gets the platform's without naming it.
+// autostart returns the supervisor, creating the platform's on first use.
 func (a *App) autostart() supervisor {
 	if a.sup == nil {
 		a.sup = newSupervisor()

@@ -18,12 +18,10 @@ import (
 	"github.com/jonathan-lor/otata/internal/atomicfile"
 )
 
-// unitName is the systemd unit, and its file's basename. systemd keys the
-// unit's enabled and masked state by name, so it must not change after release.
+// unitName must never change: systemd keys enabled and masked state by name.
 const unitName = "otata.service"
 
-// unitPath is where a user's own units live, and where `systemctl --user
-// mask` plants its link to /dev/null: $XDG_CONFIG_HOME/systemd/user.
+// unitPath is the unit file in $XDG_CONFIG_HOME/systemd/user.
 func unitPath() string {
 	dir, err := os.UserConfigDir()
 	if err != nil {
@@ -33,22 +31,18 @@ func unitPath() string {
 	return filepath.Join(dir, "systemd", "user", unitName)
 }
 
-// systemctlTimeout bounds every systemctl call. A wedged user bus must not
-// hang status, whichever question was being asked.
+// systemctlTimeout keeps a wedged user bus from hanging otata.
 const systemctlTimeout = 10 * time.Second
 
-// systemctl runs one `systemctl --user` query and returns what it printed on
-// stdout. The exit status rides along: is-enabled exits non-zero for a
-// disabled or masked unit, among others, and the word on stdout is the
-// answer either way.
+// systemctl runs a `systemctl --user` query. Its stdout matters even on a
+// non-zero exit, which is-enabled returns for a disabled unit.
 func systemctl(args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), systemctlTimeout)
 	defer cancel()
 	return exec.CommandContext(ctx, "systemctl", append([]string{"--user"}, args...)...).Output()
 }
 
-// systemctlRun is systemctl for the mutations, whose failure is explained by
-// what the CLI printed rather than by its exit status.
+// systemctlRun runs a `systemctl --user` change, returning its output as the error.
 func systemctlRun(args ...string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), systemctlTimeout)
 	defer cancel()
@@ -62,8 +56,6 @@ func systemctlRun(args ...string) error {
 	return err
 }
 
-// stderrWords is what a failed query printed, or the exec error when it
-// printed nothing.
 func stderrWords(err error) string {
 	if exit, ok := errors.AsType[*exec.ExitError](err); ok {
 		if msg := strings.TrimSpace(string(exit.Stderr)); msg != "" {
@@ -73,12 +65,8 @@ func stderrWords(err error) string {
 	return err.Error()
 }
 
-// newSupervisor is systemd wherever systemctl exists, and none where it does
-// not: a Linux with another init (WSL 1, Alpine, a slim container) has no
-// manager to install a unit into. Whether this process can reach the user's
-// manager is a separate question, asked once here. A shell with no session
-// behind it (cron, sudo -u, a container with the home mounted) cannot, and
-// the supervisor then answers from the unit file alone.
+// newSupervisor returns systemd where systemctl exists. If the user manager
+// can't be reached (cron, sudo -u), it still reads and removes the unit file.
 func newSupervisor() supervisor {
 	if _, err := exec.LookPath("systemctl"); err != nil {
 		return none{}
@@ -90,32 +78,21 @@ func newSupervisor() supervisor {
 	return s
 }
 
-// systemd is the Linux supervisor: a unit in the user's own manager, which
-// runs while the user has a session, as a launch agent runs while one is
-// logged into the console. The manager is asked what it is doing; the
-// definition is read from the file, which is what runs at next login.
+// systemd is the Linux supervisor, a unit in the user's systemd manager.
 type systemd struct {
-	// unreachable is why the probe found no user manager, or nil. The file
-	// still says what runs at next login and can still be removed, but
-	// nothing can be asked of the manager, so nothing is: every systemctl
-	// call answers with this instead of spawning. Answering with none in
-	// this state hid an installed unit and made `autostart off` a no-op.
+	// unreachable is why the user manager can't be reached, or nil. While set,
+	// every systemctl call returns it instead of running.
 	unreachable error
 
-	// The unit file, read once per process: status asks four times, and
-	// Install and Remove are what change it. They drop the memo.
+	// The unit file, read once. Install and Remove reset it.
 	spec     agentSpec
 	specOK   bool
 	specRead bool
-	// The word is-enabled printed, read once per process for the same
-	// reason: Disabled and DisabledHint both ask it. Install, Enable and
-	// Remove change it.
+	// is-enabled's answer, read once. Install, Enable and Remove reset it.
 	enabled     string
 	enabledRead bool
 }
 
-// query and run are systemctl and systemctlRun, or the probe's answer when
-// the manager was never reachable.
 func (s *systemd) query(args ...string) ([]byte, error) {
 	if s.unreachable != nil {
 		return nil, s.unreachable
@@ -141,8 +118,8 @@ func (s *systemd) Installed() (agentSpec, bool) {
 	return s.spec, s.specOK
 }
 
-// readUnitFile reads the installed unit. A masked unit is a link to
-// /dev/null at the same path, which reads as empty, and so as no unit.
+// readUnitFile reads the installed unit. A mask, a link to /dev/null, reads
+// as no unit.
 func readUnitFile() (agentSpec, bool) {
 	data, err := os.ReadFile(unitPath())
 	if err != nil {
@@ -151,11 +128,8 @@ func readUnitFile() (agentSpec, bool) {
 	return parseUnitFile(data)
 }
 
-// Loaded reports whether the manager is running the unit or trying to:
-// active, or activating between the restarts Restart=on-failure schedules.
-// Signaling the server in either state only gets it respawned, so stopping
-// goes through the manager. A unit that hit its start limit is failed, and
-// not loaded: the caller's answer to an unloaded unit is Load.
+// Loaded includes activating, between Restart=on-failure restarts. A unit
+// that hit its start limit is failed, and not loaded.
 func (s *systemd) Loaded() bool {
 	out, err := s.query("show", "-p", "ActiveState", "--value", unitName)
 	if err != nil {
@@ -172,15 +146,11 @@ func activeStateLoaded(state string) bool {
 	return false
 }
 
-// Disabled reads what `systemctl --user disable` and `mask` leave behind. A
-// disabled unit has lost the link that starts it at login; a masked one
-// cannot be started at all. Either is the user's switch, so either breaks
-// what autostart promises, and neither is touched anywhere but Enable.
+// Disabled reports a unit the user disabled or masked.
 func (s *systemd) Disabled() bool { return enabledStateDisabled(s.enabledState()) }
 
-// enabledStateDisabled reads the word is-enabled prints. Everything else it
-// can say (enabled, static, linked, alias, indirect, not-found) leaves the
-// unit startable, and starting at login where a link exists.
+// enabledStateDisabled reads is-enabled's output. Only disabled and masked
+// keep a unit from returning at login.
 func enabledStateDisabled(state string) bool {
 	return state == "disabled" || strings.HasPrefix(state, "masked")
 }
@@ -194,28 +164,16 @@ func (s *systemd) enabledState() string {
 	return s.enabled
 }
 
-// Enable clears both of the user's switches: unmask, then enable, which
-// rewrites the login link that disable removed. Both are no-ops when
-// nothing was switched off.
+// Enable undoes a mask and a disable. Both are no-ops otherwise.
 func (s *systemd) Enable() {
 	s.enabledRead = false
 	_ = s.run("unmask", unitName)
 	_ = s.run("enable", unitName)
 }
 
-// Install writes the unit and enables it, so that after Install the manager
-// would run it at next login, as it would a plist in LaunchAgents. On systemd
-// the file alone is only known by name; the default.target.wants link that
-// `enable` writes is what starts it. daemon-reload comes between, or `start`
-// would not find a new unit and would run the old definition of a changed
-// one. The write is atomic, so a torn unit is never what the manager reads.
-// A failure after the write leaves the file, and the caller removes it: a
-// file with no login link would read as autostart on for a unit that never
-// returns.
-//
-// A program systemd would refuse is refused here, as the program's refusal,
-// so the caller can stage a copy where the manager accepts one rather than
-// learn it from `start` failing on a bad unit file.
+// Install writes the unit, reloads systemd so start sees the new definition,
+// and enables it, since only the enable link starts it at login. On a failure
+// after the write, the caller removes the file.
 func (s *systemd) Install(spec agentSpec) error {
 	if s.unreachable != nil {
 		return s.unreachable
@@ -235,17 +193,14 @@ func (s *systemd) Install(spec agentSpec) error {
 	return s.run("enable", unitName)
 }
 
-// Load asks the manager to start the unit. A unit that hit its start limit
-// is refused a start until the limit's interval has passed, and only
-// reset-failed flushes the counter, so that runs first: the way back should
-// not be a wait nobody was told about.
+// Load resets the failure count first, so a unit at its start limit can
+// start again.
 func (s *systemd) Load() error {
 	_ = s.run("reset-failed", unitName)
 	return s.run("start", unitName)
 }
 
-// Unload stops the unit and leaves it installed and enabled: down now, back
-// at login, which is what `otata stop` means.
+// Unload stops the unit and leaves it enabled, so it returns at login.
 func (s *systemd) Unload() error {
 	if !s.Loaded() {
 		return nil
@@ -253,11 +208,8 @@ func (s *systemd) Unload() error {
 	return s.run("stop", unitName)
 }
 
-// Remove takes the unit out entirely: stopped, its login link dropped, the
-// file deleted, and the manager told, so nothing of it lingers in memory as
-// a failed unit. disable runs before the delete because it reads the file's
-// [Install] section to learn which link to drop. A mask at the path is the
-// user's switch, not otata's unit, and stays.
+// Remove stops, disables and deletes the unit. disable runs first because it
+// reads the file's [Install] section. A user's mask stays.
 func (s *systemd) Remove() error {
 	s.specRead, s.enabledRead = false, false
 	_ = s.run("stop", unitName)
@@ -273,8 +225,6 @@ func (s *systemd) Remove() error {
 	return nil
 }
 
-// StartHint says how to get a server when none is installed, or, when the
-// manager cannot be reached from this shell, why that is and where it can.
 func (s *systemd) StartHint() string {
 	if s.unreachable != nil {
 		return fmt.Sprintf("no systemd user manager is reachable from this shell (%s); run 'otata autostart on' from a login session, or 'otata serve' in a foreground terminal", s.unreachable)
@@ -282,8 +232,6 @@ func (s *systemd) StartHint() string {
 	return "run 'otata autostart on' once so the server runs under systemd --user, or 'otata serve' in a foreground terminal"
 }
 
-// DisabledHint names the switch that is set: a mask and a disable are undone
-// by different commands.
 func (s *systemd) DisabledHint() string {
 	if strings.HasPrefix(s.enabledState(), "masked") {
 		return "run 'systemctl --user unmask " + unitName + "'"
@@ -291,24 +239,10 @@ func (s *systemd) DisabledHint() string {
 	return "run 'systemctl --user enable " + unitName + "'"
 }
 
-// ---------- the unit file ----------
-
-// unitFile builds the unit. Its values follow two quoting rules, and they
-// differ. ExecStart= and Environment= are split into words, so a value is
-// wrapped in double quotes with backslash and quote escaped; the log path
-// after append: is the rest of the line, taken as it is. Specifiers (%)
-// expand in all three, so a literal percent is doubled everywhere. $ is
-// left alone: Environment= expands no variables, and the program named by
-// ExecStart= may not be one, so both take it literally.
-//
-// Restart=on-failure is the nearest thing to KeepAlive with SuccessfulExit
-// false: a crash or a non-zero exit brings the server back. It is not the
-// same thing. systemd counts SIGHUP, SIGINT, SIGTERM and SIGPIPE as clean
-// exits, so a server something else terminates stays down until the next
-// login, where launchd would respawn it. otata's own stop goes through the
-// manager and never depends on that. The start limit is left at systemd's
-// default; a unit that gives up is "installed but not loaded", which status
-// reports with the command that reloads it.
+// unitFile builds the unit. ExecStart= and Environment= values are quoted
+// words, the append: log path is taken raw, and % is doubled everywhere.
+// Restart=on-failure approximates launchd's KeepAlive, but systemd treats a
+// SIGTERM or SIGHUP exit as clean and doesn't restart it.
 func unitFile(spec agentSpec) ([]byte, error) {
 	if err := unitSafe(spec); err != nil {
 		return nil, err
@@ -327,12 +261,9 @@ func unitFile(spec agentSpec) ([]byte, error) {
 	return []byte(b.String()), nil
 }
 
-// unitSafe refuses what a unit file cannot carry. systemd will not run a
-// program from a path holding a quote, a backslash or a control character,
-// however it is escaped, nor one that is not UTF-8: that is the manager
-// refusing the program, and the caller's answer is a copy elsewhere. In any
-// other value a control character or invalid UTF-8 has systemd drop the line
-// or the assignment, and no copy would help, so that is an ordinary error.
+// unitSafe refuses what a unit can't carry. A program path systemd won't run
+// is errAgentProgram, so the caller can try a copy. Bad bytes in any other
+// value are a plain error.
 func unitSafe(spec agentSpec) error {
 	unsafe := func(s string) bool { return strings.ContainsFunc(s, unicode.IsControl) || !utf8.ValidString(s) }
 	if strings.ContainsAny(spec.Program, `"'\`) || unsafe(spec.Program) {
@@ -352,19 +283,12 @@ func unitWord(s string) string {
 	return `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`, "%", "%%").Replace(s) + `"`
 }
 
-// unitRaw escapes a value systemd takes whole, where only the specifier
-// character means anything.
+// unitRaw escapes a value systemd takes whole.
 func unitRaw(s string) string { return strings.ReplaceAll(s, "%", "%%") }
 
-// parseUnitFile reads the definition back out of the file. The file rather
-// than `systemctl show`: the file is what runs at next login, where show
-// reports the copy in memory, and show's ExecStart is a structured dump
-// rather than the line. The lexer follows systemd's quoting for a well-formed
-// value, which every value this package writes is. A hand-edited value that
-// is malformed can read differently: an unbalanced quote drops the value
-// here as it does there, but an unknown escape is kept verbatim as systemd
-// keeps it in ExecStart=, where in Environment= systemd drops the whole
-// assignment, and a line continuation is not joined.
+// parseUnitFile reads the unit back from the file, which is what runs at next
+// login, rather than from systemctl show. It follows systemd's quoting for
+// any value unitFile writes.
 func parseUnitFile(data []byte) (agentSpec, bool) {
 	var spec agentSpec
 	section := ""
@@ -386,16 +310,15 @@ func parseUnitFile(data []byte) (agentSpec, bool) {
 		key, value = strings.TrimSpace(key), strings.TrimSpace(value)
 		switch key {
 		case "ExecStart":
-			// An empty ExecStart= resets the list, which is systemd's way of
-			// letting a later line replace an earlier one.
+			// An empty ExecStart= resets the list.
 			spec.Program = ""
 			if words := unitWords(value); len(words) > 0 {
-				// The prefixes systemd allows before the path (-, @, :, +, !, |) are not part of it.
+				// Strip systemd's exec prefixes (-, @, :, +, !, |).
 				spec.Program = strings.TrimLeft(words[0], "-@:+!|")
 			}
 		case "Environment":
 			if value == "" {
-				// An empty Environment= resets the list, as an empty ExecStart= does.
+				// An empty Environment= resets the list too.
 				spec.Root, spec.Port = "", 0
 			}
 			for _, w := range unitWords(value) {
@@ -416,11 +339,8 @@ func parseUnitFile(data []byte) (agentSpec, bool) {
 	return spec, spec.Program != ""
 }
 
-// unitWords splits a setting's value as systemd does: on whitespace, with
-// double or single quotes grouping a word, backslash escapes honored inside
-// and outside quotes, and %% for a literal percent. An unbalanced quote is
-// no value at all, and an escape systemd does not know is kept as written,
-// backslash and all.
+// unitWords splits a value into words as systemd does. An unbalanced quote
+// yields nothing, and an unknown escape is kept as written.
 func unitWords(s string) []string {
 	var words []string
 	var w strings.Builder
@@ -463,9 +383,7 @@ func unitWords(s string) []string {
 	return words
 }
 
-// unescape is the character a backslash escape stands for, and whether
-// systemd knows the escape: its C escapes, \s for a space, and the three
-// characters that quote or escape.
+// unescape decodes a backslash escape, reporting whether systemd knows it.
 func unescape(c byte) (byte, bool) {
 	switch c {
 	case 'n':
@@ -490,6 +408,5 @@ func unescape(c byte) (byte, bool) {
 	return c, false
 }
 
-// unspecify undoes the one specifier escape this package writes. Any other
-// %x is a specifier only systemd can expand, and is left as written.
+// unspecify undoes %%, the only specifier escape unitFile writes.
 func unspecify(s string) string { return strings.ReplaceAll(s, "%%", "%") }

@@ -16,8 +16,6 @@ import (
 	"github.com/jonathan-lor/otata/internal/storage"
 )
 
-// The publish result speaks the same units and names as the record and the
-// listings: bytes beside the megabytes older callers read, and the platform.
 func TestPublishResultJSONMatchesTheRecord(t *testing.T) {
 	out, err := json.Marshal(PublishResult{Platform: artifact.IOS, SizeBytes: 15 << 20, SizeMB: 15})
 	if err != nil {
@@ -30,8 +28,7 @@ func TestPublishResultJSONMatchesTheRecord(t *testing.T) {
 	}
 }
 
-// A zero CertExpires, the normal state on a node that only serves, must not
-// reach an agent as the year 0001.
+// A zero CertExpires must not serialize as the year 0001.
 func TestZeroCertExpiryIsOmittedFromJSON(t *testing.T) {
 	s := appmeta.Signing{ProfileExpires: time.Now(), Expires: time.Now(), Binder: appmeta.BinderProfile}
 	out, err := json.Marshal(PublishResult{Signing: &s})
@@ -46,8 +43,7 @@ func TestZeroCertExpiryIsOmittedFromJSON(t *testing.T) {
 	if !strings.Contains(string(out), "cert_expires") {
 		t.Errorf("a real cert_expires was dropped: %s", out)
 	}
-	// An Android build's signing is identity alone: no date of any kind
-	// reaches the caller, and the signer does.
+	// Android signing has no dates, only the signer.
 	out, _ = json.Marshal(PublishResult{Signing: &appmeta.Signing{Signer: "Android Debug", Fingerprint: "4f9c"}})
 	for _, absent := range []string{"expires", "binder", "team", "profile"} {
 		if strings.Contains(string(out), absent) {
@@ -59,8 +55,6 @@ func TestZeroCertExpiryIsOmittedFromJSON(t *testing.T) {
 	}
 }
 
-// The title an --artifact publish prints comes out of the payload's own
-// Info.plist. It must not be able to drive the terminal it is printed on.
 func TestHumanOutputStripsHostileTitle(t *testing.T) {
 	res := PublishResult{Title: "App\x1b]0;owned\x07\x1b[31m", Version: "1", Build: "1",
 		InstallURL: "https://host/otata/app/", IndexURL: "https://host/otata/"}
@@ -80,8 +74,6 @@ func TestPublishHumanShowsSigningOnlyWhenItMatters(t *testing.T) {
 		InstallURL: "https://host/otata/myapp/", IndexURL: "https://host/otata/",
 	}
 
-	// The ordinary publish: a deadline months out says nothing, so the URLs
-	// stay the last thing printed and the output doesn't get noisy.
 	var quiet bytes.Buffer
 	base.Human(&quiet)
 	if strings.Contains(quiet.String(), "Signing") {
@@ -95,17 +87,13 @@ func TestPublishHumanShowsSigningOnlyWhenItMatters(t *testing.T) {
 	if !strings.Contains(loud.String(), "in 12 days") {
 		t.Errorf("a warning did not reach the output:\n%s", loud.String())
 	}
-	// The install URL is what a publish is for; a warning must not displace it.
 	if !strings.Contains(loud.String(), base.InstallURL) {
 		t.Errorf("the install URL went missing:\n%s", loud.String())
 	}
 }
 
-// The first signal cancels the build's context and is remembered, so Publish
-// can report the stop with the shell's exit status for it. The process itself
-// survives: the signal is delivered to this test binary, and Notify is what
-// keeps it from being fatal. A second signal would exit at once, so only one
-// is sent.
+// The signal goes to this test binary, which Notify keeps alive. Only one is
+// sent, since a second would exit.
 func TestFirstSignalCancelsTheBuildAndIsReported(t *testing.T) {
 	store, err := storage.Open(t.TempDir())
 	if err != nil {
@@ -131,8 +119,6 @@ func TestFirstSignalCancelsTheBuildAndIsReported(t *testing.T) {
 	}
 }
 
-// The exit status follows the shell's convention for a signalled process,
-// per signal, rather than 130 for everything.
 func TestSignalExit(t *testing.T) {
 	cases := map[os.Signal]int{syscall.SIGINT: 130, syscall.SIGTERM: 143, syscall.SIGHUP: 129}
 	for sig, want := range cases {
@@ -145,10 +131,6 @@ func TestSignalExit(t *testing.T) {
 	}
 }
 
-// What to build for is never discovered: a build without --platform is
-// refused, an unknown platform is named, and a builder mode the platform
-// does not have is refused too. All three are the caller's to fix, so they
-// exit 2, and all three arrive before anything is claimed, wired or written.
 func TestPublishRequiresAKnownPlatformToBuild(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -180,10 +162,7 @@ func TestPublishRequiresAKnownPlatformToBuild(t *testing.T) {
 	}
 }
 
-// A prebuilt payload says which platform it is, so --platform is not needed
-// with --artifact, and one that disagrees with the file is refused. The
-// platform step is passed when the failure that comes back is the
-// transport's, which is the next thing publish asks for.
+// Reaching the transport's no_transport error means the platform check passed.
 func TestArtifactPublishReadsThePlatformOffTheFile(t *testing.T) {
 	dir := t.TempDir()
 	ipa := filepath.Join(dir, "Demo.ipa")
@@ -210,8 +189,7 @@ func TestArtifactPublishReadsThePlatformOffTheFile(t *testing.T) {
 	}
 	for _, c := range cases {
 		a := freshApp(t)
-		// Selected but incomplete, so the transport refuses without probing
-		// for a tailscale CLI on the machine.
+		// A manual transport with no base URL refuses before any network work.
 		a.Config.Transport = "manual"
 		_, err := a.Publish(PublishOptions{Dir: dir, Artifact: c.artifact, Platform: c.platform}, quiet)
 		f := cli.AsFailure(err)
@@ -225,10 +203,6 @@ func TestArtifactPublishReadsThePlatformOffTheFile(t *testing.T) {
 	}
 }
 
-// Each platform selects its build in its own toolchain's terms, and the other
-// platform's flag is refused rather than ignored: a --scheme on an Android
-// build or a --module on an iOS one would otherwise select nothing, silently.
-// The refusal names the flag, and arrives before anything is claimed.
 func TestPublishRefusesTheOtherPlatformsSelectionFlags(t *testing.T) {
 	selection := []string{"--scheme", "--module", "--flavor"}
 	cases := []struct {
@@ -252,8 +226,7 @@ func TestPublishRefusesTheOtherPlatformsSelectionFlags(t *testing.T) {
 			continue
 		}
 		if c.flag == "" {
-			// The flags passed when whatever refused the publish was not
-			// about them: an empty directory has no project to build.
+			// An empty directory fails for having no project, not for the flags.
 			for _, flag := range selection {
 				if strings.Contains(f.Message, flag) {
 					t.Errorf("%s: refused for %s: %q", c.name, flag, f.Message)

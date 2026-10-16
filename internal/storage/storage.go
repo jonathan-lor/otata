@@ -1,4 +1,4 @@
-// Package storage owns the on-disk layout and is the single definition of it.
+// Package storage owns the on-disk layout under the otata root.
 package storage
 
 import (
@@ -19,21 +19,15 @@ import (
 
 type Store struct{ root string }
 
-// slugPattern is the only shape a slug may take, and is deliberately strict because
-// a slug becomes a path component AND a URL path segment, so anything that could
-// traverse, escape or need encoding is rejected.
-//
-// It accepts exactly what Slugify produces, alphanumeric at both ends, so a
-// derived slug always validates and an explicit --slug must look the same. A
-// looser validator would let the two disagree about what a slug is.
+// slugPattern is strict because a slug becomes both a path component and a
+// URL segment. It accepts exactly what Slugify produces.
 var slugPattern = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?$`)
 
 // ErrBadSlug is returned for any slug that is not a single safe path element.
 var ErrBadSlug = errors.New("slug must be 1-64 characters of a-z, 0-9 and dashes, starting and ending alphanumeric")
 
-// ValidateSlug guards every path this package builds. It lives here rather
-// than in the caller because this package owns the layout. A caller that
-// forgets to validate must not be able to write or delete outside the root.
+// ValidateSlug guards every path this package builds, so no caller can reach
+// outside the root.
 func ValidateSlug(slug string) error {
 	if !slugPattern.MatchString(slug) {
 		return fmt.Errorf("%q: %w", slug, ErrBadSlug)
@@ -41,11 +35,7 @@ func ValidateSlug(slug string) error {
 	return nil
 }
 
-// ---------- layout ----------
-
-// Every path under the root is spelled here and nowhere else. Only Public is
-// ever served; State names local paths; Tmp stages what becomes served; the
-// rest never enters the served tree at all.
+// Only Public is served. Tmp stages files on their way into it.
 func (s *Store) Public() string { return filepath.Join(s.root, "public") }
 func (s *Store) State() string  { return filepath.Join(s.root, "state") }
 func (s *Store) Tmp() string    { return filepath.Join(s.root, "tmp") }
@@ -53,8 +43,8 @@ func (s *Store) Tmp() string    { return filepath.Join(s.root, "tmp") }
 // TSNetDir locates private node state without creating the store.
 func TSNetDir(root string) string { return filepath.Join(root, "state", "tsnet") }
 
-// AppDir returns "" for an invalid slug. every caller that writes or deletes
-// checks ValidateSlug first, and this is the second line of defense.
+// AppDir returns "" for an invalid slug, a second line of defense after
+// ValidateSlug.
 func (s *Store) AppDir(slug string) string {
 	if ValidateSlug(slug) != nil {
 		return ""
@@ -62,8 +52,8 @@ func (s *Store) AppDir(slug string) string {
 	return filepath.Join(s.Public(), slug)
 }
 
-// BuildDir is a slug's scratch space for archives, exports and the build
-// log. "" for an invalid slug, as AppDir.
+// BuildDir holds a slug's archives, exports and build log, or is "" for an
+// invalid slug.
 func (s *Store) BuildDir(slug string) string {
 	if ValidateSlug(slug) != nil {
 		return ""
@@ -71,22 +61,18 @@ func (s *Store) BuildDir(slug string) string {
 	return filepath.Join(s.root, "build", slug)
 }
 
-// ServerLog is where the background server writes, its own log and the
-// access log in one file.
+// ServerLog holds the background server's own log and its access log.
 func (s *Store) ServerLog() string { return filepath.Join(s.root, "server.log") }
 
-// StagedBinary is where a copy of the otata binary goes when the installed
-// one sits where the service manager cannot run it. Under the root, which is never
-// inside a protected directory.
+// StagedBinary is where otata copies itself when the service manager can't
+// run the installed binary.
 func (s *Store) StagedBinary() string { return filepath.Join(s.root, "bin", "otata") }
 
-// TmpFile is a scratch path under Tmp. name should carry the slug, so two
-// publishes never share one.
+// TmpFile is a scratch path under Tmp. Include the slug in name.
 func (s *Store) TmpFile(name string) string { return filepath.Join(s.Tmp(), name) }
 
-// The served files. IndexPath is the one index; the rest live in an app's
-// directory and are "" for an invalid slug, or for a payload name that is not
-// a bare file name, so a hand-edited record cannot name a file elsewhere.
+// The served files. An app's file path is "" for an invalid slug or a name
+// that isn't a bare file name.
 func (s *Store) IndexPath() string                    { return filepath.Join(s.Public(), "index.html") }
 func (s *Store) AppIndexPath(slug string) string      { return s.appFile(slug, "index.html") }
 func (s *Store) ManifestPath(slug string) string      { return s.appFile(slug, "manifest.plist") }
@@ -111,13 +97,8 @@ func Open(root string) (*Store, error) {
 	return s, nil
 }
 
-// ---------- atomic writes ----------
-
-// writeAtomic stages into tmp and renames into place. tmp, never beside the
-// destination because the destination tree is served, and a staged file beside a
-// payload would be momentarily fetchable. It lives under the same root, hence
-// the same filesystem, which is what makes the rename atomic rather than a
-// copy so a phone can never observe a half-written file.
+// writeAtomic stages in Tmp rather than beside dest, where a staged file
+// would be served, then renames into place.
 func (s *Store) writeAtomic(dest string, write func(io.Writer) error) error {
 	return atomicfile.Write(s.Tmp(), dest, 0o644, write)
 }
@@ -130,8 +111,7 @@ func (s *Store) WriteFile(dest string, data []byte) error {
 	})
 }
 
-// CopyInto places the contents of src at dest atomically. Used for payloads,
-// which are large enough that a non-atomic copy would be observable.
+// CopyInto copies src to dest atomically.
 func (s *Store) CopyInto(dest, src string) error {
 	return s.writeAtomic(dest, func(w io.Writer) error {
 		f, err := os.Open(src)
@@ -143,8 +123,6 @@ func (s *Store) CopyInto(dest, src string) error {
 		return err
 	})
 }
-
-// ---------- records ----------
 
 func (s *Store) recordPath(slug string) (string, error) {
 	if err := ValidateSlug(slug); err != nil {
@@ -182,13 +160,11 @@ func (s *Store) Record(slug string) (artifact.Record, bool, error) {
 		return r, false, fmt.Errorf("record for %q is unreadable: %w", slug, err)
 	}
 	r.Slug = slug // the filename is authoritative
-	// A record with no platform is an iOS one: nothing else was ever written,
-	// and a hand-edited record must not lose its install link over it.
+	// Records from before Android are iOS.
 	if r.Platform == "" {
 		r.Platform = artifact.IOS
 	}
-	// Likewise a record with an icon but no name for it predates the name,
-	// when every icon was icon.png; spelled out so a JSON reader need not know.
+	// Spell out the icon name older records leave out.
 	r.IconName = r.IconFile()
 	return r, true, nil
 }
@@ -199,8 +175,7 @@ func (s *Store) Records() ([]artifact.Record, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Never nil. An empty store is [] in JSON, not null, so a caller counting
-	// apps need not special-case the first run.
+	// Never nil, so an empty store is [] in JSON.
 	out := []artifact.Record{}
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
@@ -217,8 +192,8 @@ func (s *Store) Records() ([]artifact.Record, error) {
 	return out, nil
 }
 
-// Remove deletes an app. The slug check is not optional here. This calls
-// RemoveAll, and an unvalidated slug of ".." would take the entire store with it.
+// Remove deletes an app. Its slug check matters most, since RemoveAll on ".."
+// would take the whole store.
 func (s *Store) Remove(slug string) error {
 	if err := ValidateSlug(slug); err != nil {
 		return err
@@ -239,8 +214,6 @@ func (s *Store) Remove(slug string) error {
 	return s.ClearBuilding(slug)
 }
 
-// ---------- build markers ----------
-
 func (s *Store) buildingPath(slug string) (string, error) {
 	if err := ValidateSlug(slug); err != nil {
 		return "", err
@@ -248,12 +221,8 @@ func (s *Store) buildingPath(slug string) (string, error) {
 	return filepath.Join(s.State(), slug+".building"), nil
 }
 
-// ClaimBuilding creates the marker only if none exists, so two publishes of one
-// slug cannot both believe they hold it. An existing marker comes back with
-// claimed=false and nothing is written, leaving the caller to decide whether its owner is
-// alive. O_EXCL makes the check and the write a single operation. A read followed
-// by a write would let both pass the read, and the first to finish would
-// clear the second's marker and offer a half-built app as installable.
+// ClaimBuilding creates the marker with O_EXCL, so two publishes can't both
+// claim it. An existing marker comes back with claimed false.
 func (s *Store) ClaimBuilding(b artifact.Building) (existing artifact.Building, claimed bool, err error) {
 	path, err := s.buildingPath(b.Slug)
 	if err != nil {
@@ -267,8 +236,7 @@ func (s *Store) ClaimBuilding(b artifact.Building) (existing artifact.Building, 
 	if errors.Is(err, fs.ErrExist) {
 		raw, readErr := os.ReadFile(path)
 		if readErr != nil {
-			// Gone between the two calls – the holder just finished. Report it
-			// as held anyway. The caller's retry will claim it.
+			// The holder just finished. Report it held, and the caller's retry claims it.
 			return existing, false, nil
 		}
 		_ = json.Unmarshal(raw, &existing)
@@ -290,8 +258,8 @@ func (s *Store) ClaimBuilding(b artifact.Building) (existing artifact.Building, 
 	return existing, true, nil
 }
 
-// ClearBuilding must run on failure as well as success, or a crashed build
-// leaves an app permanently displayed as in-progress.
+// ClearBuilding removes the marker. Publish clears it on failure as well as
+// success.
 func (s *Store) ClearBuilding(slug string) error {
 	path, err := s.buildingPath(slug)
 	if err != nil {
@@ -327,23 +295,19 @@ func (s *Store) Building() (map[string]artifact.Building, error) {
 	return out, nil
 }
 
-// PruneStalePayloads removes payloads left behind when an app is renamed, which
-// would otherwise accumulate silently inside the served directory. ext is
-// what marks a file as a payload, and is the platform's to say.
+// PruneStalePayloads removes the app's other payloads with extension ext,
+// which a renamed app leaves behind.
 func (s *Store) PruneStalePayloads(slug, keep, ext string) error {
 	return s.pruneAppFiles(slug, keep, func(name string) bool { return strings.HasSuffix(name, ext) })
 }
 
-// PruneStaleIcons removes an app's icons other than keep, which is empty when
-// the new build ships none. The icon's name carries its format, so a publish
-// whose icon changed format, or that has none now, would otherwise leave the
-// old one served beside the record that no longer names it.
+// PruneStaleIcons removes the app's icons other than keep, which is "" when
+// the new build has none.
 func (s *Store) PruneStaleIcons(slug, keep string) error {
 	return s.pruneAppFiles(slug, keep, func(name string) bool { return strings.HasPrefix(name, "icon.") })
 }
 
-// pruneAppFiles removes the files in an app's directory that match, keep
-// excepted. A directory that is not there has nothing to prune.
+// pruneAppFiles removes the app's files that match, except keep.
 func (s *Store) pruneAppFiles(slug, keep string, match func(name string) bool) error {
 	if err := ValidateSlug(slug); err != nil {
 		return err

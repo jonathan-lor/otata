@@ -9,9 +9,7 @@ import (
 	"path/filepath"
 )
 
-// agentSpec is what a supervisor's unit says it runs: the definition otata
-// writes and reads back. One unit exists per user, and it embeds the root
-// and port it was installed with.
+// agentSpec is what a unit runs, as otata writes it and reads it back.
 type agentSpec struct {
 	Program string
 	Root    string
@@ -19,15 +17,13 @@ type agentSpec struct {
 	Log     string
 }
 
-// agentMatches reports whether an installed unit serves this root and port and both must match exactly.
-// Every unit this binary writes embeds both, so one missing either is hand-made or foreign.
+// agentMatches reports whether spec serves this root and port. otata always
+// writes both, so a unit without a port matches nothing.
 func agentMatches(spec agentSpec, root string, port int) bool {
 	return agentRootDigest(spec) == rootDigest(root) && spec.Port == port
 }
 
-// agentRootDigest identifies the store an installed unit serves. A unit
-// with no OTATA_ROOT runs against the default root, because that is what the
-// binary defaults to.
+// agentRootDigest is the digest of the root spec serves, the default one if unset.
 func agentRootDigest(spec agentSpec) string {
 	root := spec.Root
 	if root == "" {
@@ -37,12 +33,8 @@ func agentRootDigest(spec agentSpec) string {
 	return rootDigest(root)
 }
 
-// filesDiffer reports whether two binaries differ in content, as cheaply as
-// it can be sure. One file under two names (a symlink beside its target) is
-// no difference; different sizes are; the same size and modification time is
-// the same content, which the staged copy keeps true by carrying its
-// source's time; only what is left is settled by hashing both. Hashing two
-// binaries on every `otata status` was most of what status cost.
+// filesDiffer reports whether two binaries differ, hashing only when the same
+// file, size and mtime checks can't settle it.
 func filesDiffer(a, b string) bool {
 	if a == b {
 		return false
@@ -50,8 +42,7 @@ func filesDiffer(a, b string) bool {
 	ia, errA := os.Stat(a)
 	ib, errB := os.Stat(b)
 	if errA != nil || errB != nil {
-		// A missing or unreadable file has no content to match; the
-		// digest of nothing differs from any binary's, as before.
+		// An unreadable file hashes to "", which no binary does.
 		return fileDigest(a) != fileDigest(b)
 	}
 	if os.SameFile(ia, ib) {
@@ -79,7 +70,7 @@ func fileDigest(path string) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-// describeAgent names what an agent serves, for a status line or a refusal.
+// describeAgent names the root and port spec serves.
 func describeAgent(spec agentSpec) string {
 	root := spec.Root
 	if root == "" {

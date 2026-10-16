@@ -1,7 +1,4 @@
-// Package appmeta reads identity, icon and signing out of a built app: what
-// the install surface, the manifest and doctor need. Open picks the reader
-// for a platform's payload; the iOS one works against an fs.FS rooted at the
-// .app inside an .ipa, read in place without unpacking it.
+// Package appmeta reads identity, icon and signing out of a built .ipa or .apk.
 package appmeta
 
 import (
@@ -19,25 +16,19 @@ import (
 	"time"
 )
 
-// Ceilings for data read out of a .ipa, untrusted when it arrives via
-// --artifact. Without them a 0.2 MB archive expands to hundreds: the icon is
-// streamed to disk twice, the plist held, piped to plutil, unmarshaled again.
+// Limits on what is read out of a payload, which is untrusted from --artifact.
 const (
 	maxPlistBytes = 4 << 20  // 4 MB; a real Info.plist is a few KB
 	maxIconBytes  = 16 << 20 // 16 MB; a real app icon is well under 2 MB
 
 	maxProfileBytes = 4 << 20 // 4 MB; a profile carrying a full device list is well under 1 MB
-	// maxProfileCerts bounds the per-certificate parse loop. The list comes
-	// out of the profile itself, so without a ceiling a crafted one turns a
-	// diagnostic into unbounded certificate parsing.
+	// maxProfileCerts caps how many of a profile's certificates are parsed.
 	maxProfileCerts = 64
 )
 
-// Info is an app's identity, as the pages and the manifest state it.
+// Info is an app's identity.
 type Info struct {
-	// Name is what the served payload is named after: the product's name on
-	// disk for an iOS app (MyApp, for Payload/MyApp.app), the label for an
-	// Android one, whose package name is a namespace rather than a name.
+	// Name names the served payload: MyApp for Payload/MyApp.app, or an APK's label.
 	Name     string
 	BundleID string
 	Title    string
@@ -45,8 +36,7 @@ type Info struct {
 	Build    string
 }
 
-// infoFrom pulls what the install surface and the manifest need out of a
-// decoded Info.plist, with a stand-in for anything a malformed one lacks.
+// infoFrom reads Info out of a decoded Info.plist.
 func infoFrom(name string, plist map[string]any) Info {
 	info := Info{
 		Name:     name,
@@ -60,8 +50,7 @@ func infoFrom(name string, plist map[string]any) Info {
 	return withDefaults(info)
 }
 
-// withDefaults fills what the pages and the manifest cannot do without,
-// for a payload whose metadata lacks it.
+// withDefaults fills in what a malformed payload leaves out.
 func withDefaults(info Info) Info {
 	if info.Title == "" {
 		info.Title = "App"
@@ -75,9 +64,8 @@ func withDefaults(info Info) Info {
 	return info
 }
 
-// decodePlist converts a plist of any encoding to JSON and parses that.
-// Info.plist in a built app is binary, and Go has no stdlib plist reader.
-// plutil ships with macOS, which iOS builds already require.
+// decodePlist parses a plist of any encoding through plutil, since a built
+// Info.plist is binary and Go has no plist reader.
 func decodePlist(raw []byte) (map[string]any, error) {
 	if _, err := exec.LookPath("plutil"); err != nil {
 		return nil, fmt.Errorf("Info.plist %w: it needs plutil, which macOS ships", ErrUnsupported)
@@ -90,7 +78,7 @@ func decodePlist(raw []byte) (map[string]any, error) {
 	cmd.Stdout = &out
 	cmd.Stderr = &errBuf
 	if err := cmd.Run(); err != nil {
-		// Include the exec error: when plutil fails without a word, stderr is empty and the message would otherwise end at the colon.
+		// Include err, since plutil can fail with nothing on stderr.
 		return nil, fmt.Errorf("could not decode Info.plist: %v %s", err, strings.TrimSpace(errBuf.String()))
 	}
 	var parsed map[string]any
@@ -100,9 +88,7 @@ func decodePlist(raw []byte) (map[string]any, error) {
 	return parsed, nil
 }
 
-// readLimited reads at most max bytes, and reports oversize instead of
-// truncating, since a truncated plist would fail to parse with a confusing
-// error.
+// readLimited reads name, failing rather than truncating past max bytes.
 func readLimited(app fs.FS, name string, max int64) ([]byte, error) {
 	f, err := app.Open(name)
 	if err != nil {
@@ -126,11 +112,8 @@ func str(m map[string]any, key string) string {
 	return ""
 }
 
-// findIcon picks the largest flat icon PNG in the bundle root.
-//
-// Xcode names these after the icon asset, not "AppIcon", and an Icon Composer
-// icon carries its own name, so prefixes come from Info.plist instead of a guess.
-// A miss is fine because the manifest's image assets are optional.
+// findIcon picks the largest flat icon PNG in the bundle root, matching the
+// icon names Info.plist declares, since Xcode doesn't always call it AppIcon.
 func findIcon(app fs.FS, plist map[string]any) string {
 	var prefixes []string
 	if icons, ok := plist["CFBundleIcons"].(map[string]any); ok {
@@ -177,9 +160,7 @@ func findIcon(app fs.FS, plist map[string]any) string {
 		if err != nil {
 			continue
 		}
-		// Size here is the archive's DECLARED uncompressed size, and the
-		// largest candidate wins, so without this bound a zip bomb is actively
-		// preferred over the real icon.
+		// The size is what the zip declares, so cap it or a zip bomb wins.
 		if info.Size() > maxIconBytes {
 			continue
 		}
@@ -192,14 +173,11 @@ func findIcon(app fs.FS, plist map[string]any) string {
 	return found[0].name
 }
 
-// ---------- icons ----------
-
 // pngSignature is the 8-byte header every PNG starts with.
 var pngSignature = []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}
 
 // pngFirstChunk returns the type of the first chunk in the PNG at path, or ""
-// for anything that is not a PNG. A standard PNG opens with IHDR; one that Xcode's
-// packaging has optimized opens with Apple's CgBI chunk instead.
+// if it isn't a PNG. Xcode's optimized PNGs open with CgBI instead of IHDR.
 func pngFirstChunk(path string) string {
 	f, err := os.Open(path)
 	if err != nil {
@@ -216,11 +194,8 @@ func pngFirstChunk(path string) string {
 	return string(head[12:16])
 }
 
-// normalizeIcon rewrites the icon at path into standard PNG when Xcode's
-// packaging has applied its iphone optimization (a CgBI chunk, byte-swapped
-// channels, premultiplied alpha). That form decodes only in iOS's own
-// frameworks. The revert runs on the Mac at publish, because pngcrush ships inside Xcode;
-// an error means the caller should ship no icon, since the placeholder renders and a crushed PNG does not.
+// normalizeIcon reverts Xcode's iPhone PNG optimization, which only iOS can
+// decode, with the pngcrush that ships with Xcode.
 func normalizeIcon(path string) error {
 	if pngFirstChunk(path) != "CgBI" {
 		return nil // standard PNG, or not a PNG at all; nothing to revert
@@ -236,8 +211,7 @@ func normalizeIcon(path string) error {
 		return fmt.Errorf("could not revert the icon's iphone optimization: %v %s",
 			err, strings.TrimSpace(errBuf.String()))
 	}
-	// pngcrush reports some failures only in prose, exiting 0, so the result
-	// is checked rather than trusted: what ships must open with IHDR.
+	// pngcrush can fail and still exit 0, so check the result.
 	if pngFirstChunk(out) != "IHDR" {
 		return fmt.Errorf("pngcrush did not produce a standard PNG from %s", path)
 	}
@@ -260,7 +234,7 @@ func copyOut(app fs.FS, name, dest string) error {
 		out.Close()
 		return err
 	}
-	// Report the close error. A failed flush would otherwise leave the caller believing a partial file is complete.
+	// A failed close can mean a partial file.
 	if err := out.Close(); err != nil {
 		return err
 	}

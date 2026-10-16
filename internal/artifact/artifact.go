@@ -1,5 +1,4 @@
-// Package artifact defines the one thing that moves through the system: a
-// built app plus what is needed to install and describe it.
+// Package artifact defines the record of a published build.
 package artifact
 
 import (
@@ -7,10 +6,7 @@ import (
 	"time"
 )
 
-// Platform is what a payload runs on. It is the switch for everything that
-// differs between them: how a build is packaged, how the phone installs it,
-// and what the pages and manifests say. One record holds one platform's
-// payload; a cross-platform project publishes one record per platform.
+// Platform is what a payload runs on. Each record holds one platform's build.
 type Platform string
 
 const (
@@ -26,15 +22,11 @@ func (p Platform) PayloadExt() string {
 	return ".ipa"
 }
 
-// InstallsFromManifest reports whether the phone installs from a manifest
-// that names the payload, which is iOS's itms-services route, rather than
-// by fetching the payload itself, which is Android's. It decides whether a
-// manifest is written, linked and probed at all.
+// InstallsFromManifest reports whether the phone installs through a manifest
+// (iOS) rather than by downloading the payload (Android).
 func (p Platform) InstallsFromManifest() bool { return p == IOS }
 
-// ParsePlatform reads a platform off the command line. The set is closed:
-// a platform is a case in every switch that keys on one, so an unknown name
-// is refused here rather than falling through all of them.
+// ParsePlatform reads a platform off the command line, refusing unknown ones.
 func ParsePlatform(s string) (Platform, error) {
 	switch p := Platform(s); p {
 	case IOS, Android:
@@ -43,20 +35,15 @@ func ParsePlatform(s string) (Platform, error) {
 	return "", fmt.Errorf("unknown platform %q; ios or android", s)
 }
 
-// Record is everything known about one published build. It is the unit stored
-// on disk and the unit rendered on the browser install surface.
+// Record is everything known about one published build.
 type Record struct {
 	Slug     string   `json:"slug"`
 	Platform Platform `json:"platform"`
 
 	Title    string `json:"title"`
 	BundleID string `json:"bundle_id"`
-	// Team is who signed an iOS build, copied off the payload's profile at
-	// publish. It is identity, not provenance: iOS installs TEAM.bundle-id, so
-	// two teams signing one bundle identifier are two different apps on the
-	// phone. Empty on a payload with no readable profile. Signer is Android's
-	// answer to the same question, the signing certificate's name, and a
-	// differently signed build cannot replace the installed one there either.
+	// Team is who signed an iOS build, and Signer an Android one. Both are
+	// empty for a payload with no readable signature.
 	Team    string `json:"team,omitempty"`
 	Signer  string `json:"signer,omitempty"`
 	Version string `json:"version"`
@@ -72,18 +59,15 @@ type Record struct {
 	PayloadName string    `json:"payload_name"`
 	SizeBytes   int64     `json:"size_bytes"`
 	HasIcon     bool      `json:"has_icon"`
-	// IconName is the icon's file in the app's directory, and its extension
-	// is the format: a PNG out of an iOS payload, WebP out of an Android one,
-	// served as it is because nothing here converts. Empty on a record from
-	// before the field existed, when every icon was icon.png.
+	// IconName is the icon's file name, which carries its format. Older records
+	// leave it empty, meaning icon.png.
 	IconName string `json:"icon_name,omitempty"`
 
 	// Recorded so a second project cannot silently claim an existing slug.
 	ProjectPath string `json:"project_path,omitempty"`
 }
 
-// SignedBy is who signed the build, whichever platform's answer that is, or
-// "" when the payload carried nothing readable.
+// SignedBy is Team or Signer, whichever is set.
 func (r Record) SignedBy() string {
 	if r.Team != "" {
 		return r.Team
@@ -91,9 +75,8 @@ func (r Record) SignedBy() string {
 	return r.Signer
 }
 
-// IconFile is the icon's name in the app's directory, or "" when the build
-// shipped none. Reading it here rather than the field is what keeps a record
-// written before IconName existed pointing at the icon it has.
+// IconFile is the icon's file name, or "" if there is none. Unlike IconName,
+// it covers older records.
 func (r Record) IconFile() string {
 	switch {
 	case !r.HasIcon:
@@ -113,19 +96,16 @@ func (r Record) CacheKey() string {
 	return fmt.Sprintf("%s-%s", commit, r.Build)
 }
 
-// SizeMB is what humans and pages want; disk reports bytes.
+// SizeMB is SizeBytes in megabytes.
 func (r Record) SizeMB() float64 {
 	return float64(r.SizeBytes) / (1024 * 1024)
 }
 
-// Building marks a build in flight. It's what lets the install
-// surface refuse to misrepresent freshness.
+// Building marks a build in progress.
 type Building struct {
 	Slug    string    `json:"slug"`
 	Started time.Time `json:"started"`
-	// PID of the publishing process. A marker whose process is gone is
-	// unambiguously stale, which is what lets doctor --fix clear one left
-	// behind by an interrupted build.
+	// PID is the publishing process, so a marker it left behind can be told stale.
 	PID    int    `json:"pid,omitempty"`
 	Config string `json:"config,omitempty"`
 	Commit string `json:"commit,omitempty"`

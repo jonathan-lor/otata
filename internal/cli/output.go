@@ -1,9 +1,5 @@
-// Package cli owns how commands talk to their caller.
-//
-// Output is formatted text unless --json is passed. The JSON form
-// is designed for agents to parse and provides stable error codes
-// and actionable details. Color follows the usual conventions of on when
-// stdout is a terminal, and off when it is not or NO_COLOR is set.
+// Package cli writes command output: text, in color on a terminal, or one
+// JSON envelope with --json.
 package cli
 
 import (
@@ -15,8 +11,7 @@ import (
 	"strings"
 )
 
-// Payload is what a command returns. Data carries the machine-readable result;
-// Human renders the same information for a person.
+// Payload is a command's result. It marshals to JSON, and Human prints it for people.
 type Payload interface {
 	Human(w io.Writer)
 }
@@ -28,14 +23,11 @@ type envelope struct {
 	Error   *Failure `json:"error,omitempty"`
 }
 
-// jsonOutput is set by --json. It is a process-wide setting because every
-// command emits through this package and the flag is global.
+// jsonOutput is set by --json for the whole process.
 var jsonOutput bool
 
-// SetJSON selects JSON output for the rest of the process.
 func SetJSON(on bool) { jsonOutput = on }
 
-// isTTY reports whether f looks like a terminal.
 func isTTY(f *os.File) bool {
 	info, err := f.Stat()
 	if err != nil {
@@ -44,8 +36,7 @@ func isTTY(f *os.File) bool {
 	return info.Mode()&os.ModeCharDevice != 0
 }
 
-// colorTo reports whether text written to f should carry ANSI color: only
-// when f is a terminal and NO_COLOR (no-color.org) is unset.
+// colorTo reports whether f gets color: it's a terminal and NO_COLOR is unset.
 func colorTo(f *os.File) bool {
 	if _, set := os.LookupEnv("NO_COLOR"); set {
 		return false
@@ -53,9 +44,7 @@ func colorTo(f *os.File) bool {
 	return isTTY(f)
 }
 
-// textWriter returns f, or f behind a filter that drops ANSI color when f
-// should not carry it. The human renderers write color unconditionally so
-// they stay simple; this is the one place that decides whether it survives.
+// textWriter strips the color the renderers always write, unless f should get it.
 func textWriter(f *os.File) io.Writer {
 	if colorTo(f) {
 		return f
@@ -72,18 +61,14 @@ func Emit(command string, data Payload) {
 	data.Human(textWriter(os.Stdout))
 }
 
-// EmitError writes a failure and returns the process exit code to use:
-// 2 when the command was called wrongly, 1 for everything else, unless the
-// failure carries its own (a signal's 128+N).
-// Text goes to stderr so a caller redirecting stdout still sees it.
-// JSON goes to stdout, where the caller is already parsing.
+// EmitError writes a failure and returns the exit code. Text goes to stderr,
+// and JSON to stdout, where the caller is already parsing.
 func EmitError(command string, err error) int {
 	return EmitFailure(command, nil, err)
 }
 
-// EmitFailure is EmitError for a command that ran to completion and still
-// failed, such as doctor with a failing check. The result travels with
-// the error so the caller sees what was checked, and ok/exit agree.
+// EmitFailure is EmitError for a failed command that has a result to show
+// too, like doctor.
 func EmitFailure(command string, data Payload, err error) int {
 	f := AsFailure(err)
 	if jsonOutput {
@@ -104,21 +89,19 @@ func EmitFailure(command string, data Payload, err error) int {
 func writeJSON(w io.Writer, v any) {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
-	// A serialization failure must not exit silently; the caller is parsing.
+	// Don't fail silently when the caller is parsing.
 	if err := enc.Encode(v); err != nil {
 		fmt.Fprintf(os.Stderr, "error: could not encode result: %v\n", err)
 	}
 }
 
-// Section and Line render the human form consistently across commands.
+// Section prints a heading in the human output.
 func Section(w io.Writer, title string) {
 	fmt.Fprintf(w, "\n\033[1;34m==>\033[0m \033[1m%s\033[0m\n", Clean(title))
 }
 
-// Line formats for a person. The format string is ours and may carry ANSI
-// color; the arguments are not. A display name comes out of an Info.plist,
-// untrusted for --artifact, so every string argument has its control
-// characters removed. JSON output is unaffected since the encoder escapes them.
+// Line prints a line for people. The format may carry color, but string
+// arguments are Cleaned, since they can come from an untrusted Info.plist.
 func Line(w io.Writer, format string, args ...any) {
 	cleaned := make([]any, len(args))
 	for i, arg := range args {
@@ -131,9 +114,8 @@ func Line(w io.Writer, format string, args ...any) {
 	fmt.Fprintf(w, "    "+format+"\n", cleaned...)
 }
 
-// Clean removes what a terminal would interpret: C0 controls other than newline
-// and tab, DEL, and the C1 range some terminals treat as 8-bit escapes. An ESC
-// in a title can retitle the window, hide the URL after it, or fake a line.
+// Clean removes the control characters a terminal would act on, keeping
+// newline and tab.
 func Clean(s string) string {
 	clean := true
 	for _, r := range s {
@@ -167,11 +149,8 @@ func isControl(r rune) bool {
 	return false
 }
 
-// stripANSI drops CSI sequences (ESC [ ... m, the color codes) from what
-// passes through it.
-// Arguments are already Cleaned of ESC, so the only sequences in the stream
-// are the ones our own format strings put there. A sequence split across two
-// writes is held back until it completes.
+// stripANSI drops CSI sequences, like the color codes, holding back one split
+// across two writes.
 type stripANSI struct {
 	w       io.Writer
 	pending []byte // an unfinished escape sequence from the previous write
@@ -191,8 +170,7 @@ func (s *stripANSI) Write(p []byte) (int, error) {
 			i++
 			continue
 		}
-		// A CSI sequence is ESC [ then parameter bytes, then a final byte in
-		// 0x40–0x7e. Anything else after ESC is passed through untouched.
+		// A CSI sequence is ESC [, parameter bytes, then a final byte in 0x40–0x7e.
 		j := i + 1
 		if j >= len(in) {
 			s.pending = append([]byte(nil), in[i:]...)

@@ -5,41 +5,37 @@ import (
 	"fmt"
 )
 
-// Failure is the machine-readable half of an error. Codes are a small closed
-// set an agent can branch on, and a new failure mode should get a new code.
+// Failure is an error with a stable code for agents to branch on.
 type Failure struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
 	Hint    string `json:"hint,omitempty"`
 	Details any    `json:"details,omitempty"`
 
-	// Exit overrides the status the process exits with, for a failure whose
-	// convention predates otata's: a command a signal stopped exits 128 plus
-	// the signal's number, which is what a shell reports for one it killed.
-	// Zero means the code decides.
+	// Exit overrides the exit status, like 128+N for a signal. Zero lets the
+	// code decide.
 	Exit int `json:"-"`
 }
 
 func (f *Failure) Error() string {
-	// A nil *Failure in an error interface is non-nil, so this must not
-	// dereference; otherwise the first such return panics instead of reporting.
+	// A nil *Failure can still arrive as a non-nil error.
 	if f == nil {
 		return "unknown failure"
 	}
 	return f.Message
 }
 
-// The closed set of error codes. Keep in sync with the table of codes in docs/cli-reference.md.
+// The error codes. Keep docs/cli-reference.md and skills/otata/SKILL.md in step.
 const (
 	CodeNoProject       = "no_project"        // nothing buildable here
 	CodeAmbiguousScheme = "ambiguous_scheme"  // several candidates, none obvious
-	CodeNeedsSetup      = "needs_setup"       // a toolchain prerequisite or installation migration is needed
+	CodeNeedsSetup      = "needs_setup"       // a toolchain prerequisite is missing
 	CodeBuildFailed     = "build_failed"      // the toolchain returned non-zero
 	CodeSigningFailed   = "signing_failed"    // cert, profile or device registration
 	CodeFreeProfile     = "free_profile"      // signed by a personal team; iOS refuses those over the air
 	CodeServerDown      = "server_down"       // local server not running
 	CodeTransportDown   = "transport_down"    // transport present but unusable
-	CodeNoTransport     = "no_transport"      // no usable transport detected
+	CodeNoTransport     = "no_transport"      // unknown transport, or manual without a base URL
 	CodeSlugConflict    = "slug_conflict"     // another project owns this slug
 	CodeBuildInProgress = "build_in_progress" // a live publish already holds this slug
 	CodeNotFound        = "not_found"         // no such published app
@@ -66,8 +62,7 @@ func (f *Failure) WithDetails(d any) *Failure { f.Details = d; return f }
 // WithExit sets the exit status, for the failures that carry their own.
 func (f *Failure) WithExit(status int) *Failure { f.Exit = status; return f }
 
-// exitStatus is what the process exits with for this failure: an explicit
-// status if one was set, else 2 for a usage error and 1 for everything else.
+// exitStatus is Exit if set, else 2 for a usage error and 1 for anything else.
 func (f *Failure) exitStatus() int {
 	switch {
 	case f.Exit != 0:
@@ -78,10 +73,8 @@ func (f *Failure) exitStatus() int {
 	return 1
 }
 
-// AsFailure coerces any error into one, so an unclassified error still reaches
-// the caller as valid JSON rather than as a panic or bare text.
+// AsFailure turns any error into a Failure, so it can still go out as JSON.
 func AsFailure(err error) *Failure {
-	// Prevent panic on a nil error.
 	if err == nil {
 		return Fail(CodeInternal, "an unspecified error occurred")
 	}

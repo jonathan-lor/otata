@@ -20,7 +20,6 @@ func TestTSNetSelectionWithoutHostInstallation(t *testing.T) {
 	t.Setenv("OTATA_PATH", "/ignored-service-path")
 	t.Setenv("OTATA_PORT", "1")
 	a := freshApp(t)
-	// Selecting the embedded node needs no host CLI or path configuration.
 	if err := os.WriteFile(config.Path(a.Root), []byte(`{"transport":"tailscale","serve_path":"/old"}`), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -89,8 +88,8 @@ func (s *switchingSupervisor) Unload() error {
 	return s.stop()
 }
 
-// Changing between manual and tsnet must restart the process that owns the
-// node, even when the manual proxy also serves at the root.
+// Switching between manual and tsnet restarts the server, even when neither
+// has a prefix.
 func TestTSNetSwitchRestartsManagedServer(t *testing.T) {
 	for _, from := range []string{"tailscale", "manual"} {
 		t.Run(from, func(t *testing.T) {

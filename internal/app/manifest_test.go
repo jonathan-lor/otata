@@ -11,11 +11,7 @@ import (
 	"github.com/jonathan-lor/otata/internal/artifact"
 )
 
-// decodeManifest parses the generated plist the way iOS would, via plutil.
-// Parsing rather than substring-matching is the point because escaped hostile text
-// legitimately appears inside a title node, and only the parsed structure shows
-// whether it stayed there. plutil is macOS's, so a machine without it skips
-// rather than fails; the suite stays hermetic.
+// decodeManifest parses the plist with plutil, skipping where there is none.
 func decodeManifest(t *testing.T, raw []byte) map[string]any {
 	t.Helper()
 	if _, err := exec.LookPath("plutil"); err != nil {
@@ -35,10 +31,6 @@ func decodeManifest(t *testing.T, raw []byte) map[string]any {
 	return parsed
 }
 
-// A title is arbitrary text from CFBundleDisplayName. Unescaped, an ampersand
-// alone makes the manifest unparseable, so every install of that app then
-// fails on the phone with a generic error while the tool reports success, and
-// a crafted title injects an entire extra install item.
 func TestManifestSurvivesHostileValues(t *testing.T) {
 	hostile := []string{
 		`A & B`,
@@ -74,8 +66,6 @@ func TestManifestSurvivesHostileValues(t *testing.T) {
 	}
 }
 
-// The manifest links the icon under the name the record gives it, and links
-// none for a build that shipped none.
 func TestManifestLinksTheIconByName(t *testing.T) {
 	rec := artifact.Record{Slug: "app", Title: "App", BundleID: "com.x.y", Version: "1", Build: "1",
 		PayloadName: "App.ipa", BuiltAt: time.Now(), HasIcon: true, IconName: "icon.webp"}

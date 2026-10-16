@@ -16,22 +16,15 @@ import (
 	"time"
 )
 
-// maxBadgingBytes bounds what aapt2 prints for one APK. Real output is a few
-// KB; a manifest crafted to carry thousands of localized labels is not a
-// reason to hold megabytes.
+// maxBadgingBytes caps aapt2's output, which is a few KB for a real APK.
 const maxBadgingBytes = 4 << 20
 
-// apk reads an Android payload. Identity, label and icon come out of `aapt2
-// dump badging`, which resolves the binary manifest's resource references
-// against the resource table, and the signer out of `apksigner verify
-// --print-certs`. Both ship in the SDK's build-tools, which building an APK
-// needs anyway; a machine without them serves the payload and cannot read
-// it, which is ErrUnsupported, as an .ipa is off macOS.
+// apk reads an Android payload with the SDK's build-tools: aapt2 for its
+// identity and icon, apksigner for its signer.
 type apk struct {
 	path string
 	zr   *zip.ReadCloser
-	// badging is aapt2's report, kept once read: Info and Icon both need it
-	// and reading it is a subprocess.
+	// badging caches aapt2's report.
 	badging *badging
 }
 
@@ -54,8 +47,7 @@ func (p *apk) Info() (Info, error) {
 	if err != nil {
 		return Info{}, err
 	}
-	// The served payload is named after the label, which is what the person
-	// tapping it knows the app as; the package name is a namespace.
+	// Name the payload after the label, or else the package's last part.
 	name := b.Label
 	if name == "" {
 		name = b.Package[strings.LastIndex(b.Package, ".")+1:]
@@ -63,10 +55,6 @@ func (p *apk) Info() (Info, error) {
 	return withDefaults(Info{Name: name, BundleID: b.Package, Title: b.Label, Version: b.VersionName, Build: b.VersionCode}), nil
 }
 
-// Icon writes the launcher icon at the highest density that is a raster
-// file. Adaptive icons are XML at anydpi, which a page cannot show, so the
-// density-specific fallback every template ships is what is picked, WebP in
-// recent ones, and served as it is.
 func (p *apk) Icon(dest string) (string, error) {
 	b, err := p.dump()
 	if err != nil {
@@ -111,9 +99,7 @@ type badging struct {
 	Icons map[int]string
 }
 
-// parseBadging reads aapt2's report: one entry per line, the entry's name
-// before the first colon, then either bare quoted values or name='value'
-// pairs. Only the entries this package acts on are kept.
+// parseBadging reads the entries otata uses out of aapt2's report.
 func parseBadging(out []byte) *badging {
 	b := &badging{Icons: map[int]string{}}
 	for line := range strings.SplitSeq(string(out), "\n") {
@@ -139,7 +125,7 @@ func parseBadging(out []byte) *badging {
 				b.Label = pairs[0].value
 			}
 		case key == "application":
-			// The default label again, for a report with no application-label line.
+			// The label again, for a report without an application-label line.
 			for _, kv := range pairs {
 				if kv.name == "label" && b.Label == "" {
 					b.Label = kv.value
@@ -158,8 +144,7 @@ func parseBadging(out []byte) *badging {
 type badgingPair struct{ name, value string }
 
 // badgingPairs splits the rest of a badging line into its quoted values,
-// each with the name before its equals sign, or none for a bare value. A
-// quote inside a value is escaped with a backslash.
+// named or bare.
 func badgingPairs(s string) []badgingPair {
 	var pairs []badgingPair
 	i := 0
@@ -198,9 +183,8 @@ func badgingPairs(s string) []badgingPair {
 	return pairs
 }
 
-// pickIcon is the raster icon at the highest density. anydpi entries are
-// adaptive-icon XML and are skipped, as is anything that is not a PNG or
-// WebP, since nothing here can turn it into one.
+// pickIcon picks the highest-density PNG or WebP launcher icon, skipping the
+// adaptive icon's XML.
 func pickIcon(icons map[int]string) string {
 	best, bestDensity := "", -1
 	for density, name := range icons {
@@ -216,12 +200,7 @@ func pickIcon(icons map[int]string) string {
 	return best
 }
 
-// ---------- signing ----------
-
-// readAPKSigning reports who signed the APK. The signature is verified, not
-// merely read: an APK that does not verify does not install, which is
-// ErrUnsigned, and an unsigned release build is exactly what a project with
-// no signing config produces.
+// readAPKSigning verifies the APK's signature and reports its signer.
 func readAPKSigning(apkPath string) (Signing, error) {
 	apksigner, err := buildTool("apksigner")
 	if err != nil {
@@ -238,8 +217,7 @@ func readAPKSigning(apkPath string) (Signing, error) {
 	return signingFromCerts(out)
 }
 
-// signingFromCerts reads the first signer out of `apksigner verify
-// --print-certs`. Split from the running so the parse is testable.
+// signingFromCerts reads the first signer out of apksigner's output.
 func signingFromCerts(out []byte) (Signing, error) {
 	var s Signing
 	seenDN := false
@@ -257,9 +235,7 @@ func signingFromCerts(out []byte) (Signing, error) {
 	return s, nil
 }
 
-// commonName is the CN out of a distinguished name as apksigner prints it,
-// "CN=Android Debug, O=Android, C=US", where a comma inside a value is
-// escaped with a backslash.
+// commonName extracts the CN from a DN like "CN=Android Debug, O=Android, C=US".
 func commonName(dn string) string {
 	var fields []string
 	var field strings.Builder
@@ -284,7 +260,7 @@ func commonName(dn string) string {
 	return ""
 }
 
-// firstErrorLine is the line that says why, for a failure that says so.
+// firstErrorLine returns apksigner's first ERROR line.
 func firstErrorLine(out string) string {
 	for line := range strings.SplitSeq(out, "\n") {
 		if strings.HasPrefix(line, "ERROR") {
@@ -294,11 +270,8 @@ func firstErrorLine(out string) string {
 	return "the signature does not verify"
 }
 
-// ---------- the build-tools ----------
-
-// buildTool finds one of the SDK's build-tools: the newest release under
-// ANDROID_HOME, or ANDROID_SDK_ROOT for an older setup, then PATH. Neither
-// is a fixed path, since every release lands in a directory of its own.
+// buildTool finds a build-tool in the newest release under ANDROID_HOME or
+// ANDROID_SDK_ROOT, or else on PATH.
 func buildTool(name string) (string, error) {
 	for _, env := range []string{"ANDROID_HOME", "ANDROID_SDK_ROOT"} {
 		if sdk := os.Getenv(env); sdk != "" {
@@ -313,8 +286,7 @@ func buildTool(name string) (string, error) {
 	return "", fmt.Errorf("an APK %w: it needs %s from the Android SDK's build-tools; install them and set ANDROID_HOME", ErrUnsupported, name)
 }
 
-// newestBuildTool is name inside the highest-versioned release directory
-// under dir that holds it and can run it.
+// newestBuildTool is name in the highest-versioned release under dir that has it.
 func newestBuildTool(dir, name string) string {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -367,8 +339,7 @@ func versionLess(a, b []int) bool {
 	return false
 }
 
-// runTool runs one of the build-tools with a bound on its time, returning
-// what it printed on each stream.
+// runTool runs a build-tool with a timeout.
 func runTool(bin string, args ...string) (stdout []byte, stderr string, err error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()

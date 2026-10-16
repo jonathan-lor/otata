@@ -12,17 +12,8 @@ import (
 	"time"
 )
 
-/*
-parseProfile decodes the plist inside a provisioning profile into Go values.
-
-It parses in-process rather than extracting field-by-field through plutil because
-each plutil call is a subprocess fed the entire document, so reading one
-profile would cost 5+N spawns for N certificates, and otata doctor reads a profile per
-published app. decodePlist cannot serve here either because a profile holds dates
-and certificate data that JSON cannot represent, which is exactly what the
-XML form can. Apple writes the payload as XML, so a binary one would be a
-first, and goes through plutil once instead of being guessed at.
-*/
+// parseProfile decodes a provisioning profile's plist in-process. decodePlist
+// won't do, since JSON can't hold its dates and certificate data.
 func parseProfile(raw []byte) (map[string]any, error) {
 	if bytes.HasPrefix(raw, []byte("bplist")) {
 		converted, err := plutilToXML(raw)
@@ -57,9 +48,8 @@ func plutilToXML(raw []byte) ([]byte, error) {
 	return out.Bytes(), nil
 }
 
-// parsePlistXML reads an XML property list into Go values: map[string]any,
-// []any, string, time.Time, []byte, int64, float64 and bool. An element
-// outside that set is an error, so a document this can't faithfully represent is refused.
+// parsePlistXML reads an XML plist into map[string]any, []any, string,
+// time.Time, []byte, int64, float64 and bool, refusing any other element.
 func parsePlistXML(raw []byte) (any, error) {
 	dec := xml.NewDecoder(bytes.NewReader(raw))
 	root, err := nextStart(dec)
@@ -77,8 +67,7 @@ func parsePlistXML(raw []byte) (any, error) {
 }
 
 // nextStart returns the next start element, skipping whitespace, comments,
-// the XML declaration, and the DOCTYPE. Anything else arriving first means the
-// value a caller requires isn't there.
+// the XML declaration and the DOCTYPE.
 func nextStart(dec *xml.Decoder) (xml.StartElement, error) {
 	for {
 		tok, err := dec.Token()

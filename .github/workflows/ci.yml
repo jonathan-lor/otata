@@ -10,10 +10,7 @@ permissions:
 
 jobs:
   test:
-    # otata has exclusive paths depending on the OS:
-    #
-    # macOS has launchd and keychain
-    # Linux has the systemd user manager
+    # Each OS has code the other can't run, so test on both and vet for the other.
     strategy:
       matrix:
         include:

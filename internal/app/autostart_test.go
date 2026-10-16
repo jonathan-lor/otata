@@ -11,23 +11,18 @@ import (
 	"github.com/jonathan-lor/otata/internal/cli"
 )
 
-// fakeSupervisor is a service manager that does what it is told and remembers
-// what it was told, so the orchestration above it can be proven without
-// launchd or systemd: what is installed, in what order things happen, and
-// what is left behind when a unit never binds or a program is refused.
+// fakeSupervisor stands in for launchd or systemd and records what it was asked.
 type fakeSupervisor struct {
 	available bool
 	installed *agentSpec
 	loaded    bool
 	disabled  bool
 	loadErr   error
-	// installErr is a failure after the definition was written, as a
-	// daemon-reload or enable the manager refused: the fake keeps the unit
-	// installed, as the file stays on disk.
+	// installErr fails Install after the unit is written, like a refused
+	// daemon-reload.
 	installErr error
-	// unusable is a program the fake refuses to run from where it is, as
-	// systemd refuses a path holding a quote. installs records every
-	// program Install was asked for, refused or not.
+	// unusable is a program Install refuses. installs records every program
+	// Install saw.
 	unusable string
 	installs []string
 	calls    []string
@@ -74,8 +69,8 @@ func (f *fakeSupervisor) Remove() error {
 func (f *fakeSupervisor) StartHint() string    { return "start it yourself" }
 func (f *fakeSupervisor) DisabledHint() string { return "flip the fake switch" }
 
-// supervised is a scratch App on port 1, where nothing ever binds, with the
-// fake in charge and the bind waits shortened to what a test can afford.
+// supervised is a scratch App on port 1, where nothing binds, run by f with
+// short bind waits.
 func supervised(t *testing.T, f *fakeSupervisor) *App {
 	t.Helper()
 	a := freshApp(t)
@@ -84,10 +79,6 @@ func supervised(t *testing.T, f *fakeSupervisor) *App {
 	return a
 }
 
-// A unit that loads but never binds is not autostart: the orchestration tries
-// the invoked binary, then a staged copy, and leaves nothing installed when
-// neither comes up, so the next login does not load a unit for a server that
-// never binds.
 func TestEnableAutostartLeavesNothingWhenNoUnitBinds(t *testing.T) {
 	f := &fakeSupervisor{available: true}
 	a := supervised(t, f)
@@ -116,8 +107,6 @@ func TestEnableAutostartLeavesNothingWhenNoUnitBinds(t *testing.T) {
 	}
 }
 
-// One unit per user: another root's is not overwritten, and nothing is
-// touched in refusing.
 func TestEnableAutostartRefusesAnotherRootsUnit(t *testing.T) {
 	f := &fakeSupervisor{available: true, installed: &agentSpec{Program: "/x/otata", Root: "/elsewhere", Port: 8787}}
 	a := supervised(t, f)
@@ -130,8 +119,6 @@ func TestEnableAutostartRefusesAnotherRootsUnit(t *testing.T) {
 	}
 }
 
-// Where no service manager exists, autostart is refused up front with the
-// manager's own advice, and nothing is stopped or written on the way.
 func TestEnableAutostartRefusesWhereNoManagerExists(t *testing.T) {
 	f := &fakeSupervisor{}
 	a := supervised(t, f)
@@ -145,8 +132,6 @@ func TestEnableAutostartRefusesWhereNoManagerExists(t *testing.T) {
 	}
 }
 
-// A load the manager refuses removes the unit it was refused for, and the
-// disabled switch is reported as itself rather than as the manager's words.
 func TestInstallAgentRemovesAUnitTheManagerWillNotLoad(t *testing.T) {
 	f := &fakeSupervisor{available: true, loadErr: errors.New("Input/output error")}
 	a := supervised(t, f)
@@ -167,9 +152,8 @@ func TestInstallAgentRemovesAUnitTheManagerWillNotLoad(t *testing.T) {
 	}
 }
 
-// StartServer through the unit: a disabled one is refused with where to flip
-// it; a loaded one that has not bound is reported, not reloaded; an unloaded
-// one is loaded and given its wait.
+// Three cases: a disabled unit, a loaded one that never bound, and an
+// unloaded one.
 func TestReloadAgentReportsWhatItCannotMend(t *testing.T) {
 	ours := func(a *App) *agentSpec { return &agentSpec{Program: "/x/otata", Root: a.Root, Port: a.Config.Port} }
 
@@ -204,8 +188,6 @@ func TestReloadAgentReportsWhatItCannotMend(t *testing.T) {
 	}
 }
 
-// Stopping goes through the manager while it manages our server, and refuses
-// to touch a server another root's unit keeps alive.
 func TestStopServerUnloadsOurUnit(t *testing.T) {
 	f := &fakeSupervisor{available: true, loaded: true}
 	a := supervised(t, f)
@@ -218,10 +200,6 @@ func TestStopServerUnloadsOurUnit(t *testing.T) {
 	}
 }
 
-// A manager that refuses the program from where it sits says so before
-// anything is loaded, and that is the second road to the staged copy: the
-// copy is tried, and when it does not bind either, the failure names both
-// attempts as it does when the first attempt loaded and never bound.
 func TestEnableAutostartStagesACopyWhenTheManagerRefusesTheProgram(t *testing.T) {
 	exe, err := os.Executable()
 	if err != nil {
@@ -238,7 +216,7 @@ func TestEnableAutostartStagesACopyWhenTheManagerRefusesTheProgram(t *testing.T)
 	if want := []string{exe, a.Store.StagedBinary()}; !slices.Equal(f.installs, want) {
 		t.Errorf("installed programs = %v, want %v", f.installs, want)
 	}
-	// The refusal came before anything was enabled or loaded; the copy went the whole way.
+	// The refused program got no further than install. The copy went all the way.
 	want := []string{"unload", "install", "unload", "install", "enable", "load", "remove", "remove"}
 	if !slices.Equal(f.calls, want) {
 		t.Errorf("calls = %v\nwant    %v", f.calls, want)
@@ -248,9 +226,6 @@ func TestEnableAutostartStagesACopyWhenTheManagerRefusesTheProgram(t *testing.T)
 	}
 }
 
-// The copy can be refused too, when the root itself sits at a path the
-// manager will not run from. Then the failure carries the manager's reason
-// and names the root as the thing to move.
 func TestEnableAutostartReportsAProgramRefusedFromTheCopyToo(t *testing.T) {
 	f := &fakeSupervisor{available: true}
 	a := supervised(t, f)
@@ -274,10 +249,6 @@ func TestEnableAutostartReportsAProgramRefusedFromTheCopyToo(t *testing.T) {
 	}
 }
 
-// An Install that fails after writing the definition (systemd's daemon-reload
-// or enable refused) leaves nothing behind: a file with no login link would
-// read as autostart on for a unit that never returns. The failure is not the
-// program's, so no copy is staged either.
 func TestEnableAutostartRemovesAUnitItCouldNotFinishInstalling(t *testing.T) {
 	exe, err := os.Executable()
 	if err != nil {

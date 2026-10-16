@@ -11,8 +11,7 @@ import (
 	"testing"
 )
 
-// newTestServer builds a served tree plus a sibling secret that must never be
-// reachable, mirroring the real layout where state/ sits beside public/.
+// newTestServer serves a tree with a secret beside it, as state/ sits beside public/.
 func newTestServer(t *testing.T, incomingPrefix string) *Server {
 	t.Helper()
 	base := t.TempDir()
@@ -61,8 +60,7 @@ func TestServesPublicPaths(t *testing.T) {
 	}
 }
 
-// The security-critical test. Percent-decoding turns %2F into a separator and
-// %2e%2e into "..", so these must be refused after decoding, not before.
+// Percent-decoding turns %2F into a separator and %2e%2e into "..".
 func TestRefusesTraversal(t *testing.T) {
 	s := newTestServer(t, "")
 	attacks := []string{
@@ -92,10 +90,7 @@ func TestRefusesTraversal(t *testing.T) {
 	}
 }
 
-// The traversal test above passes even with os.Root replaced by a naive
-// os.Open(filepath.Join(...)), because path.Clean collapses ".." before the
-// root ever sees it. This is the case only os.Root defends, and without it the
-// whole confinement mechanism could be deleted with the suite still green.
+// Only os.Root stops a symlink escape, since path.Clean already handles "..".
 func TestRefusesSymlinkEscape(t *testing.T) {
 	base := t.TempDir()
 	public := filepath.Join(base, "public")
@@ -217,10 +212,8 @@ func TestMethodNotAllowed(t *testing.T) {
 	}
 }
 
-// Under a proxy that forwards the path unchanged, every request carries the
-// prefix and the server strips exactly it. The bare form is NOT also accepted.
-// Tolerating both made an app whose slug equals the prefix unreachable, since
-// "/otata/manifest.plist" was stripped to the root and 404'd.
+// Only prefixed requests are served. Accepting bare ones too would break an
+// app whose slug equals the prefix.
 func TestIncomingPrefixIsStrippedExactly(t *testing.T) {
 	s := newTestServer(t, "/otata")
 	for _, target := range []string{"/otata/", "/otata/style.css", "/otata/myapp/", "/otata/myapp/manifest.plist"} {
@@ -228,8 +221,6 @@ func TestIncomingPrefixIsStrippedExactly(t *testing.T) {
 			t.Errorf("%s: got %d, want 200", target, resp.StatusCode)
 		}
 	}
-	// A bare request cannot come from a proxy that forwards the prefix, so it
-	// is not ours to answer.
 	for _, target := range []string{"/", "/myapp/manifest.plist", "/style.css"} {
 		if resp := get(t, s, target); resp.StatusCode == http.StatusOK {
 			t.Errorf("%s: served without the prefix the transport forwards", target)
@@ -241,9 +232,8 @@ func TestIncomingPrefixIsStrippedExactly(t *testing.T) {
 	}
 }
 
-// An app slugged after the serve path, which is what `otata publish` produces
-// from a directory named otata, must be reachable under a forwarding proxy,
-// where its path carries the prefix twice.
+// An app slugged "otata" behind a proxy that forwards /otata has the prefix
+// twice in its path.
 func TestSlugEqualToPrefixIsReachable(t *testing.T) {
 	mk := func(prefix string) *Server {
 		base := t.TempDir()
@@ -280,11 +270,8 @@ func TestSlugEqualToPrefixIsReachable(t *testing.T) {
 	check(prefixed, "/otata/otata/manifest.plist", "MANIFEST")
 }
 
-// A directory without its trailing slash redirects rather than serving the
-// index in place. The pages link icons and the index relatively, and from
-// "/myapp" those resolve one level too high. The Location must be relative:
-// behind a stripping proxy the server does not know the absolute path the
-// phone used, and "/myapp/" would point outside the mount.
+// The redirect's Location is relative, since behind a stripping proxy the
+// server doesn't know the phone's path.
 func TestDirectoryWithoutSlashRedirectsRelatively(t *testing.T) {
 	s := newTestServer(t, "")
 	resp := get(t, s, "/myapp")
@@ -300,17 +287,13 @@ func TestDirectoryWithoutSlashRedirectsRelatively(t *testing.T) {
 	if got := rec.Header().Get("Location"); got != "myapp/?v=1" {
 		t.Errorf("Location = %q, want %q", got, "myapp/?v=1")
 	}
-	// Under a forwarded prefix the bare mount path redirects to itself + "/".
+	// Under a forwarded prefix, the bare prefix redirects to itself plus "/".
 	p := newTestServer(t, "/otata")
 	if got := get(t, p, "/otata").Header.Get("Location"); got != "otata/" {
 		t.Errorf("prefixed mount Location = %q, want %q", got, "otata/")
 	}
 }
 
-// Identity on every response, including errors: port occupancy is not
-// process identity, and an otata server is not necessarily the one for this
-// root. The version rides with it so a stale running server is visible after
-// an upgrade replaces the binary on disk.
 func TestIdentityHeadersOnEveryResponse(t *testing.T) {
 	s := newTestServer(t, "")
 	for _, target := range []string{"/", "/missing", "/../secret.json"} {

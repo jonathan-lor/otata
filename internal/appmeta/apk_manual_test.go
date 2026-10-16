@@ -9,10 +9,8 @@ import (
 	"github.com/jonathan-lor/otata/internal/artifact"
 )
 
-// Reads a real APK, named by OTATA_TEST_APK, through the real build-tools:
-// the only proof that the badging and certificate parsers agree with what
-// aapt2 and apksigner actually print. Skipped when unset, so the suite stays
-// hermetic on a machine with no Android SDK.
+// Reads the real APK at OTATA_TEST_APK through the real build-tools. Skipped
+// when unset.
 func TestReadsRealAPK(t *testing.T) {
 	apkPath := os.Getenv("OTATA_TEST_APK")
 	if apkPath == "" {

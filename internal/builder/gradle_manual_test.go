@@ -7,12 +7,8 @@ import (
 	"testing"
 )
 
-// Runs against a real Android project named by OTATA_TEST_GRADLE, skipped
-// otherwise so the suite stays hermetic. It detects, lists, resolves the
-// default selection with OTATA_TEST_FLAVOR when the project asks for one,
-// and builds a Debug APK into a temporary work directory, which is the one
-// proof the init script and the metadata reading work against the
-// project's own Gradle and plugin versions.
+// Builds a Debug APK of the real project at OTATA_TEST_GRADLE, with
+// OTATA_TEST_FLAVOR if it needs one. Skipped when unset.
 func TestBuildsRealGradleProject(t *testing.T) {
 	dir := os.Getenv("OTATA_TEST_GRADLE")
 	if dir == "" {

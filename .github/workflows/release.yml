@@ -16,7 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          # Full history and tags so the Go toolchain stamps the module version. The assertion below depends on it.
+          # Full history and tags, so the toolchain stamps the version the next step checks.
           fetch-depth: 0
       - uses: actions/setup-go@v7
         with:
@@ -61,8 +61,8 @@ jobs:
             test "$ver" = "$GITHUB_REF_NAME"
           done
 
-  # This runs after publish, so failing won't retract the release.
-  # spctl needs macOS and asks Apple for the notarization ticket, which is the Gatekeeper verdict the cask relies on, so a skipped or broken signing step will show here
+  # Runs after publish, so failing doesn't retract the release. spctl checks
+  # the notarization the cask relies on, so a skipped signing step shows here.
   gatekeeper:
     needs: release
     runs-on: macos-latest

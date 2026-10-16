@@ -50,17 +50,13 @@ func TestSigningCheckSeverities(t *testing.T) {
 			t.Errorf("%s: no detail; an agent reads the date from here even when nothing is wrong", c.name)
 		}
 	}
-	// Signing with no deadline, an Android build's, passes and names the
-	// signer: a zero Expires must not read as long past.
+	// Android signing has no deadline, and a zero Expires must not read as expired.
 	identity := signingCheck("droid signing", appmeta.Signing{Signer: "Android Debug", Fingerprint: "4f9c"}, now)
 	if !identity.OK || identity.Warn || !strings.Contains(identity.Detail, "Android Debug") {
 		t.Errorf("identity-only signing: %+v", identity)
 	}
 }
 
-// The invariant the third state exists for: a warning must not fail the command
-// an agent uses as a health gate, and an expiry must. record is the one door
-// every check enters the result through, so the rule is tested at that door.
 func TestOnlyAFailingCheckClearsHealthy(t *testing.T) {
 	now := time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC)
 	for _, c := range []struct {
@@ -97,14 +93,11 @@ func TestDoctorHumanDistinguishesAllThreeStates(t *testing.T) {
 			t.Errorf("no %s line in:\n%s", want, out)
 		}
 	}
-	// A warning renders its reason. Folded into a bare OK it would be
-	// indistinguishable from a passing check, which is why Warn is a field.
 	if !strings.Contains(out, "in 12 days") {
 		t.Errorf("a warning dropped its detail:\n%s", out)
 	}
 }
 
-// A free profile fails the check outright. iOS refuses to install it OTA regardless of the dates.
 func TestFreeProfileFailsTheCheck(t *testing.T) {
 	now := time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC)
 	sig := at(now, 7*24*time.Hour)
@@ -119,10 +112,8 @@ func TestFreeProfileFailsTheCheck(t *testing.T) {
 	}
 }
 
-// stagedAPK writes a minimal APK as record slug's payload, and puts fake
-// build-tools first on PATH that answer aapt2 with badging and apksigner
-// with certs, exiting with status, so the Android signing check runs with
-// no SDK on the machine.
+// stagedAPK writes a minimal APK for slug, with fake aapt2 and apksigner on
+// PATH that print certs and exit with status.
 func stagedAPK(t *testing.T, a *App, slug, certs string, status int) artifact.Record {
 	t.Helper()
 	rec := artifact.Record{Slug: slug, Platform: artifact.Android, PayloadName: "App.apk", BuiltAt: time.Now()}
@@ -158,9 +149,6 @@ func stagedAPK(t *testing.T, a *App, slug, certs string, status int) artifact.Re
 	return rec
 }
 
-// An Android build's signing check names the signer and passes, whatever
-// the keychain said, since no keychain was asked; and an APK that does not
-// verify fails the check outright, as an expired profile does.
 func TestAndroidSigningCheckIsIdentityAlone(t *testing.T) {
 	a := freshApp(t)
 	now := time.Now()
@@ -177,8 +165,7 @@ func TestAndroidSigningCheckIsIdentityAlone(t *testing.T) {
 	}
 }
 
-// serveThisRoot runs a real server for a on a loopback port and points a at
-// it, so doctor gets past its server checks to the ones under test.
+// serveThisRoot runs a real server for a on a loopback port.
 func serveThisRoot(t *testing.T, a *App) {
 	t.Helper()
 	if err := a.Store.WriteFile(a.Store.IndexPath(), []byte("<html>")); err != nil {
@@ -197,8 +184,7 @@ func serveThisRoot(t *testing.T, a *App) {
 	a.Config.Port = ln.Addr().(*net.TCPAddr).Port
 }
 
-// Doctor must report why a transport is unready, including configuration errors
-// that --fix cannot repair. A hand-edited config can contain an invalid base URL.
+// A hand-edited config can hold a base URL that --fix can't repair.
 func TestDoctorReportsTheTransportObstacleNotWiring(t *testing.T) {
 	root := t.TempDir()
 	store, err := storage.Open(root)
@@ -239,10 +225,8 @@ func TestDoctorReportsTheTransportObstacleNotWiring(t *testing.T) {
 	}
 }
 
-// The URL probes fly concurrently but the report reads as it always has: the
-// index, then each app's manifest and payload, newest app first. An Android
-// app has no manifest to answer, so doctor probes its payload alone, and the
-// report still reads app by app whatever each one has.
+// The probes run concurrently but report in order, and an Android app has
+// no manifest.
 func TestDoctorProbesNoManifestForAndroid(t *testing.T) {
 	a := freshApp(t)
 	a.Config.Transport = "manual"
@@ -276,9 +260,8 @@ func TestDoctorProbesNoManifestForAndroid(t *testing.T) {
 	}
 }
 
-// Under a keep-prefix manual transport every request reaching the server
-// carries the base URL's path, and the bare root is refused by design. Doctor's
-// "can the server serve the index" probe must therefore ask with the prefix.
+// Under a keep-prefix proxy the bare root is refused, so the index probe has
+// to use the prefix.
 func TestDoctorProbesIndexThroughIncomingPrefix(t *testing.T) {
 	root := t.TempDir()
 	store, err := storage.Open(root)
@@ -288,8 +271,7 @@ func TestDoctorProbesIndexThroughIncomingPrefix(t *testing.T) {
 	a := &App{Root: root, Store: store, Config: config.Config{
 		Transport: "manual",
 		Manual: &config.Manual{
-			// Port 1 answers nothing, so the URL probes that follow the check
-			// under test fail fast and without leaving the machine.
+			// Port 1 answers nothing, so the URL probes fail fast.
 			BaseURL:    "https://127.0.0.1:1/otata",
 			KeepPrefix: true,
 		},
@@ -297,7 +279,6 @@ func TestDoctorProbesIndexThroughIncomingPrefix(t *testing.T) {
 	if got := a.IncomingPrefix(); got != "/otata" {
 		t.Fatalf("IncomingPrefix() = %q, want /otata", got)
 	}
-	// The real server, stripping the real prefix, on a loopback port.
 	serveThisRoot(t, a)
 
 	res, err := a.Doctor(false)
@@ -313,16 +294,12 @@ func TestDoctorProbesIndexThroughIncomingPrefix(t *testing.T) {
 			sawIndexProbe = true
 		}
 	}
-	// The URL probes come after the check under test, so reaching them proves
-	// doctor did not bail out early on the false diagnosis.
+	// Reaching the URL probes proves doctor didn't stop at the server check.
 	if !sawIndexProbe {
 		t.Errorf("doctor never reached the URL probes: %+v", res.Checks)
 	}
 }
 
-// Doctor cannot start a server that autostart does not manage,
-// so with no agent the server check fails outright, and the
-// detail carries the setup step instead of promising a repair.
 func TestDoctorNamesAutostartWhenItCannotStartTheServer(t *testing.T) {
 	root := t.TempDir()
 	store, err := storage.Open(root)

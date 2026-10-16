@@ -11,26 +11,15 @@ import (
 	"github.com/jonathan-lor/otata/internal/artifact"
 )
 
-// Payload is one platform's built app, opened for reading. Everything the
-// install surface, the manifest and doctor want to know comes out of it, and
-// nothing outside this package knows how a platform packages any of it.
+// Payload is a built app opened for reading.
 type Payload interface {
-	// Info is the app's identity.
 	Info() (Info, error)
-	// Signing is who signed the build and, on iOS, when it stops being
-	// installable. held is this machine's code-signing identities, from
-	// HeldIdentities, which the iOS reader joins the profile against and
-	// the Android reader ignores. ErrNoProfile means an iOS payload carries
-	// nothing to read; ErrUnsigned that an APK will not install; and
-	// ErrUnsupported that this machine cannot read it.
+	// Signing is who signed the build and, on iOS, when it stops installing.
+	// held comes from HeldIdentities, and only iOS uses it. It can fail with
+	// ErrNoProfile, ErrUnsigned or ErrUnsupported.
 	Signing(held map[string]bool) (Signing, error)
-	// Icon writes the app's icon to dest in a form a browser decodes, and
-	// reports that form as the extension the file is served under: ".png"
-	// for an iOS icon, which the packaging optimizes and this reverts, and
-	// whatever the launcher icon is for an Android one, WebP in every recent
-	// template, which nothing converts. ErrNoIcon means there is none to
-	// ship, or none that could be made standard; the page's placeholder is
-	// the right answer to either.
+	// Icon writes an icon a browser can show to dest and returns its
+	// extension, or ErrNoIcon.
 	Icon(dest string) (ext string, err error)
 	Close() error
 }
@@ -38,17 +27,11 @@ type Payload interface {
 // ErrNoIcon reports that a payload has no icon a page could show.
 var ErrNoIcon = errors.New("the payload carries no usable icon")
 
-// ErrUnsupported reports that this machine cannot read what was asked for.
-// The tools are the platform's (plutil and security for an iOS payload,
-// aapt2 and apksigner for an Android one), and so is every build that
-// produces the payload; a node that only serves what another machine built
-// has nothing to read it with, and nothing wrong with it either. It is
-// wrapped with what exactly is missing.
+// ErrUnsupported means this machine lacks the tools to read the payload,
+// which is normal on one that only serves.
 var ErrUnsupported = errors.New("cannot be read on this machine")
 
-// Open returns the reader for a platform's payload at path. This is the one
-// place that knows which platform is packaged how, so a new platform is a
-// new reader and a case here, and no caller changes.
+// Open returns the reader for a platform's payload at path.
 func Open(platform artifact.Platform, path string) (Payload, error) {
 	switch platform {
 	case artifact.IOS:
@@ -59,14 +42,12 @@ func Open(platform artifact.Platform, path string) (Payload, error) {
 	return nil, fmt.Errorf("an %s payload %w: no reader for it", platform, ErrUnsupported)
 }
 
-// ipa reads an iOS payload: the .app inside Payload/, in place, without
-// unpacking the archive.
+// ipa reads the .app inside an .ipa's Payload/ without unpacking it.
 type ipa struct {
 	zr   *zip.ReadCloser
 	app  fs.FS
 	name string
-	// plist is Info.plist decoded, kept once read: Info and Icon both need it
-	// and decoding it is a subprocess.
+	// plist caches the decoded Info.plist, which takes a plutil run.
 	plist map[string]any
 }
 
@@ -125,8 +106,6 @@ func (p *ipa) Signing(held map[string]bool) (Signing, error) {
 	return readSigning(p.app, held)
 }
 
-// Icon picks the largest flat icon PNG in the bundle root and writes it to
-// dest, reverting the packaging's iphone optimization so a browser decodes it.
 func (p *ipa) Icon(dest string) (string, error) {
 	plist, err := p.infoPlist()
 	if err != nil {
@@ -139,8 +118,7 @@ func (p *ipa) Icon(dest string) (string, error) {
 	if err := copyOut(p.app, name, dest); err != nil {
 		return "", err
 	}
-	// The normalize must succeed for the icon to ship: a crushed icon is a
-	// broken image on the page, where no icon is a clean placeholder.
+	// A crushed icon is a broken image. No icon shows the placeholder.
 	if err := normalizeIcon(dest); err != nil {
 		return "", fmt.Errorf("%w: %v", ErrNoIcon, err)
 	}

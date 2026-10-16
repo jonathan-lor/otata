@@ -37,8 +37,6 @@ func TestWriteDataPlacesContentWithPerm(t *testing.T) {
 	}
 }
 
-// A failed write must leave the destination as it was and the staging
-// directory empty. Torn or abandoned files are the whole reason to stage.
 func TestFailedWriteLeavesNothing(t *testing.T) {
 	dir := t.TempDir()
 	dest := filepath.Join(dir, "file")

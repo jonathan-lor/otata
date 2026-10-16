@@ -51,7 +51,6 @@ func run() int {
 	command := argv[0]
 	args := argv[1:]
 
-	// General help and version
 	switch command {
 	case "help", "-h", "--help":
 		fmt.Print(usage)
@@ -61,7 +60,6 @@ func run() int {
 		return 0
 	}
 
-	// Input validation and answering --help for certain commands
 	switch command {
 	case "list", "ls", "status", "serve", "start", "stop", "restart":
 		if wantsHelp(args) {
@@ -155,14 +153,12 @@ func run() int {
 	return 0
 }
 
-// usageError is a failure in how the command was called, as opposed to what it tried to do.
-// cli.EmitError exits 2 for these.
+// usageError is a failure in how the command was called, which exits 2.
 func usageError(format string, args ...any) *cli.Failure {
 	return cli.Failf(cli.CodeInvalidArgs, format, args...)
 }
 
-// emitStatus reports the state a command left behind.
-// It's a wrapper around package cli Emit methods.
+// emitStatus reports the status a command left behind.
 func emitStatus(a *app.App, command string) int {
 	res, err := a.Status()
 	if err != nil {
@@ -181,9 +177,8 @@ func wantsHelp(args []string) bool {
 	return false
 }
 
-// parseFlags runs a FlagSet over args.
-// --help prints flags to stdout and exits 0,
-// and positional arguments are refused because nothing here takes any.
+// parseFlags parses args. --help prints the flags, and positional arguments
+// are refused.
 func parseFlags(fs *flag.FlagSet, command, summary string, args []string) (exit int, done bool) {
 	fs.SetOutput(io.Discard) // we print usage ourselves
 	err := fs.Parse(args)
@@ -199,8 +194,7 @@ func parseFlags(fs *flag.FlagSet, command, summary string, args []string) (exit 
 		return 0, true
 	}
 	if err != nil {
-		// The flag package reports "-config" whichever spelling was typed; the
-		// docs and help say "--config", so the error should too.
+		// The flag package says -config whatever was typed. Match the docs' --config.
 		return cli.EmitError(command, usageError("%s", strings.Replace(err.Error(), ": -", ": --", 1))), true
 	}
 	if rest := fs.Args(); len(rest) > 0 {
@@ -209,8 +203,7 @@ func parseFlags(fs *flag.FlagSet, command, summary string, args []string) (exit 
 	return 0, false
 }
 
-// globalFlags applies the flags that belong to no one command and returns the rest.
-// It currently preprocesses the --json flag, which is accepted anywhere, and sets the global variable for it.
+// globalFlags pulls out --json, which is accepted anywhere, and returns the rest.
 func globalFlags(argv []string) []string {
 	rest := argv[:0:0]
 	for _, arg := range argv {
@@ -223,13 +216,9 @@ func globalFlags(argv []string) []string {
 	return rest
 }
 
-// progress prints a line a command reports while it works. It goes to stderr
-// so it can never corrupt the JSON getting parsed on stdout, and so
-// `otata publish > out` still shows it.
+// progress prints a command's progress to stderr, keeping stdout clean for JSON.
 func progress(line string) { fmt.Fprintf(os.Stderr, "    %s\n", line) }
 
-// publishSummary has three forms: each platform selects its build in its
-// own toolchain's terms, and a prebuilt payload says which platform it is.
 const publishSummary = "publish --platform ios [--config Debug] [--scheme S] [--slug NAME] [--builder archive]\n" +
 	"       otata publish --platform android [--config Debug] [--module M] [--flavor F] [--slug NAME]\n" +
 	"       otata publish --artifact PATH [--slug NAME]"
@@ -249,7 +238,7 @@ func publish(a *app.App, args []string) int {
 	if exit, done := parseFlags(fs, "publish", publishSummary, args); done {
 		return exit
 	}
-	// Validated in Publish, so a caller of the package gets the same refusal.
+	// Publish validates the platform, for every caller.
 	opts.Platform = artifact.Platform(platform)
 
 	res, err := a.Publish(opts, progress)

@@ -81,7 +81,6 @@ svg { display: block; flex: none; }
 .title-line .platform-icon { color: var(--dim); }
 .head h1, .head h2 { min-width: 0; margin: 0; font-size: 1.125rem; font-weight: 600; line-height: 1.25; overflow-wrap: anywhere; }
 .sub { color: var(--dim); font-size: 0.8rem; margin-top: 0.125rem; overflow-wrap: anywhere; }
-/* Only an already-published app has a detail page to navigate to. */
 a.head { text-decoration: none; border-radius: 5px; }
 .chevron { margin-left: auto; color: var(--dim); }
 .summary {
@@ -110,7 +109,7 @@ a.install {
   transition: background-color 120ms ease, opacity 120ms ease;
 }
 a.install:active { opacity: 0.75; }
-/* Keep the existing ten-second visual latch on the install handoff. */
+/* Set by the install latch script. */
 a.install.waiting { pointer-events: none; opacity: 0.25; }
 .dirty { color: var(--warn-ink); }
 .pending {

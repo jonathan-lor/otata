@@ -7,7 +7,6 @@ import (
 	"testing"
 )
 
-// These are documented in docs/cli-reference.md and in an error hint that tells the user to set OTATA_PORT.
 func TestEnvironmentOverridesFile(t *testing.T) {
 	root := t.TempDir()
 	if err := Save(root, Config{Port: 8787, Transport: "tailscale"}); err != nil {
@@ -42,8 +41,6 @@ func TestInvalidPortIsReported(t *testing.T) {
 	}
 }
 
-// The config is the user's alone. The staging and the rename are
-// atomicfile's, tested there; the mode is this package's to choose.
 func TestSaveIsPrivate(t *testing.T) {
 	root := t.TempDir()
 	if err := Save(root, Config{Port: 1}); err != nil {

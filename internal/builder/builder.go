@@ -1,8 +1,5 @@
-// Package builder turns a project directory into a payload.
-//
-// One builder per platform and mode, chosen by For. Nothing outside this
-// package knows what Xcode, Gradle or CocoaPods are, and a payload built by
-// anything else arrives through Prebuilt, which bypasses the builders entirely.
+// Package builder turns a project directory into an .ipa or .apk with Xcode
+// or Gradle.
 package builder
 
 import (
@@ -17,17 +14,13 @@ import (
 )
 
 type Options struct {
-	// Container is the buildable thing Detect found: the workspace or project
-	// for Xcode, the Gradle root for Android. Build is handed it rather than
-	// looking again.
+	// Container is what Detect found: an Xcode workspace or project, or a
+	// Gradle root.
 	Container string
-	// Config is the build configuration, Debug or Release. Required: the
-	// default is the caller's to choose and announce, not this package's.
+	// Config is required. The default is the caller's to choose.
 	Config string
-	// Scheme is the Xcode scheme to build and is iOS only. Module and
-	// Flavor are the Gradle module and product flavor and Android only. Each is
-	// optional, and the caller refuses the other platform's before a
-	// builder sees them.
+	// Scheme selects an iOS build, Module and Flavor an Android one. All are
+	// optional.
 	Scheme string
 	Module string
 	Flavor string
@@ -35,7 +28,7 @@ type Options struct {
 	Log    func(string)
 }
 
-// Result is deliberately just the payload because metadata is always read back out of the payload.
+// Result is the payload. Its metadata is read from the payload itself.
 type Result struct {
 	PayloadPath string
 	Platform    artifact.Platform
@@ -44,20 +37,15 @@ type Result struct {
 }
 
 type Builder interface {
-	// Detect reports where the buildable thing lives under dir, or why none
-	// does. Cross-platform frameworks keep it in a subdirectory rather than
-	// at the repository root, which is why the answer is a path and not a bool.
+	// Detect returns the buildable container under dir, or why there is none.
 	Detect(dir string) (container string, err error)
-	// Build produces the payload from what Detect found. Cancelling ctx stops
-	// the toolchain along with every process it started, and Build returns
-	// ctx.Err().
+	// Build produces the payload. Cancelling ctx kills the toolchain and every
+	// process it started, and Build returns ctx.Err().
 	Build(ctx context.Context, opts Options) (Result, error)
 }
 
-// For returns the builder for a platform. mode selects among a platform's
-// builders where it has several: for iOS, "" or "build" is the incremental
-// build and "archive" the archive-and-export path. A platform with no
-// builder is refused here, which is the one place a new one is added.
+// For returns the builder for a platform. On iOS, mode is "build" (the
+// default, incremental) or "archive".
 func For(platform artifact.Platform, mode string) (Builder, error) {
 	switch platform {
 	case artifact.IOS:
@@ -78,20 +66,15 @@ func For(platform artifact.Platform, mode string) (Builder, error) {
 	return nil, fmt.Errorf("%s builds are not supported yet.", platform)
 }
 
-// run runs a toolchain command with its output in the given writers, from
-// dir when one is given. The command gets a process group of its own, and
-// cancelling ctx signals that whole group: xcodebuild fans out into clang,
-// swift-frontend and script phases, and killing only the parent left those
-// writing into the work directory after the publish that started them was
-// gone. Cancellation is reported as ctx.Err(), whatever the killed
-// process's exit looked like.
+// run runs a toolchain command in its own process group, so cancelling ctx
+// kills everything it spawned (xcodebuild fans out into clang and
+// swift-frontend). A cancelled run returns ctx.Err().
 func run(ctx context.Context, stdout, stderr io.Writer, dir, name string, args ...string) error {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = dir
 	cmd.Stdout, cmd.Stderr = stdout, stderr
 	ownProcessGroup(cmd)
-	// After the group is signalled, a parent that has not exited by then is
-	// killed outright rather than waited on forever.
+	// Kill the parent outright if it outlives the group signal by 10 seconds.
 	cmd.WaitDelay = 10 * time.Second
 	err := cmd.Run()
 	if err != nil && ctx.Err() != nil {

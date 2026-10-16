@@ -4,11 +4,8 @@ package app
 
 import "errors"
 
-// none is the supervisor where no service manager is reachable: an OS with
-// none wired up, or a Linux shell with no user manager behind it (WSL 1, a
-// container, a session-less login). Nothing is ever installed, loaded or
-// disabled, and the server lives only as long as the terminal or init system
-// that runs `otata serve`. macOS never needs it, since launchd is always there.
+// none is the supervisor where there is no service manager, like a Linux
+// without systemd.
 type none struct{}
 
 var errNoManager = errors.New("no service manager is reachable from here")

@@ -2,8 +2,6 @@ package artifact
 
 import "testing"
 
-// The listing asks one question of every record, and each platform answers
-// it with its own field.
 func TestSignedBy(t *testing.T) {
 	if got := (Record{Team: "WDT3B55TUP"}).SignedBy(); got != "WDT3B55TUP" {
 		t.Errorf("iOS: %q", got)
@@ -16,8 +14,6 @@ func TestSignedBy(t *testing.T) {
 	}
 }
 
-// The set is closed and exact: the spelling is the one the record stores and
-// every switch keys on, so a near miss is refused rather than guessed at.
 func TestParsePlatform(t *testing.T) {
 	for _, s := range []string{"ios", "android"} {
 		if p, err := ParsePlatform(s); err != nil || string(p) != s {

@@ -15,49 +15,32 @@ import (
 	"time"
 )
 
-// Signing is who signed a published build and, where the platform sets one,
-// when it stops being installable. Identity is the question every platform
-// asks, because a differently signed build cannot replace an installed one:
-// iOS answers with the team, Android with the certificate. The deadline is
-// iOS's alone. Two clocks bound it: the provisioning profile expires, and so
-// does the certificate that signed it. The earlier is the deadline, which is
-// why Expires is not the profile's own date. Renewing either needs a Mac with
-// Xcode and an unlocked keychain. An Android certificate is nominally good
-// for decades, and nothing here counts it down.
+// Signing is who signed a build and, on iOS, when it stops installing: the
+// earlier of the profile's and the signing certificate's expiry.
 type Signing struct {
 	ProfileName string `json:"profile_name,omitempty"`
 
-	// Team is who signed an iOS build. Automatic signing picks, and on a
-	// machine with several Apple accounts it picks silently: a profile name
-	// reads "iOS Team Provisioning Profile: *" for every app a paid team
-	// signs, naming no team.
+	// Team is the iOS signing team, which a profile's name doesn't say.
 	Team string `json:"team,omitempty"`
 
-	// Signer is who signed an Android build: the certificate's subject CN,
-	// "Android Debug" for the debug keystore every machine has. Fingerprint
-	// is the certificate's SHA-256, which is what Android itself compares.
+	// Signer is an APK certificate's CN, like "Android Debug". Fingerprint is
+	// its SHA-256, which is what Android compares.
 	Signer      string `json:"signer,omitempty"`
 	Fingerprint string `json:"fingerprint,omitempty"`
 
 	ProfileExpires time.Time `json:"profile_expires,omitzero"`
 
-	// CertExpires is the profile-authorized certificate whose private key this
-	// machine holds. A profile lists every certificate its team may sign with,
-	// and most belong to other machines, so their dates say nothing about this
-	// build. Zero when none is held, which is normal on a node that only serves.
+	// CertExpires is the expiry of the profile's certificate that this machine
+	// holds, or zero if it holds none.
 	CertExpires time.Time `json:"cert_expires,omitzero"`
 
-	// Expires is the effective deadline: the earlier of the two above. Zero
-	// where the platform sets none, which HasDeadline is the way to ask.
+	// Expires is the earlier of the two, or zero with no deadline.
 	Expires time.Time `json:"expires,omitzero"`
 
-	// Binder names the clock that runs out first, because the remedy differs:
-	// a profile is regenerated, while a certificate is reissued and its private
-	// key then has to land in this machine's keychain.
+	// Binder names whichever runs out first, since the remedies differ.
 	Binder string `json:"binder,omitempty"`
 
-	// Free reports a personal-team profile, and iOS installs those only from a paired host.
-	// See MIInstallerErrorDomain 111.
+	// Free is a personal-team profile, which iOS won't install over the air.
 	Free bool `json:"free,omitempty"`
 }
 
@@ -66,25 +49,17 @@ const (
 	BinderCertificate = "certificate"
 )
 
-// ErrNoProfile reports that the payload carries no provisioning profile at
-// all: an .ipa published through --artifact by a toolchain that strips it.
-// Nothing is wrong in that case, so callers say nothing.
+// ErrNoProfile means an .ipa has no provisioning profile, which is fine.
 var ErrNoProfile = errors.New("no embedded provisioning profile")
 
-// ErrUnsigned reports an APK whose signature does not verify, or that has
-// none: what a release build with no signing config produces. Android will
-// not install it, so a caller refuses to serve it.
+// ErrUnsigned means an APK is unsigned or its signature doesn't verify, so
+// Android won't install it.
 var ErrUnsigned = errors.New("the APK is unsigned, or its signature does not verify")
 
-// readSigning reports when the build in app stops being installable. held is
-// this machine's code-signing identities from HeldIdentities, handed in
-// rather than enumerated here: the keychain answer is a fact about the
-// machine, identical for every payload a command inspects, and enumerating it
-// per payload made doctor's cost scale with the number of published apps. A
-// nil map reads as holding none.
+// readSigning reads the signing deadline out of app's embedded profile. held
+// comes from HeldIdentities, and nil means none.
 func readSigning(app fs.FS, held map[string]bool) (Signing, error) {
-	// The tools are macOS's: a Linux node serves artifacts some other machine
-	// signed, and has no standing to audit them.
+	// The security tool exists only on macOS.
 	if runtime.GOOS != "darwin" {
 		return Signing{}, fmt.Errorf("a provisioning profile %w: it needs macOS's security tool", ErrUnsupported)
 	}
@@ -106,14 +81,12 @@ func readSigning(app fs.FS, held map[string]bool) (Signing, error) {
 	return signingFromProfile(profile, held)
 }
 
-// signingFromProfile assembles the deadline from a decoded profile. Split from
-// the reading so the assembly is testable without a CMS envelope or a bundle.
+// signingFromProfile builds Signing from a decoded profile.
 func signingFromProfile(profile map[string]any, held map[string]bool) (Signing, error) {
 	profileExpires, ok := profile["ExpirationDate"].(time.Time)
 	if !ok {
 		return Signing{}, fmt.Errorf("the provisioning profile carries no readable ExpirationDate")
 	}
-	// Absent only in a malformed profile; the dates still stand without it.
 	name, _ := profile["Name"].(string)
 
 	s := newSigning(name, profileExpires, heldCertExpiry(profile, held))
@@ -122,8 +95,7 @@ func signingFromProfile(profile map[string]any, held map[string]bool) (Signing, 
 	return s, nil
 }
 
-// profileTeam is the first entry of the TeamIdentifier array: an array, not a
-// bare string, and absent only in a malformed profile.
+// profileTeam is the first entry of the TeamIdentifier array.
 func profileTeam(profile map[string]any) string {
 	ids, _ := profile["TeamIdentifier"].([]any)
 	if len(ids) == 0 {
@@ -133,22 +105,15 @@ func profileTeam(profile map[string]any) string {
 	return team
 }
 
-// localProvision reports whether Xcode provisioned the profile locally rather
-// than Apple's portal issuing it: what a personal team gets and a paid team
-// never does.
-//
-// The alternative was TimeToLive: 7 against a paid team's 365, a number Apple
-// can redefine that names a consequence rather than the thing. Measured across
-// five profiles, this key was on exactly the two personal-team ones; every
-// other field, IsXcodeManaged included, failed to separate them. Absence is
-// the normal case and the answer: a paid profile simply has no such key.
+// localProvision reports a profile Xcode made locally, which only personal
+// teams get. Across five real profiles, LocalProvision was the one key that
+// told them apart. A paid team's profile doesn't have it.
 func localProvision(profile map[string]any) bool {
 	v, _ := profile["LocalProvision"].(bool)
 	return v
 }
 
-// newSigning resolves the two clocks into one deadline. Split out from the
-// reading so the resolution is testable without a keychain or a bundle.
+// newSigning takes the earlier of the two expiries as the deadline.
 func newSigning(name string, profileExpires, certExpires time.Time) Signing {
 	s := Signing{
 		ProfileName:    name,
@@ -164,12 +129,11 @@ func newSigning(name string, profileExpires, certExpires time.Time) Signing {
 	return s
 }
 
-// HasDeadline reports whether this build's signing runs out at all. It does
-// on iOS; an Android certificate is not counted down.
+// HasDeadline is true on iOS. Android certificates aren't counted down.
 func (s Signing) HasDeadline() bool { return !s.Expires.IsZero() }
 
-// SignerName is who signed an Android build, for a listing: the subject CN,
-// or the fingerprint's first bytes for a certificate that names nobody.
+// SignerName is the APK signer's CN, or the start of its fingerprint if it
+// has none.
 func (s Signing) SignerName() string {
 	switch {
 	case s.Signer != "":
@@ -180,10 +144,8 @@ func (s Signing) SignerName() string {
 	return s.Fingerprint
 }
 
-// Detail is the one line doctor and publish both print. With a deadline it
-// leads with the date, because that is what a person acts on, and carries the
-// remaining days because that is what makes the date mean something at a
-// glance. Without one it names the signer, which is the whole answer.
+// Detail is the line doctor and publish print: the deadline and the days
+// left, or the signer.
 func (s Signing) Detail(now time.Time) string {
 	if !s.HasDeadline() {
 		if s.Fingerprint != "" && s.Signer != "" {
@@ -192,7 +154,6 @@ func (s Signing) Detail(now time.Time) string {
 		return "signed by " + s.SignerName()
 	}
 	date := s.Expires.Format("2006-01-02")
-	// Truncating toward zero would call 23 hours "0 days" and read as today.
 	days := int(s.Expires.Sub(now).Hours() / 24)
 	switch {
 	case !s.Expires.After(now):
@@ -206,26 +167,19 @@ func (s Signing) Detail(now time.Time) string {
 	}
 }
 
-// Expired reports whether signing has already stopped working. Signing with
-// no deadline never does.
+// Expired reports whether the deadline has passed.
 func (s Signing) Expired(now time.Time) bool { return s.HasDeadline() && !s.Expires.After(now) }
 
-// Within reports whether the deadline is close enough to be worth saying.
+// Within reports whether the deadline is less than d away.
 func (s Signing) Within(d time.Duration, now time.Time) bool {
 	return s.HasDeadline() && !s.Expired(now) && s.Expires.Sub(now) < d
 }
 
-// ---------- reading ----------
-
-// decodeCMS unwraps the PKCS#7 envelope a provisioning profile is wrapped in,
-// yielding the XML plist inside. The signature is deliberately not verified:
-// the profile came out of a bundle this machine already serves, and what is
-// asked of it is a date, not a trust decision.
+// decodeCMS unwraps a provisioning profile's PKCS#7 envelope without
+// verifying it, since only its dates are read.
 func decodeCMS(raw []byte) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	// -i /dev/stdin rather than a temp file: the profile is small, and a temp
-	// file is one more thing to leak on a failure path.
 	cmd := exec.CommandContext(ctx, "security", "cms", "-D", "-i", "/dev/stdin")
 	cmd.Stdin = bytes.NewReader(raw)
 	var out, errBuf bytes.Buffer
@@ -239,13 +193,7 @@ func decodeCMS(raw []byte) ([]byte, error) {
 }
 
 // heldCertExpiry returns the latest expiry among the profile's certificates
-// whose private key this machine holds, or the zero time if it holds none.
-// A profile with no certificate list, or with entries that do not parse, is
-// malformed but not fatal: the profile's own date still bounds the build.
-//
-// The latest, not the earliest: any held certificate can sign, so the
-// longest-lived bounds the next build. The earliest, or ignoring which are
-// held, reports a date set by somebody else's certificate.
+// this machine holds a key for, since any of them can sign. Zero if none.
 func heldCertExpiry(profile map[string]any, held map[string]bool) time.Time {
 	certs, _ := profile["DeveloperCertificates"].([]any)
 	if len(certs) > maxProfileCerts {
@@ -272,20 +220,14 @@ func heldCertExpiry(profile map[string]any, held map[string]bool) time.Time {
 	return latest
 }
 
-// fingerprint is the SHA-1 of the DER certificate, the identifier
-// `security find-identity` prints. It is the join key
-// against what the keychain reports, and a stronger digest would not match.
+// fingerprint is the certificate's SHA-1, the hash `security find-identity` prints.
 func fingerprint(cert *x509.Certificate) string {
 	sum := sha1.Sum(cert.Raw)
 	return strings.ToUpper(hex.EncodeToString(sum[:]))
 }
 
-// HeldIdentities is the set of code-signing identities this machine can
-// actually sign with, an identity being a certificate whose private key is in
-// the keychain, which is exactly what `find-identity` enumerates.
-//
-// Exported so a command enumerates the keychain once, however many payloads it
-// inspects: the answer is per-machine, and the subprocess costs ~50ms.
+// HeldIdentities returns the fingerprints of the keychain's code-signing
+// identities. Callers read it once and pass it to every Signing call.
 func HeldIdentities() (map[string]bool, error) {
 	if runtime.GOOS != "darwin" {
 		return nil, fmt.Errorf("the keychain %w: it needs macOS's security tool", ErrUnsupported)
@@ -299,11 +241,8 @@ func HeldIdentities() (map[string]bool, error) {
 	return parseIdentityFingerprints(out), nil
 }
 
-// parseIdentityFingerprints reads the hashes out of `find-identity` output.
-//
-// Revoked certificates are listed by -v despite the flag's name, annotated
-// rather than withheld. They cannot sign, so counting one as held would report
-// a deadline that has already passed.
+// parseIdentityFingerprints reads the hashes out of `find-identity` output,
+// skipping revoked certificates, which -v still lists.
 func parseIdentityFingerprints(out []byte) map[string]bool {
 	held := map[string]bool{}
 	for _, line := range strings.Split(string(out), "\n") {

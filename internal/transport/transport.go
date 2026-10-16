@@ -30,27 +30,20 @@ type Transport interface {
 	Name() string
 	Visibility() Visibility
 
-	// Ensure waits for transport readiness and returns the base URL a phone
-	// should use. It must be idempotent; it cannot prove remote reachability.
+	// Ensure waits until the transport is ready and returns the base URL for
+	// the phone. It must be idempotent.
 	Ensure(port int) (string, error)
 
 	// Status reports without mutating.
 	Status(port int) Status
 
 	// IncomingPrefix is the path prefix requests carry when they reach the
-	// HTTP handler, through the embedded node or a loopback proxy. Empty means
-	// bare paths. The server strips exactly this, so the two cannot differ.
+	// server, which strips it.
 	IncomingPrefix() string
 }
 
-// ValidateBaseURL checks a manual base URL before it is persisted, so a bad
-// one fails the command that sets it rather than every publish afterwards.
-//
-// iOS refuses an itms-services manifest not served over HTTPS with a publicly
-// trusted certificate, and http gives a URL that works from curl on the Mac and
-// fails on every phone. Query, fragment and userinfo are refused because the
-// base URL is extended by concatenation, and "…/otata?x=1/app/manifest.plist"
-// is not a manifest URL.
+// ValidateBaseURL refuses a manual base URL that isn't plain https, since
+// iOS needs HTTPS and the URL is extended by concatenation.
 func ValidateBaseURL(raw string) error {
 	u, err := url.Parse(raw)
 	if err != nil {

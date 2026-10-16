@@ -6,12 +6,8 @@ import (
 	"testing"
 )
 
-// Runs against a real project named by OTATA_TEST_PROJECT, skipped otherwise
-// so the suite stays hermetic. OTATA_TEST_SCHEME is the scheme discovery must
-// land on. The useful case is a project with many schemes of which only a few
-// archive an app. There, neither "lone scheme" nor a naive ".app" match
-// resolves correctly, and this is the only test that proves the narrowing
-// against real xcscheme files.
+// Checks that the real project at OTATA_TEST_PROJECT resolves to
+// OTATA_TEST_SCHEME, best tried on one with many schemes. Skipped when unset.
 func TestResolvesRealProject(t *testing.T) {
 	dir := os.Getenv("OTATA_TEST_PROJECT")
 	if dir == "" {

@@ -1,15 +1,8 @@
 {{define "installscript"}}
 <script id="latch">
 /*
-A second tap in quick succession gives iOS another itms-services URL, and the system restarts
-the download that was already running. The page cannot see the install to
-wait for it (iOS fully owns that and never calls back), so the best guard is
-on the tap, which is the only part the page can observe.
-
-The guard is visual only. The link only dims and ignores taps 
-because the page mustn't claim to know what iOS did with the handoff.
-
-The guard will automatically lift after 10 seconds.
+A second tap restarts an install iOS is already downloading, and the page
+can't see the install itself. So the link dims and ignores taps for 10 seconds.
 */
 document.addEventListener('click', function (e) {
   var link = e.target.closest && e.target.closest('a.install');

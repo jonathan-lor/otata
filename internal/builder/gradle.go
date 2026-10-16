@@ -17,21 +17,16 @@ import (
 	"github.com/jonathan-lor/otata/internal/artifact"
 )
 
-// Gradle builds a native Android app with the project's own Gradle wrapper.
-// The wrapper rather than a Gradle on PATH: it pins the Gradle version the
-// project was written for, every Android project ships one, and a project
-// without one is a project that needs one, which is what it is told.
+// Gradle builds an Android app with the project's own Gradle wrapper, which
+// pins the Gradle version the project expects.
 type Gradle struct{}
 
-// gradleDirs covers the repository root plus the subdirectory the
-// cross-platform frameworks keep their Android project in.
+// gradleDirs is the repository root and android/, where frameworks keep theirs.
 func gradleDirs(dir string) []string {
 	return []string{dir, filepath.Join(dir, "android")}
 }
 
-// Detect reports the Gradle root: the directory holding the settings file,
-// which is what defines a Gradle build. The wrapper beside it is a
-// prerequisite checked before the build, not a condition of detection.
+// Detect returns the directory holding the settings file.
 func (g *Gradle) Detect(dir string) (string, error) {
 	for _, d := range gradleDirs(dir) {
 		for _, name := range []string{"settings.gradle.kts", "settings.gradle"} {
@@ -43,15 +38,12 @@ func (g *Gradle) Detect(dir string) (string, error) {
 	return "", fmt.Errorf("no settings.gradle or settings.gradle.kts found here")
 }
 
-// initScript is the listing Gradle is asked for; see otata.init.gradle.
+// initScript asks Gradle for the project's modules and variants.
 //
 //go:embed otata.init.gradle
 var initScript []byte
 
-// ---------- prerequisites ----------
-
-// jdkMissing, sdkMissing and flutterSDKMissing are each stated once, for
-// the pre-check and for the log phrases that mean the same thing.
+// Each is shared by the pre-check and the log phrases that mean the same.
 var (
 	jdkMissing = SetupError{
 		Detail: "the build runs Gradle, and no JDK is installed or on PATH",
@@ -68,14 +60,10 @@ var (
 	}
 )
 
-// prerequisite reports what an Android build needs before Gradle can run,
-// or nil. Asked up front for the same reason as Xcode's: the answer is on
-// disk, and the run it replaces takes a minute to fail, on the loudest
-// reason rather than the first. Each check mirrors what the wrapper script
-// and the plugin themselves look for, in their order.
+// prerequisite returns what the build is missing, or nil, checking in the
+// order the wrapper and the plugin would fail.
 func (g *Gradle) prerequisite(root string) *SetupError {
-	// The wrapper: its script, its jar, and the script being runnable, which
-	// a checkout through a filesystem with no execute bit loses.
+	// The wrapper: its script, its jar and the execute bit.
 	info, err := os.Stat(filepath.Join(root, "gradlew"))
 	switch {
 	case err != nil || !exists(filepath.Join(root, "gradle", "wrapper", "gradle-wrapper.jar")):
@@ -118,10 +106,8 @@ func (g *Gradle) prerequisite(root string) *SetupError {
 			Hint:   "install the SDK there, or point ANDROID_HOME or local.properties' sdk.dir at where it is",
 		}
 	}
-	// The APK is read after the build with the SDK's own build-tools, which
-	// the reader finds through ANDROID_HOME. When only local.properties names
-	// the SDK, the reader would fail after a successful build, so the location
-	// is exported for the rest of this process.
+	// The APK reader finds the build-tools through ANDROID_HOME, so export an
+	// SDK that only local.properties names.
 	if os.Getenv("ANDROID_HOME") == "" && os.Getenv("ANDROID_SDK_ROOT") == "" {
 		os.Setenv("ANDROID_HOME", sdk)
 	}
@@ -129,9 +115,8 @@ func (g *Gradle) prerequisite(root string) *SetupError {
 	return frameworkPrerequisite(root)
 }
 
-// sdkLocation is where the plugin will look for the SDK: sdk.dir in the
-// project's local.properties first, as the plugin itself prefers, then
-// ANDROID_HOME, then ANDROID_SDK_ROOT for an older setup.
+// sdkLocation finds the SDK as the plugin does: sdk.dir, then ANDROID_HOME,
+// then ANDROID_SDK_ROOT.
 func sdkLocation(root string) string {
 	if dir := localProperty(root, "sdk.dir"); dir != "" {
 		return dir
@@ -144,9 +129,7 @@ func sdkLocation(root string) string {
 	return ""
 }
 
-// localProperty reads one key out of local.properties, a Java properties
-// file: a backslash escapes the character after it, which is how Android
-// Studio writes a Windows path and its colon.
+// localProperty reads a key from local.properties, undoing backslash escapes.
 func localProperty(root, key string) string {
 	raw, err := os.ReadFile(filepath.Join(root, "local.properties"))
 	if err != nil {
@@ -174,20 +157,17 @@ func localProperty(root, key string) string {
 	return ""
 }
 
-// frameworkPrerequisite reports the step a framework wrapping the Android
-// project has not run. Both keep the project in android/ under their own
-// root, and both generate what its settings script includes rather than
-// commit it.
+// frameworkPrerequisite reports a Flutter or React Native setup step that
+// hasn't run.
 func frameworkPrerequisite(root string) *SetupError {
 	parent := filepath.Dir(root)
-	// Flutter's settings script loads its Gradle plugin from the SDK path
-	// that every flutter command writes into local.properties.
+	// Flutter's settings script needs flutter.sdk in local.properties.
 	if exists(filepath.Join(parent, "pubspec.yaml")) && localProperty(root, "flutter.sdk") == "" {
 		missing := flutterSDKMissing
 		missing.Dir = parent
 		return &missing
 	}
-	// React Native's loads its from node_modules, which an install writes.
+	// React Native's needs node_modules.
 	if exists(filepath.Join(parent, "package.json")) && !exists(filepath.Join(parent, "node_modules")) {
 		return &SetupError{
 			Detail:  "the project's node modules are not installed",
@@ -198,26 +178,21 @@ func frameworkPrerequisite(root string) *SetupError {
 	return nil
 }
 
-// ---------- the listing ----------
-
-// listing is what the init script reports: every application module with
-// its build directory, and every variant of each.
+// listing is the init script's report: each application module's build
+// directory, and every variant.
 type listing struct {
 	modules  map[string]string
 	variants []variant
 }
 
-// variant is one build of one application module, as Gradle names it:
-// the flavor, or none, followed by the build type, as freeDebug.
+// variant is one build of a module, named like freeDebug.
 type variant struct {
 	module, name, flavor, buildType string
-	// signed is "signed" or "unsigned" as the listing could tell, or ""
-	// where it could not.
+	// signed is "signed", "unsigned", or "" when the plugin can't tell.
 	signed string
 }
 
-// parseListing reads the init script's lines out of everything else Gradle
-// printed. Split from the running so the parse is testable.
+// parseListing picks the init script's lines out of Gradle's output.
 func parseListing(out []byte) listing {
 	l := listing{modules: map[string]string{}}
 	for line := range strings.SplitSeq(string(out), "\n") {
@@ -243,8 +218,7 @@ func (l listing) modulePaths() []string {
 	return paths
 }
 
-// flavors is the module's product flavors, as its variants name them: a
-// project with several flavor dimensions names each combination.
+// flavors lists the module's flavors, combined across dimensions as Gradle names them.
 func (l listing) flavors(module string) []string {
 	return l.distinct(module, func(v variant) string { return v.flavor })
 }
@@ -264,8 +238,7 @@ func (l listing) distinct(module string, field func(variant) string) []string {
 	return out
 }
 
-// buildDir is where the module builds, as it reported, or the conventional
-// place for a module the script listed variants for but no directory.
+// buildDir is the module's reported build directory, or the conventional one.
 func (l listing) buildDir(module, root string) string {
 	if dir := l.modules[module]; dir != "" {
 		return dir
@@ -274,12 +247,9 @@ func (l listing) buildDir(module, root string) string {
 	return filepath.Join(root, rel, "build")
 }
 
-// list asks Gradle which application modules the project has and which
-// variants each builds. The init script prints them while Gradle configures
-// the project, and the help task is what makes it configure without
-// building. Configuration on demand and the configuration cache are both
-// off for the run: the first would configure the root project alone, and
-// the second would replay a cached configuration and print nothing.
+// list runs the init script while Gradle configures the help task.
+// Configure-on-demand and the configuration cache are off, since either
+// would skip the configuration that prints the listing.
 func (g *Gradle) list(ctx context.Context, j *gradleJob) (listing, error) {
 	script := filepath.Join(j.work, "otata.init.gradle")
 	if err := os.WriteFile(script, initScript, 0o644); err != nil {
@@ -299,14 +269,9 @@ func (g *Gradle) list(ctx context.Context, j *gradleJob) (listing, error) {
 	return l, nil
 }
 
-// ---------- selection ----------
-
-// resolve applies the selection rule to the listing. The module: the one
-// named, else the lone application module, else one named :app, else refuse
-// and list. The flavor within it: the one named, else the lone flavor, else
-// none where the module defines none, else refuse and list. The build type
-// is the configuration as Gradle spells it, and a module that does not
-// build it says which it does.
+// resolve picks the variant: the named module, else the lone one, else :app,
+// and the named flavor, else the lone one, else none. config names the build
+// type. Anything ambiguous is refused with the candidates.
 func resolve(l listing, module, flavor, config string) (variant, error) {
 	module, err := resolveModule(l, module)
 	if err != nil {
@@ -331,8 +296,7 @@ func resolveModule(l listing, module string) (string, error) {
 		if _, ok := l.modules[module]; ok {
 			return module, nil
 		}
-		// Gradle spells a project path with a leading colon; the same
-		// module named without one is the same module.
+		// Accept a module named without its leading colon.
 		if _, ok := l.modules[":"+module]; ok && !strings.HasPrefix(module, ":") {
 			return ":" + module, nil
 		}
@@ -371,12 +335,9 @@ func resolveFlavor(l listing, module, flavor string) (string, error) {
 	}
 }
 
-// unsigned refuses a variant the listing reports as having no signing
-// config, before the build. Android will not install an unsigned APK, and a
-// release build type ships with no signingConfig, so this is every fresh
-// project's first Release publish: refused once, with both remedies, rather
-// than after a release build that took minutes. Where the listing could
-// not tell, the APK is verified after the build instead.
+// unsigned refuses a variant with no signing config before building it,
+// since Android won't install the APK. A fresh project's release build type
+// has none.
 func unsigned(v variant) error {
 	if v.signed != "unsigned" {
 		return nil
@@ -401,17 +362,13 @@ func upperFirst(s string) string {
 	return strings.ToUpper(s[:1]) + s[1:]
 }
 
-// ---------- the build ----------
-
-// gradleJob is what Build resolves before running anything: the Gradle
-// root, its wrapper, and an open log in the work directory.
+// gradleJob is a resolved build: the Gradle root, its wrapper and an open log.
 type gradleJob struct {
 	root, wrapper, work, logPath string
 	log                          *os.File
 }
 
-// prepare resolves the job, refusing before Gradle runs when something it
-// needs is not there.
+// prepare resolves the job, refusing it if a prerequisite is missing.
 func (g *Gradle) prepare(opts Options) (*gradleJob, error) {
 	if opts.Config == "" {
 		return nil, fmt.Errorf("no build configuration given")
@@ -433,7 +390,6 @@ func (g *Gradle) prepare(opts Options) (*gradleJob, error) {
 	}, nil
 }
 
-// failure names what went wrong from the log.
 func (j *gradleJob) failure(ctx context.Context, fallback string) error {
 	return classifyBuildFailure(ctx, j.logPath, fallback, gradleDiagnoses)
 }
@@ -459,8 +415,7 @@ func (g *Gradle) Build(ctx context.Context, opts Options) (Result, error) {
 		return failed, err
 	}
 
-	// assemble<Variant> on the module: the APK, signed as the variant's
-	// config says, with nothing installed or bundled.
+	// assemble<Variant> builds the APK without installing it.
 	opts.logf("building %s in %s (%s)", v.name, v.module, opts.Config)
 	task := v.module + ":assemble" + upperFirst(v.name)
 	if err := run(ctx, j.log, j.log, j.root, j.wrapper, "--console=plain", task); err != nil {
@@ -474,10 +429,8 @@ func (g *Gradle) Build(ctx context.Context, opts Options) (Result, error) {
 	return Result{PayloadPath: apk, Platform: artifact.Android, Config: opts.Config, LogPath: j.logPath}, nil
 }
 
-// locateAPK finds the variant's APK through the metadata the plugin writes
-// beside it, rather than a guessed filename: outputs/apk/<flavor>/<type>/
-// is the convention, but the file's name is the project's to set, and a
-// project that splits its APKs has several.
+// locateAPK finds the variant's APK through the output-metadata.json the
+// plugin writes, since a project can name and split its APKs.
 func locateAPK(buildDir, variantName string) (string, error) {
 	root := filepath.Join(buildDir, "outputs", "apk")
 	var found string
@@ -512,11 +465,8 @@ func locateAPK(buildDir, variantName string) (string, error) {
 	return found, nil
 }
 
-// apkFromMetadata reads the plugin's output-metadata.json: the variant it
-// describes and the files that variant produced. matched reports whether it
-// is the variant asked for. A variant split by ABI produces one APK per
-// ABI, and otata serves one, so the universal APK is the one taken, and a
-// project that builds none is told which setting adds it.
+// apkFromMetadata returns the APK output-metadata.json names for the variant.
+// With ABI splits it takes the universal APK, since otata serves just one.
 func apkFromMetadata(raw []byte, variantName string) (file string, matched bool, err error) {
 	var meta struct {
 		VariantName string `json:"variantName"`

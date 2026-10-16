@@ -22,8 +22,7 @@ func (a *App) Forget(slug string) (*ForgetResult, error) {
 	if err := storage.ValidateSlug(slug); err != nil {
 		return nil, cli.Failf(cli.CodeInvalidArgs, "%v", err)
 	}
-	// A corrupt record used to make an app impossible to remove while it stayed
-	// fully installable, so an unreadable record is a reason to remove. Likewise a directory with no record at all.
+	// An unreadable record, or an app directory with none, can still be forgotten.
 	_, ok, recErr := a.Store.Record(slug)
 	orphan := false
 	if !ok && recErr == nil {
@@ -34,9 +33,7 @@ func (a *App) Forget(slug string) (*ForgetResult, error) {
 	if !ok && recErr == nil && !orphan {
 		return nil, cli.Failf(cli.CodeNotFound, "no app published under %q", slug)
 	}
-	// A live build would write its record and payload back after this
-	// removed them, leaving an app with no marker, no index entry and a
-	// payload on disk.
+	// A live build would write everything back after this removed it.
 	if building, err := a.Store.Building(); err == nil {
 		if b, held := building[slug]; held && !markerStale(b, time.Now()) {
 			return nil, cli.Failf(cli.CodeBuildInProgress,

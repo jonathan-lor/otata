@@ -1,6 +1,5 @@
-// Package server exposes the install surface over loopback.
-//
-// A transport is what makes this reachable from a phone. the server never binds a public interface.
+// Package server serves the install pages and payloads on loopback, for a
+// transport to expose.
 package server
 
 import (
@@ -17,10 +16,9 @@ import (
 	"github.com/jonathan-lor/otata/internal/version"
 )
 
-// Extensions no system MIME table knows, and which the phones are strict
-// about. iOS's install daemon rejects a manifest served as octet-stream, and
-// Android's browser offers to install an APK only under its own type; as
-// octet-stream it is just a download.
+// mimeOverrides are types the phones insist on: iOS rejects a manifest
+// served as octet-stream, and Android only offers to install an APK served
+// as its own type.
 var mimeOverrides = map[string]string{
 	".ipa":   "application/octet-stream",
 	".plist": "application/xml",
@@ -28,20 +26,14 @@ var mimeOverrides = map[string]string{
 }
 
 type Server struct {
-	// root confines every file operation to the served directory at the syscall
-	// level, which is stronger than sanitizing strings. percent-decoding turns %2F into
-	// a separator and %2e%2e into "..", and a symlink escapes a clean-looking path.
+	// root confines every file access to the served directory, symlinks included.
 	root *os.Root
 
-	// prefix is what every request still carries when it arrives: the base URL's
-	// path under a proxy that forwards it unchanged. Embedded Tailscale serves
-	// at the root, so there it is empty. The server strips exactly this prefix.
+	// prefix is the path a forwarding proxy leaves on every request, which the
+	// server strips.
 	prefix string
 
-	// identity names the store this server serves, so a client can tell "an otata
-	// server is on the port" from "the otata server for MY root is". Without it a
-	// publish under one OTATA_ROOT writes into its own tree while the server on
-	// the port serves another, and reports a URL that 404s.
+	// identity is the RootDigest of the store served, so clients can tell roots apart.
 	identity string
 
 	logger *log.Logger
@@ -60,18 +52,14 @@ func New(publicDir, incomingPrefix, identity string, logger *log.Logger) (*Serve
 
 func (s *Server) Close() error { return s.root.Close() }
 
-// Listen binds loopback only. Passing ":port" would accept on every interface
-// and expose payloads to the local network instead of only the transport.
+// Listen binds loopback only, never every interface.
 func Listen(port int) (net.Listener, error) {
 	return net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// Identity on every response, including errors. Port occupancy is not process
-	// identity: without it, "is our server up?" cannot be told from "something
-	// else holds the port", and stopping ours could signal an unrelated process.
-	// The version rides along so status and doctor can see a long-lived server
-	// still running the build an upgrade has since replaced on disk.
+	// Identify the server on every response, errors included, so the CLI can
+	// tell it from another process on the port and spot an outdated one.
 	w.Header().Set("X-Otata", "1")
 	w.Header().Set("X-Otata-Pid", strconv.Itoa(os.Getpid()))
 	w.Header().Set("X-Otata-Root", s.identity)
@@ -103,11 +91,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if info.IsDir() {
-		// A directory without its trailing slash gets one first. The pages link
-		// icons and the index relatively ("icon.png", "../"), and "/myapp" would
-		// resolve those a level too high. The Location is relative for the same
-		// reason the links are: behind a stripping proxy the server cannot know
-		// the phone's path.
+		// Redirect a directory to its trailing-slash form. The Location is
+		// relative, since behind a stripping proxy the server can't know the
+		// phone's path.
 		if !strings.HasSuffix(r.URL.Path, "/") {
 			target := path.Base(r.URL.Path) + "/"
 			if r.URL.RawQuery != "" {
@@ -118,7 +104,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusMovedPermanently)
 			return
 		}
-		// Directories serve their index; there is no listing ever.
+		// Directories serve their index, never a listing.
 		name = path.Join(name, "index.html")
 		f.Close()
 		if f, err = s.root.Open(name); err != nil {
@@ -135,26 +121,19 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if ct, override := mimeOverrides[strings.ToLower(path.Ext(name))]; override {
 		w.Header().Set("Content-Type", ct)
 	}
-	// A payload URL is stable across builds, so caching must be defeated
-	// deliberately rather than relied upon to notice a change.
+	// Payload URLs stay the same across builds, so never cache.
 	w.Header().Set("Cache-Control", "no-store")
 
-	// ServeContent may answer 206, 304 or 416, so the status has to be observed
-	// rather than assumed; the log is the only visibility a background server has.
+	// Record the status ServeContent actually sends, for the log.
 	rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
-	// *os.File is already an io.ReadSeeker. ServeContent handles ranges, 206,
-	// 416 and conditional requests, which a large payload over a relayed link
-	// genuinely needs.
+	// ServeContent handles ranges and conditional requests, which large
+	// payloads need.
 	http.ServeContent(rec, r, path.Base(name), info.ModTime(), f)
 	s.log(r, rec.status)
 }
 
-// resolve maps a request path to a name inside the root. Go has already
-// percent-decoded URL.Path, so this runs after the decoding that makes %2F
-// dangerous. path.Clean plus os.Root is what makes it inert.
-//
-// A configured prefix is required because a proxy that forwards the path
-// unchanged never produces a bare request, so one that arrives is not otata's.
+// resolve maps an already-decoded request path to a name inside the root.
+// With a prefix set, a request without it isn't for otata.
 func (s *Server) resolve(urlPath string) (string, bool) {
 	clean := path.Clean("/" + urlPath)
 	trimmed := strings.TrimPrefix(clean, "/")

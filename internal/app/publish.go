@@ -24,20 +24,15 @@ import (
 type PublishOptions struct {
 	Dir    string
 	Config string
-	// Scheme selects the build on iOS, the Xcode scheme; Module and Flavor
-	// select it on Android, the Gradle module and product flavor. Each is
-	// optional, and the other platform's is refused rather than ignored.
+	// Scheme selects an iOS build, Module and Flavor an Android one.
 	Scheme   string
 	Module   string
 	Flavor   string
 	Slug     string
 	Artifact string
-	Builder  string // "" or "build" for the incremental build path, "archive" for the archive+export path
-	// Platform is what to build for, and is required: nothing is discovered,
-	// because a Mac builds for both and a default there would be a guess. One
-	// publish is one platform: a cross-platform project publishes once per
-	// platform, each under its own slug. With Artifact the payload's
-	// extension says which platform it is, and Platform, if given, must agree.
+	Builder  string // "build" (the default) or "archive"
+	// Platform is required for a build. With Artifact, the file's extension
+	// decides it, and Platform must agree if given.
 	Platform artifact.Platform
 }
 
@@ -48,21 +43,17 @@ type PublishResult struct {
 	Version     string            `json:"version"`
 	Build       string            `json:"build"`
 	BuildConfig string            `json:"config"`
-	// SizeBytes is the unit the record and every listing use; SizeMB stays
-	// for the callers that read it before the two agreed.
-	SizeBytes  int64   `json:"size_bytes"`
-	SizeMB     float64 `json:"size_mb"`
-	Commit     string  `json:"commit,omitempty"`
-	Dirty      bool    `json:"dirty"`
-	InstallURL string  `json:"install_url"`
-	IndexURL   string  `json:"index_url"`
-	Transport  string  `json:"transport"`
+	SizeBytes   int64             `json:"size_bytes"`
+	SizeMB      float64           `json:"size_mb"` // for callers that predate SizeBytes
+	Commit      string            `json:"commit,omitempty"`
+	Dirty       bool              `json:"dirty"`
+	InstallURL  string            `json:"install_url"`
+	IndexURL    string            `json:"index_url"`
+	Transport   string            `json:"transport"`
 
-	// Signing is who signed this build and, on iOS, when it stops being
-	// installable, for a caller that wants the identity or the dates.
+	// Signing is who signed the build and, on iOS, when it stops installing.
 	Signing *appmeta.Signing `json:"signing,omitempty"`
-	// SigningWarning is set only when that deadline is close enough to act on,
-	// so an regular publish says nothing about signing.
+	// SigningWarning is set only when that deadline is near.
 	SigningWarning string `json:"signing_warning,omitempty"`
 }
 
@@ -78,32 +69,13 @@ func (r PublishResult) Human(w io.Writer) {
 	cli.Line(w, "All apps:  \033[1;32m%s\033[0m\n", r.IndexURL)
 }
 
-/*
-onInterrupt turns a signal into the cancellation of the build.
-
-Go runs no deferred functions on a fatal signal, so without this a Ctrl-C
-during a multi-minute archive strands a marker, and the app renders as
-BUILDING with no install link until doctor --fix or the next publish
-notices its process is gone.
-
-The first signal cancels ctx, which kills the build's process group, and
-Publish unwinds through its ordinary failure path: the marker is cleared,
-the pages regenerated, and the caller gets an interrupted failure carrying
-the shell's exit status for that signal. It used to exit on the spot, which
-cleared the marker but left xcodebuild running into the work directory the
-next publish would claim. A second signal is the caller insisting: the
-marker is cleared and the process exits at once.
-
-A signal that lands after the build, during the seconds it takes to stage
-the payload, lets the publish complete rather than stop it half-staged.
-*/
+// onInterrupt turns the first SIGINT, SIGTERM or SIGHUP into a cancelled
+// build, so Publish clears its marker and reports the signal. A second
+// signal clears the marker and exits at once.
 func (a *App) onInterrupt(slug, baseURL string) (ctx context.Context, interrupted func() os.Signal, stop func()) {
 	ctx, cancel := context.WithCancel(context.Background())
 	ch := make(chan os.Signal, 2)
-	// SIGHUP is what a publish driven over SSH receives when the connection
-	// drops. An inherited ignore (nohup) is the caller saying
-	// "survive the hangup", and Notify would override it, so it is honored.
-	// Otherwise this handler would kill the build nohup exists to protect.
+	// SIGHUP arrives when an SSH session drops. Leave it ignored under nohup.
 	signals := []os.Signal{os.Interrupt, syscall.SIGTERM}
 	if !signal.Ignored(syscall.SIGHUP) {
 		signals = append(signals, syscall.SIGHUP)
@@ -143,8 +115,8 @@ func (a *App) onInterrupt(slug, baseURL string) (ctx context.Context, interrupte
 	return ctx, interrupted, stop
 }
 
-// signalExit is the status a shell reports for a process a signal killed:
-// 128 plus the signal's number, so 130 for Ctrl-C and 143 for SIGTERM.
+// signalExit is the shell's exit status for a process killed by s: 128 plus
+// the signal's number.
 func signalExit(s os.Signal) int {
 	if n, ok := s.(syscall.Signal); ok {
 		return 128 + int(n)
@@ -152,8 +124,7 @@ func signalExit(s os.Signal) int {
 	return 130
 }
 
-// signalName is the conventional spelling; syscall.Signal's own String is
-// "interrupt" and "terminated", which read as prose rather than as a name.
+// signalName spells s as SIGINT rather than syscall's "interrupt".
 func signalName(s os.Signal) string {
 	switch s {
 	case syscall.SIGINT:
@@ -166,9 +137,8 @@ func signalName(s os.Signal) string {
 	return s.String()
 }
 
-// claimBuild takes the build marker for a slug, or refuses because a live
-// publish holds it. A marker whose owner is gone is taken over, the same rule
-// doctor uses to report one and doctor --fix to clear it.
+// claimBuild takes the slug's build marker. A stale marker is taken over and
+// a live one refused.
 func (a *App) claimBuild(b artifact.Building) error {
 	for range 2 {
 		existing, claimed, err := a.Store.ClaimBuilding(b)
@@ -191,11 +161,8 @@ func (a *App) claimBuild(b artifact.Building) error {
 	return cli.Failf(cli.CodeInternal, "could not claim the build marker for %q", b.Slug)
 }
 
-// selectionFlags refuses the other platform's selection flags. Each platform
-// selects a build in its own toolchain's terms, an Xcode scheme or a Gradle
-// module and product flavor, and a flag that names the wrong one is worth
-// stopping on: ignored, it would select nothing, and the build that ran
-// would not be the one asked for.
+// selectionFlags refuses the other platform's selection flags rather than
+// ignoring them.
 func selectionFlags(platform artifact.Platform, opts PublishOptions) error {
 	switch platform {
 	case artifact.IOS:
@@ -216,8 +183,7 @@ func selectionFlags(platform artifact.Platform, opts PublishOptions) error {
 	return nil
 }
 
-// setupHint states the remedy as something to run, because that is what the
-// caller does next: an agent literally, a human by pasting it.
+// setupHint phrases a SetupError's remedy as a command to run.
 func setupHint(e *builder.SetupError) string {
 	if e.Command == "" {
 		return e.Hint
@@ -235,15 +201,12 @@ func setupHint(e *builder.SetupError) string {
 
 func shortAge(d time.Duration) string { return d.Truncate(time.Second).String() }
 
-// maxBuildAge bounds how long a marker is believed without its process being
-// checked. No archive takes six hours, and a marker older than that is a leftover.
+// maxBuildAge is longer than any build takes, so an older marker is stale
+// whatever its pid says.
 const maxBuildAge = 6 * time.Hour
 
-// markerStale is the one rule for whether a build marker still means something.
-// Pid liveness is primary but not sufficient because pids are reused after a reboot, and
-// a stale marker whose pid now belongs to another of our processes would be
-// believed forever — no install link, doctor sees nothing wrong. The age bound
-// closes that, and is the only evidence for a marker with no pid.
+// markerStale reports whether a build marker's publish is gone. The age bound
+// covers pids reused after a reboot, and markers with no pid.
 func markerStale(b artifact.Building, now time.Time) bool {
 	if now.Sub(b.Started) > maxBuildAge {
 		return true
@@ -254,10 +217,8 @@ func markerStale(b artifact.Building, now time.Time) bool {
 	return !processAlive(b.PID)
 }
 
-// DefaultConfig is what a publish builds with when --config is absent. Neither
-// value works as a configurable default: Release strips every #if DEBUG surface
-// out of an iteration build, Debug reports -Onone timings as the app's, and
-// neither mistake is visible in the artifact. So it's fixed, and announced.
+// DefaultConfig is built when --config is absent. Publish announces it,
+// because neither Release nor Debug is right for every iteration.
 const DefaultConfig = "Release"
 
 func (a *App) Publish(opts PublishOptions, progress func(string)) (*PublishResult, error) {
@@ -266,17 +227,12 @@ func (a *App) Publish(opts PublishOptions, progress func(string)) (*PublishResul
 		dir, _ = os.Getwd()
 	}
 	abs, _ := filepath.Abs(dir)
-	// Resolve symlinks so the recorded project path is one spelling, not
-	// whichever the shell happened to use; otherwise the same project checked
-	// out through a symlink reports a false slug conflict against itself.
+	// One spelling of the path, or a symlinked checkout conflicts with itself.
 	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
 		abs = resolved
 	}
 
-	// What to publish is settled before anything is claimed or wired, so
-	// "nothing to build here" and every refusal of the arguments arrive at
-	// once. A prebuilt payload is checked first because its extension is what
-	// says which platform it is; a build has to be told.
+	// Settle what to publish before claiming or starting anything.
 	var (
 		platform  artifact.Platform
 		b         builder.Builder
@@ -321,7 +277,6 @@ func (a *App) Publish(opts PublishOptions, progress func(string)) (*PublishResul
 	if slug == "" {
 		slug = DefaultSlug(abs, platform)
 	}
-	// An explicit --slug used to bypass Slugify entirely and reach filepath.Join.
 	if err := storage.ValidateSlug(slug); err != nil {
 		return nil, cli.Failf(cli.CodeInvalidArgs, "%v", err).
 			WithHint("pass --slug with a simple name like my-app")
@@ -330,9 +285,6 @@ func (a *App) Publish(opts PublishOptions, progress func(string)) (*PublishResul
 		return nil, err
 	}
 
-	// Only a real build has a configuration to resolve, --artifact doesn't
-	// build, and the payload's own provenance is recorded instead. A default
-	// the caller didn't choose will say so before the build starts.
 	config := opts.Config
 	if opts.Artifact == "" && config == "" {
 		config = DefaultConfig
@@ -343,8 +295,7 @@ func (a *App) Publish(opts PublishOptions, progress func(string)) (*PublishResul
 	if err != nil {
 		return nil, err
 	}
-	// The server before Ensure: a refusal (no autostart set up, a foreign
-	// process on the port) should arrive before anything wires the network.
+	// Ensure needs the server up: under Tailscale, the server runs the node.
 	if err := a.StartServer(); err != nil {
 		return nil, err
 	}
@@ -355,9 +306,8 @@ func (a *App) Publish(opts PublishOptions, progress func(string)) (*PublishResul
 
 	commit, branch, dirty := GitInfo(abs)
 
-	// Mark before building so the surface shows the in-flight state for the whole
-	// window someone might be watching. The marker is also the lock so a second
-	// publish of this slug doesn't share its work directory and offer a half-built app as installable.
+	// The marker shows the build on the pages and locks the slug against a
+	// second publish.
 	if err := a.claimBuild(artifact.Building{
 		Slug: slug, Started: time.Now(), Config: config, Commit: commit, PID: os.Getpid(),
 	}); err != nil {
@@ -369,8 +319,7 @@ func (a *App) Publish(opts PublishOptions, progress func(string)) (*PublishResul
 
 	published := false
 	defer func() {
-		// Only the failure path needs this. The success path below clears and
-		// reindexes explicitly so it can report a failure to do so.
+		// Success clears and reindexes itself, so it can report failures.
 		if published {
 			return
 		}
@@ -378,7 +327,6 @@ func (a *App) Publish(opts PublishOptions, progress func(string)) (*PublishResul
 		_ = a.Reindex(baseURL)
 	}()
 
-	// A prebuilt payload was checked up front; only a build runs here.
 	if opts.Artifact == "" {
 		built, err = b.Build(ctx, builder.Options{
 			Container: container, Config: config,
@@ -387,9 +335,7 @@ func (a *App) Publish(opts PublishOptions, progress func(string)) (*PublishResul
 			Log:  progress,
 		})
 	}
-	// Asked before the build's own error is read: a build the caller stopped
-	// reports the stop, not whatever a killed xcodebuild left in its log.
-	// The deferred cleanup above clears the marker on the way out.
+	// Report a stop as the stop, not as whatever the killed build logged.
 	if sig := interrupted(); sig != nil {
 		return nil, cli.Failf(cli.CodeInterrupted,
 			"stopped by %s; the build was killed and its marker cleared", signalName(sig)).
@@ -401,9 +347,6 @@ func (a *App) Publish(opts PublishOptions, progress func(string)) (*PublishResul
 				WithHint("re-run with " + amb.Flag).
 				WithDetails(map[string]any{"candidates": amb.Candidates, "flag": amb.Flag})
 		}
-		// A prerequisite of the project's own toolchain is not a build failure:
-		// the code is fine, one command fixes it, and an agent can run that
-		// command and retry rather than escalating to a human.
 		if setup, ok := errors.AsType[*builder.SetupError](err); ok {
 			details := map[string]any{}
 			if built.LogPath != "" {
@@ -439,15 +382,11 @@ func (a *App) Publish(opts PublishOptions, progress func(string)) (*PublishResul
 		}
 		return nil, f
 	}
-	// The slug was checked against the platform asked for, so the payload had
-	// better be that platform's, or the record and the check disagree.
 	if built.Platform != platform {
 		return nil, cli.Failf(cli.CodeInternal, "asked for an %s build and got an %s payload", platform, built.Platform)
 	}
 
-	// Metadata always comes from the payload, never the build tree, so every
-	// builder converges on one path, and the platform's reader is the only
-	// thing that knows how the payload is packaged.
+	// Metadata always comes from the payload, so builds and --artifact share one path.
 	payload, err := appmeta.Open(platform, built.PayloadPath)
 	if err != nil {
 		return nil, cli.Failf(cli.CodeBuildFailed, "%v", err)
@@ -458,15 +397,8 @@ func (a *App) Publish(opts PublishOptions, progress func(string)) (*PublishResul
 		return nil, cli.Failf(cli.CodeBuildFailed, "%v", err)
 	}
 
-	// Read while the payload is open. Publish runs constantly and doctor only
-	// when someone thinks to run it, so a deadline surfacing only in doctor
-	// would surface too late. A read failure is not one. It says nothing about
-	// whether the build works, and doctor will say so at leisure.
-	//
-	// The keychain is enumerated up front and handed in, for iOS alone. The
-	// held identities are a fact about the machine, not the payload, and are
-	// what the profile's certificates are joined against to find the deadline;
-	// an APK's signer is read off the APK itself, and no keychain is asked.
+	// Check signing on every publish, not only in doctor, so a near deadline is
+	// seen. Only iOS joins the profile against the keychain.
 	var held map[string]bool
 	var heldErr error
 	if platform == artifact.IOS {
@@ -474,16 +406,9 @@ func (a *App) Publish(opts PublishOptions, progress func(string)) (*PublishResul
 	}
 	var signing *appmeta.Signing
 	var signingWarning string
-	// Identity is read off the payload's signature, as each platform states
-	// it: the team off a profile, the signer off an APK's certificate. Both
-	// stay empty when the payload carries nothing readable, as an --artifact
-	// publish of something stripped.
 	team, signer := "", ""
 	s, err := payload.Signing(held)
-	// An APK that does not verify will not install, so it is refused before
-	// staging, as a free profile is below: what a release build with no
-	// signing config produces, which the debug keystore or a signingConfig
-	// mends. Nothing else about how it was built is wrong.
+	// Refuse an APK that won't install before staging it.
 	if errors.Is(err, appmeta.ErrUnsigned) {
 		return nil, cli.Failf(cli.CodeSigningFailed, "%v; Android refuses to install it", err).
 			WithHint("build with --config Debug, which signs with the debug keystore, or add a release signingConfig to the module's build script")
@@ -491,11 +416,7 @@ func (a *App) Publish(opts PublishOptions, progress func(string)) (*PublishResul
 	if err == nil {
 		now := time.Now()
 		team, signer = s.Team, s.SignerName()
-		// Refuse before staging anything. The build is fine and signs fine, but what
-		// it cannot do is install by the only route otata has, so publishing
-		// would put a URL on the index that iOS declines on every tap.
-		// The check reads only the profile, so it holds even when the keychain
-		// could not be enumerated.
+		// iOS won't install a free-team build over the air, so don't publish one.
 		if s.Free {
 			return nil, cli.Fail(cli.CodeFreeProfile,
 				"this build is signed by a free provisioning profile, and iOS refuses to install those over the air").
@@ -505,11 +426,7 @@ func (a *App) Publish(opts PublishOptions, progress func(string)) (*PublishResul
 					"ios_error": "MIInstallerErrorDomain 111: apps validated by a free provisioning profile are not allowed to be installed from this source",
 				})
 		}
-		// The deadline is the profile joined against the held certificates.
-		// With the keychain unlistable the join is unverifiable, and a deadline
-		// that may overstate reality is worse than none, so none is claimed.
-		// otata doctor warns about the same payload at leisure. Signing with
-		// no deadline has nothing to warn about, and is reported as it is.
+		// Without the keychain the deadline can't be verified, so claim none.
 		if heldErr == nil {
 			signing = &s
 			if s.Expired(now) || s.Within(signingWindow, now) {
@@ -524,13 +441,8 @@ func (a *App) Publish(opts PublishOptions, progress func(string)) (*PublishResul
 		return nil, cli.Failf(cli.CodeInternal, "could not stage the payload: %v", err)
 	}
 
-	// The icon ships only when the reader could produce one a browser
-	// decodes; no icon is a clean placeholder on the page where a broken image
-	// is not. The reader says which format it wrote, and the file is served
-	// under a name that says so, because nothing here converts.
-	// The scratch file keeps a .png name whatever the reader writes into it:
-	// nothing serves it by name, and the iOS reader hands the path to
-	// pngcrush, which has only ever been given one that ends in .png.
+	// Ship the icon only if the reader made one a browser can decode, under the
+	// extension it reports. The scratch name ends in .png for pngcrush's sake.
 	iconName := ""
 	tmpIcon := a.Store.TmpFile("icon-" + slug + ".png")
 	if ext, err := payload.Icon(tmpIcon); err == nil {
@@ -538,7 +450,7 @@ func (a *App) Publish(opts PublishOptions, progress func(string)) (*PublishResul
 			iconName = "icon" + ext
 		}
 	}
-	// Remove unconditionally because a failed write may have left a partial file.
+	// A failed write may have left a partial file.
 	_ = os.Remove(tmpIcon)
 
 	stat, err := os.Stat(payloadPath)
@@ -552,8 +464,8 @@ func (a *App) Publish(opts PublishOptions, progress func(string)) (*PublishResul
 		BuiltAt: time.Now(), PayloadName: payloadName,
 		SizeBytes: stat.Size(), HasIcon: iconName != "", IconName: iconName, ProjectPath: abs,
 	}
-	// The record goes down BEFORE anything derived from it, and before pruning.
-	// Pruning first could delete the payload the on-disk record still names.
+	// Write the record before pruning, or pruning could delete the payload the
+	// record on disk still names.
 	if err := a.Store.PutRecord(rec); err != nil {
 		return nil, cli.Failf(cli.CodeInternal, "could not write the record: %v", err)
 	}
@@ -564,9 +476,6 @@ func (a *App) Publish(opts PublishOptions, progress func(string)) (*PublishResul
 		return nil, cli.Failf(cli.CodeInternal, "could not prune old icons: %v", err)
 	}
 
-	// Clear the marker, then render once. A single Reindex produces the final
-	// state and can report its own failure. Publishing writes no manifest or
-	// page separately, so they cannot disagree.
 	if err := a.Store.ClearBuilding(slug); err != nil {
 		return nil, cli.Failf(cli.CodeInternal, "could not clear the build marker: %v", err)
 	}
@@ -585,8 +494,7 @@ func (a *App) Publish(opts PublishOptions, progress func(string)) (*PublishResul
 	}, nil
 }
 
-// processAlive reports whether a pid still exists. Signal 0 performs the
-// existence and permission checks without delivering anything.
+// processAlive probes pid with signal 0, which delivers nothing.
 func processAlive(pid int) bool {
 	if pid <= 0 {
 		return false
@@ -596,10 +504,7 @@ func processAlive(pid int) bool {
 		return false
 	}
 	err = proc.Signal(syscall.Signal(0))
-	// EPERM is a process that exists and belongs to someone else. That is
-	// alive: a marker is stale only when its process is gone, and reading a
-	// refused signal as "gone" cleared the marker of a publish another user
-	// was still running.
+	// EPERM means the process exists but belongs to another user.
 	return err == nil || errors.Is(err, syscall.EPERM)
 }
 

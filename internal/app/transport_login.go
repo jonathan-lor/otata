@@ -7,8 +7,8 @@ import (
 	"github.com/jonathan-lor/otata/internal/cli"
 )
 
-// TransportLoginResult keeps login's existing JSON status payload while giving
-// people the enrollment outcome and next step instead of the full status report.
+// TransportLoginResult carries the full status in JSON, but prints only the
+// login outcome and the next step.
 type TransportLoginResult struct {
 	*StatusResult
 }

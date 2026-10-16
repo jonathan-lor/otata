@@ -8,18 +8,13 @@ import (
 	"testing"
 )
 
-// Both lines are copied from a real archive of a freshly generated React
-// Native project. The pods have never been installed, and the template ships
-// no development team, so the log carries both failures in that order.
+// Copied from a fresh React Native project's archive, which fails on the
+// missing pods and then on signing.
 const freshReactNativeLog = `
 ios/OtataRN.xcodeproj:1:1: error: Unable to open base configuration reference file '/Users/x/otata-rn/ios/Pods/Target Support Files/Pods-OtataRN/Pods-OtataRN.release.xcconfig'. (in target 'OtataRN' from project 'OtataRN')
 ios/OtataRN.xcodeproj: error: Signing for "OtataRN" requires a development team. Select a development team in the Signing & Capabilities editor. (in target 'OtataRN' from project 'OtataRN')
 `
 
-// The failure to report is the one that happened first, not the one listed
-// first in our table. Scanning the table in order reported signing here and
-// sent the caller to Apple's developer portal, which fixes nothing. The build
-// is one 'pod install' away from working.
 func TestDiagnosisPrefersTheEarlierFailure(t *testing.T) {
 	err := xcodeDiagnose(freshReactNativeLog)
 	setup, ok := errors.AsType[*SetupError](err)
@@ -31,8 +26,6 @@ func TestDiagnosisPrefersTheEarlierFailure(t *testing.T) {
 	}
 }
 
-// One hint for every signing failure is wrong. A missing team is a build
-// setting, and only the profile and device cases are portal work.
 func TestSigningHintsDifferByCause(t *testing.T) {
 	noTeam := hintFor(t, `error: Signing for "iosApp" requires a development team.`)
 	if strings.Contains(noTeam, "portal") {
@@ -61,7 +54,6 @@ func hintFor(t *testing.T, log string) string {
 	return signing.Hint
 }
 
-// An unrecognized failure must stay unrecognized.
 func TestUnknownFailureKeepsTheFallback(t *testing.T) {
 	err := xcodeDiagnose("error: use of undeclared identifier 'foo'")
 	_, isSigning := errors.AsType[*SigningError](err)
@@ -85,8 +77,6 @@ func touch(t *testing.T, path string) {
 	}
 }
 
-// A Flutter checkout is missing Generated.xcconfig because it is gitignored,
-// so this is the state of every clone instead of a weird one.
 func TestFlutterCheckoutNeedsItsConfigGenerated(t *testing.T) {
 	root := t.TempDir()
 	ios := filepath.Join(root, "ios")
@@ -112,8 +102,6 @@ func TestFlutterCheckoutNeedsItsConfigGenerated(t *testing.T) {
 	}
 }
 
-// React Native's default state after a clone: a Podfile, no Pods, and no
-// workspace either, so detection archives the .xcodeproj and it cannot link.
 func TestPodfileWithoutPodsNeedsInstall(t *testing.T) {
 	ios := filepath.Join(t.TempDir(), "ios")
 	touch(t, filepath.Join(ios, "Podfile"))
@@ -133,8 +121,6 @@ func TestPodfileWithoutPodsNeedsInstall(t *testing.T) {
 	}
 }
 
-// A Flutter app with plugins is missing both at once. 'pod install' cannot run
-// first: Flutter's Podfile reads the xcconfig that is not there yet.
 func TestFlutterWinsOverPodsWhenBothAreMissing(t *testing.T) {
 	root := t.TempDir()
 	ios := filepath.Join(root, "ios")
@@ -148,8 +134,6 @@ func TestFlutterWinsOverPodsWhenBothAreMissing(t *testing.T) {
 	}
 }
 
-// The three places that name Flutter's setup step say the same thing, and the
-// pre-check adds only where to run it.
 func TestFlutterSetupIsStatedOnce(t *testing.T) {
 	for _, phrase := range []string{
 		"flutter_tools/bin/xcode_backend.sh: No such file or directory",
@@ -172,8 +156,6 @@ func TestFlutterSetupIsStatedOnce(t *testing.T) {
 	}
 }
 
-// The configuration is the caller's to choose and announce; a build with none
-// is refused before any toolchain runs, rather than defaulted here as well.
 func TestPrepareRequiresAConfiguration(t *testing.T) {
 	_, err := (&Xcode{}).prepare(Options{Container: filepath.Join(t.TempDir(), "App.xcodeproj")})
 	if err == nil || !strings.Contains(err.Error(), "configuration") {
@@ -181,8 +163,6 @@ func TestPrepareRequiresAConfiguration(t *testing.T) {
 	}
 }
 
-// A native project with neither must be left alone. Reporting a prerequisite
-// here would refuse to build a project that builds.
 func TestNativeProjectHasNoPrerequisite(t *testing.T) {
 	dir := t.TempDir()
 	touch(t, filepath.Join(dir, "MyApp.xcodeproj", "project.pbxproj"))
@@ -191,10 +171,8 @@ func TestNativeProjectHasNoPrerequisite(t *testing.T) {
 	}
 }
 
-// Copied from a real Kotlin Multiplatform archive on a Mac with no JDK: the
-// Gradle phase runs macOS's java stub, which is not a JDK and says so. Without
-// this the whole failure is "archive failed, see the log", and the log is
-// tens of thousands of lines of exported build settings.
+// Copied from a real KMP archive on a Mac with no JDK, where macOS's java
+// stub runs in place of one.
 const noJDKLog = `    export variant\=normal
     /bin/sh -c /Users/x/Library/Developer/Xcode/DerivedData/iosApp-abc/Build/Intermediates.noindex/ArchiveIntermediates/iosApp/Script-F36B.sh
 The operation couldn’t be completed. Unable to locate a Java Runtime.

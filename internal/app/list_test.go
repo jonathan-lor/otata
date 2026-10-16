@@ -8,11 +8,6 @@ import (
 	"github.com/jonathan-lor/otata/internal/artifact"
 )
 
-// The signer belongs in the listing: on iOS automatic signing chooses the
-// team and a machine with several Apple accounts gives no other sign of
-// which, and on Android a differently signed build cannot replace the
-// installed one. A payload with no readable signature yields none, and blank
-// would read as "signed by nobody" rather than "not recorded".
 func TestListNamesTheSigner(t *testing.T) {
 	var buf bytes.Buffer
 	ListResult{Apps: []artifact.Record{
@@ -32,8 +27,6 @@ func TestListNamesTheSigner(t *testing.T) {
 	}
 }
 
-// The header labels the columns, so it belongs with them: an empty listing has
-// no columns to label, only a sentence saying so.
 func TestListHeaderAppearsOnlyWithRows(t *testing.T) {
 	var withRows, empty bytes.Buffer
 	ListResult{Apps: []artifact.Record{{Slug: "app", Title: "App", Config: "Release"}}}.Human(&withRows)

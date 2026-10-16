@@ -11,8 +11,7 @@ import (
 	"time"
 )
 
-// The real shape of `security find-identity -v -p codesigning`, including the
-// revoked entries the flag lists anyway and the trailing count line.
+// Real `security find-identity -v -p codesigning` output, revoked entries included.
 const identityOutput = `
   1) 0A1B2C3D4E5F60718293A4B5C6D7E8F901234567 "Apple Development: someone@example.com (AB12CD34EF)" (CSSMERR_TP_CERT_REVOKED)
   2) 1B2C3D4E5F60718293A4B5C6D7E8F90123456789 "Apple Development: someone@example.com (CD34EF56GH)"
@@ -28,8 +27,6 @@ func TestParseIdentityFingerprintsKeepsOnlyUsableOnes(t *testing.T) {
 	if !held["2C3D4E5F60718293A4B5C6D7E8F9012345678901"] {
 		t.Error("dropped an identity that can sign")
 	}
-	// A revoked certificate cannot sign. Counting it as held would report a
-	// deadline that has effectively already passed.
 	if held["0A1B2C3D4E5F60718293A4B5C6D7E8F901234567"] {
 		t.Error("kept a revoked identity")
 	}
@@ -64,8 +61,7 @@ func TestNewSigningFallsBackToTheProfile(t *testing.T) {
 		t.Errorf("got %s via %q, want the profile's %s", s.Expires, s.Binder, profile)
 	}
 
-	// Holding no authorized certificate at all, the normal state on a node
-	// that only serves what another machine built.
+	// Holding no certificate at all, as on a machine that only serves.
 	s = newSigning("p", profile, time.Time{})
 	if !s.Expires.Equal(profile) || s.Binder != BinderProfile {
 		t.Errorf("got %s via %q, want the profile's %s", s.Expires, s.Binder, profile)
@@ -97,8 +93,6 @@ func TestDetailReadsAsADate(t *testing.T) {
 	}
 }
 
-// Signing with no deadline, which is every Android build, is neither expired
-// nor about to be: a zero Expires must not read as the year 0001 having passed.
 func TestNoDeadlineNeverExpires(t *testing.T) {
 	now := time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC)
 	s := Signing{Signer: "Android Debug", Fingerprint: "4f9c1a2b3c4d5e6f"}
@@ -142,16 +136,13 @@ func TestExpiredAndWithin(t *testing.T) {
 	if !gone.Expired(now) {
 		t.Error("a past deadline is expired")
 	}
-	// An expired deadline is a failure, not a warning; reporting both would
-	// render it twice at two different severities.
+	// An expired deadline doesn't also warn.
 	if gone.Within(window, now) {
 		t.Error("an expired deadline should not also warn")
 	}
 }
 
-// A profile's own plist, trimmed to the keys this asks about. The free one is
-// what a personal team gets. The paid one simply has no such key, which is how
-// absence has to be read. A missing LocalProvision IS the paid answer.
+// Real profiles, trimmed. Only the personal team's has LocalProvision.
 const freeProfilePlist = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
@@ -185,15 +176,12 @@ func TestFreeProfileIsRecognizedByLocalProvision(t *testing.T) {
 	if !localProvision(mustParseProfile(t, freeProfilePlist)) {
 		t.Error("a personal-team profile was not recognized as free")
 	}
-	// The paid case is the one that matters. A false positive here refuses a
-	// build that installs perfectly well.
+	// A false positive would refuse a build that installs fine.
 	if localProvision(mustParseProfile(t, paidProfilePlist)) {
 		t.Error("a paid profile was reported as free")
 	}
 }
 
-// The whole assembly against the fixture: dates, team and free flag out of one
-// parsed profile, with no keychain and no subprocess involved.
 func TestSigningFromProfile(t *testing.T) {
 	s, err := signingFromProfile(mustParseProfile(t, freeProfilePlist), nil)
 	if err != nil {
@@ -207,8 +195,7 @@ func TestSigningFromProfile(t *testing.T) {
 		t.Errorf("free=%v team=%q, want a free SKH7V8HMR6 profile", s.Free, s.Team)
 	}
 
-	// A profile without an expiry has no deadline to report, which is an
-	// error, not a zero time an agent would read as the year 0001.
+	// A profile without an expiry is an error, not a zero deadline.
 	if _, err := signingFromProfile(map[string]any{"Name": "p"}, nil); err == nil {
 		t.Error("a profile with no ExpirationDate was accepted")
 	}
@@ -244,9 +231,6 @@ func fingerprintOf(t *testing.T, der []byte) string {
 	return fingerprint(cert)
 }
 
-// The join used to run inside the keychain read and could only be proven
-// against a real machine. Held certificates bound the deadline. Everyone
-// else's, however soon they expire, say nothing about this build.
 func TestHeldCertExpiryJoinsAgainstHeldOnly(t *testing.T) {
 	early := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
 	late := time.Date(2027, 3, 1, 0, 0, 0, 0, time.UTC)
@@ -276,8 +260,7 @@ func TestHeldCertExpiryJoinsAgainstHeldOnly(t *testing.T) {
 	}
 }
 
-// The list's length comes out of the profile, so it is bounded. A held
-// certificate past the ceiling is deliberately not examined.
+// A held certificate past the cap isn't examined.
 func TestHeldCertExpiryIsBounded(t *testing.T) {
 	mine := testCert(t, time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC))
 	over := make([]any, maxProfileCerts+1)

@@ -8,10 +8,8 @@ import (
 	"github.com/jonathan-lor/otata/internal/artifact"
 )
 
-// Reads the profile out of a real .ipa named by OTATA_TEST_IPA, which is the
-// only way to prove the CMS unwrap, the per-field plist extract and the
-// keychain join agree. The build must be one this machine signed, or the join
-// legitimately finds nothing. Skipped when unset, so the suite stays hermetic.
+// Reads the profile out of the real .ipa at OTATA_TEST_IPA, which this
+// machine must have signed. Skipped when unset.
 func TestReadsRealSigning(t *testing.T) {
 	ipa := os.Getenv("OTATA_TEST_IPA")
 	if ipa == "" {
@@ -45,9 +43,7 @@ func TestReadsRealSigning(t *testing.T) {
 	if sig.Expires.After(sig.ProfileExpires) {
 		t.Errorf("effective deadline %s outlives the profile %s", sig.Expires, sig.ProfileExpires)
 	}
-	// A development build is signed by a certificate this machine holds, so the
-	// keychain join must have found one. Its absence would mean the join is
-	// silently matching nothing and every deadline is really the profile's.
+	// This machine signed the build, so the keychain join must find its certificate.
 	if sig.CertExpires.IsZero() {
 		t.Error("no held certificate matched: the keychain join found nothing")
 	}

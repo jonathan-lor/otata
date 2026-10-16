@@ -30,8 +30,8 @@ func (t *TSNet) Status(port int) Status {
 }
 
 func (t *TSNet) Ensure(port int) (string, error) {
-	// Enrollment needs human input. Never hang publish on it. Ordinary node
-	// startup and certificate issuance get a bounded opportunity to finish.
+	// Wait for startup and certificates, but not for an enrollment that needs
+	// a human.
 	deadline := time.Now().Add(2 * time.Minute)
 	for {
 		s := t.Status(port)
@@ -49,7 +49,7 @@ func (t *TSNet) Ensure(port int) (string, error) {
 	}
 }
 
-// Probe uses the running node's network, so doctor works without host Tailscale.
+// Probe HEADs target through the running node, for doctor.
 func (t *TSNet) Probe(ctx context.Context, target string) (int, error) {
 	return t.Client.Probe(ctx, target)
 }

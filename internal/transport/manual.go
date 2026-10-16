@@ -5,33 +5,21 @@ import (
 	"strings"
 )
 
-// Manual is for users who already terminate HTTPS themselves. E.g. a
-// reverse proxy on a real domain, an existing tunnel. The tool changes nothing
-// about the network, and is only told where the port already appears.
+// Manual is a proxy or tunnel the user runs, which otata only points at.
 type Manual struct {
 	baseURL    string
 	keepPrefix bool
 }
 
-/*
-NewManual describes a proxy that serves baseURL. keepPrefix says the proxy
-forwards the base URL's path unchanged rather than stripping it, such as nginx with
-a bare proxy_pass, Caddy's handle rather than handle_path, a Cloudflare
-tunnel, etc. Stripping is the default.
-
-The prefix is derived from the base URL, not declared separately.
-*/
+// NewManual describes a proxy at baseURL. keepPrefix means it forwards the
+// URL's path unchanged rather than stripping it.
 func NewManual(baseURL string, keepPrefix bool) *Manual {
 	return &Manual{baseURL: strings.TrimSuffix(baseURL, "/"), keepPrefix: keepPrefix}
 }
 
 func (m *Manual) Name() string { return "manual" }
 
-// Visibility is private by definition. otata verifies nothing about where a
-// proxy is reachable from, and with no access guard shipping, this transport
-// is for routes the user considers private; which routes those are is the
-// documentation's subject. A declared visibility used to exist and could only
-// ever be "private", which is not a declaration.
+// Visibility is private: the user vouches for the route, which otata can't check.
 func (m *Manual) Visibility() Visibility { return Private }
 
 // IncomingPrefix is the base URL's path when the proxy forwards it, else nothing.
@@ -50,7 +38,7 @@ func (m *Manual) Ensure(int) (string, error) {
 	if m.baseURL == "" {
 		return "", &ErrUnavailable{Name: m.Name(), Reason: "no base URL configured"}
 	}
-	// Validated again here, not only when set. The config file is editable.
+	// Validate again, since config.json can be edited by hand.
 	if err := ValidateBaseURL(m.baseURL); err != nil {
 		return "", &ErrUnavailable{Name: m.Name(), Reason: err.Error()}
 	}
@@ -59,9 +47,7 @@ func (m *Manual) Ensure(int) (string, error) {
 
 func (m *Manual) Status(int) Status {
 	s := Status{Name: m.Name(), BaseURL: m.baseURL, Visibility: Private}
-	// Ensure changes nothing for this transport, so it is the readiness
-	// question itself: a base URL it would refuse is the obstacle, and never
-	// repairable, because the config is what has to change.
+	// Ensure changes nothing here, so it doubles as the readiness check.
 	if _, err := m.Ensure(0); err != nil {
 		s.Detail = err.Error()
 		return s

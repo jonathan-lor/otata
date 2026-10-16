@@ -7,7 +7,6 @@ import (
 	"testing"
 )
 
-// AsFailure's should not panic on nil.
 func TestAsFailureHandlesNil(t *testing.T) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -20,8 +19,6 @@ func TestAsFailureHandlesNil(t *testing.T) {
 	}
 }
 
-// A nil *Failure in an error interface is non-nil, so Error() must not
-// dereference; otherwise the first such return panics instead of reporting.
 func TestNilFailureErrorDoesNotPanic(t *testing.T) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -48,8 +45,6 @@ func TestAsFailurePreservesCode(t *testing.T) {
 	}
 }
 
-// The exit status is 2 for a usage error, 1 otherwise, and a failure may
-// carry its own: a signal's, which a shell expects as 128 plus its number.
 func TestExitStatus(t *testing.T) {
 	cases := []struct {
 		name string
@@ -75,9 +70,6 @@ func TestUnclassifiedErrorBecomesInternal(t *testing.T) {
 	}
 }
 
-// A string argument to Line comes from somewhere like an Info.plist, which is
-// untrusted for --artifact. The format string is ours and keeps its color;
-// the values lose anything a terminal would act on.
 func TestLineStripsControlCharactersFromValues(t *testing.T) {
 	var out strings.Builder
 	Line(&out, "\033[1;32m%s\033[0m %s", "Notes\x1b]0;pwned\x07\x1b[2K", "v1.0\r\n\u009bhidden")

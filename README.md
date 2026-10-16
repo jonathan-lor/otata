@@ -95,5 +95,4 @@ Every command accepts `--json`, and failures carry [stable error codes](docs/cli
 - [Serving over your own proxy](docs/manual-transports.md)
 - [Tailscale](docs/tailscale.md)
 - [otata via SSH](docs/otata-via-ssh.md)
-- [Gotchas and troubleshooting](docs/gotchas.md)
 - [Contributing](CONTRIBUTING.md)

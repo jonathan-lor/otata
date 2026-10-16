@@ -16,8 +16,7 @@ make vet
 ```
 
 `make install` copies instead of symlinking on purpose. A symlink into a
-TCC-protected checkout will hit the launchd hang described in
-[docs/gotchas.md](docs/gotchas.md). It writes beside the target and renames,
+TCC-protected checkout makes launchd hang at startup. It writes beside the target and renames,
 because overwriting a running binary corrupts its mapped image and macOS kills
 the process, and Linux refuses the write outright.
 

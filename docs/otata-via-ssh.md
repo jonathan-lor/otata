@@ -1,8 +1,6 @@
 # otata via SSH
 
-otata can also be used over SSH! The likely use case for this is a Mac being used exclusively for building iOS apps, while being orchestrated by an agent on another host.
-How your source code gets there is up to you because otata just reads whatever working tree it's pointed at. 
-The examples write `mac` for the builder's name in `~/.ssh/config`.
+otata works over SSH, so an agent on one machine can publish from another. The likely setup is a Mac that only builds iOS apps, driven by an agent somewhere else. otata reads whatever working tree it's pointed at, so getting the source there is up to you. The examples use `mac` and `box` as host names from `~/.ssh/config`.
 
 ```
 agent's machine      edits source; runs no otata
@@ -12,7 +10,7 @@ agent's machine      edits source; runs no otata
                     └── phone taps Install
 ```
 
-The phone should talk directly to the mac in this setup, so the machine running the agent needs no otata install. The Mac keeps the same transport as when publishing locally.
+The phone talks to the build machine directly, so the agent's machine needs no otata install.
 
 ## Publishing
 
@@ -21,44 +19,25 @@ ssh mac 'cd ~/path/to/MyApp && ~/.local/bin/otata publish --platform ios --json'
 ssh box 'cd ~/path/to/MyApp && ~/.local/bin/otata publish --platform android --json'
 ```
 
-Spell the binary's full path. A non-interactive shell over SSH reads few of
-the files where installers put PATH edits: zsh on a Mac reads only
-`~/.zshenv`, not `~/.zprofile` or `~/.zshrc`, and a Linux `~/.bashrc`
-usually returns before its PATH lines when the shell is not interactive.
-`command not found` over SSH while `otata` works in a terminal is this, not
-a broken install.
+- **Spell out the binary's full path.** A non-interactive SSH shell skips the files where installers add to PATH (zsh on a Mac reads only `~/.zshenv`, and a Linux `~/.bashrc` usually returns early). That's why `otata` can work in a terminal and be `command not found` over SSH.
+- **A dropped connection kills the publish.** On a shaky link, run it under `tmux` or `nohup`.
+- **Keep the project at one path on the build machine.** Each publish records the commit and branch of the tree there, and the same project at a new path is refused with `slug_conflict`.
+- **An Android build needs the SDK in the command's environment.** Set `ANDROID_HOME` in the shell SSH gives you, or write `sdk.dir` into the project's `local.properties`, which doesn't depend on the shell at all. Signing uses a keystore file, so nothing prompts.
 
-An SSH connection that dies mid-build will kill the publish. On an unstable connection, run otata under `tmux` or `nohup`.
+## Setting up the Mac
 
-Each publish records the commit, branch and dirty flag of the working tree
-*on the builder*, however the source got there. Keep the project at one path
-there. The same project at a new location is refused with `slug_conflict`.
-
-## Initial setup on the Mac
-
-- `otata autostart on`, then `otata transport login` to enroll the built-in
-  Tailscale node (or select a `manual` proxy).
-- Publish once locally after any change of signing identity, answering the
-  keychain prompt with **Always Allow**. `codesign` blocks on that dialog,
-  so the first remote publish under a new identity will hang mid-build if you don't do this.
-- Run `caffeinate -s` or disable sleep before leaving, and
-  consider disabling automatic macOS installs. That reboot lands at the
-  FileVault screen, where nothing runs until the password is entered.
+- Run `otata autostart on` and `otata transport login`, as in [getting started](getting-started.md).
+- After any change of signing identity, publish once at the Mac and answer the keychain prompt with **Always Allow**. Otherwise `codesign` waits on that dialog and the remote publish hangs mid-build.
+- Before leaving, run `caffeinate -s` or turn off sleep, and consider turning off automatic macOS updates. The reboot after one stops at the FileVault screen, where nothing runs until someone types the password.
+- A project under `~/Documents`, `~/Desktop` or `~/Downloads` can't be read over SSH until Remote Login has full disk access (System Settings > General > Sharing > Remote Login).
 
 ### Headless
 
-A Mac being used only over SSH needs three substitutions:
+A Mac that's only ever used over SSH needs three changes:
 
-- **Enable automatic login** (requires FileVault off). The launch agent
-  lives in launchd's `gui` domain, which exists only while a user is logged
-  into the console, so without a console session `otata autostart on`
-  cannot load it. Auto-login also unlocks the login keychain that signing
-  reads. The no-console alternative is `otata serve` under `tmux`.
-- `sudo pmset -a sleep 0` in place of `caffeinate`: it persists across
-  reboots with no terminal to hold open.
-- The keychain prompt appears on the console, where nobody is there to
-  click it, so a publish that needs it hangs mid-build. Either answer it
-  once over Screen Sharing, or pre-authorize codesign so it never appears:
+- **Turn on automatic login**, which requires FileVault off. The launch agent can only load while a user is logged into the console, and auto-login also unlocks the keychain that signing reads. Without a console session, run `otata serve` under `tmux` instead of `autostart on`.
+- **Use `sudo pmset -a sleep 0`** instead of `caffeinate`. It survives reboots with no terminal held open.
+- **Deal with the keychain prompt**, which appears on a console nobody is watching. Answer it once over Screen Sharing, or pre-authorize codesign so it never appears:
 
   ```sh
   security unlock-keychain ~/Library/Keychains/login.keychain-db
@@ -66,26 +45,8 @@ A Mac being used only over SSH needs three substitutions:
     -k <login password> ~/Library/Keychains/login.keychain-db
   ```
 
-otata's only serves builds and doesn't provide SSH access.
-If you connect over the host's Tailscale address, keep a separate
-Tailscale installation configured for SSH.
-
-A project under `~/Documents`, `~/Desktop` or `~/Downloads` is unreadable
-over SSH until remote users are allowed full disk access (System Settings >
-General > Sharing > Remote Login).
+otata only serves builds and doesn't give you SSH access. To reach the Mac over Tailscale, keep a regular Tailscale install on it for SSH.
 
 ## On Linux
 
-A Linux builder has no console session to keep alive and no keychain to
-unlock. It needs lingering for unattended serving:
-
-- **Lingering.** A user's systemd, and the otata unit under it, runs only
-  while that user has a session, an SSH one included, and stops at the last
-  logout. `sudo loginctl enable-linger $USER` once keeps it running with no
-  session, and brings the server back after a reboot before anyone logs in.
-
-An Android build is signed by a keystore file, the debug one generated on
-first use, so nothing prompts during a remote publish. The SDK and JDK the
-build needs are environment, not session: `ANDROID_HOME` has to be set for
-the SSH command's shell, or written as `sdk.dir` in the project's
-`local.properties`, which does not depend on the shell at all.
+A Linux build machine has no console session or keychain to worry about. It only needs [lingering](getting-started.md#3-enroll-otata), so the server keeps running with nobody logged in.

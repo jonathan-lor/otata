@@ -83,4 +83,10 @@ And that's it! From here, every build is just another `otata publish`. Your agen
 otata doctor --fix
 ```
 
-It repairs what it can, then verifies every URL and names anything still broken. See [what doctor checks](FAQ.md#what-exactly-does-doctor-check) for the details.
+It repairs what it can, then verifies every URL and names anything still broken. See [what doctor checks](FAQ.md#what-exactly-does-doctor-check) for the details. Past that, the logs say what happened:
+
+```sh
+tail -f ~/.otata/server.log                     # server and access log
+tail -50 ~/.otata/build/<slug>/xcodebuild.log   # or gradle.log for an Android build
+journalctl --user -u otata -n 50                # Linux: what systemd saw
+```

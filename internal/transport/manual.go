@@ -19,8 +19,8 @@ func NewManual(baseURL string, keepPrefix bool) *Manual {
 
 func (m *Manual) Name() string { return "manual" }
 
-// Visibility is private: the user vouches for the route, which otata can't check.
-func (m *Manual) Visibility() Visibility { return Private }
+// Visibility is unknown. The operator controls access through their proxy and network.
+func (m *Manual) Visibility() Visibility { return Unknown }
 
 // IncomingPrefix is the base URL's path when the proxy forwards it, else nothing.
 func (m *Manual) IncomingPrefix() string {
@@ -46,14 +46,14 @@ func (m *Manual) Ensure(int) (string, error) {
 }
 
 func (m *Manual) Status(int) Status {
-	s := Status{Name: m.Name(), BaseURL: m.baseURL, Visibility: Private}
-	// Ensure changes nothing here, so it doubles as the readiness check.
+	s := Status{Name: m.Name(), BaseURL: m.baseURL, Visibility: m.Visibility()}
+	// Readiness only validates the configured URL and doesn't probe the proxy.
 	if _, err := m.Ensure(0); err != nil {
 		s.Detail = err.Error()
 		return s
 	}
 	s.Ready = true
-	s.Detail = "reachability is whatever your proxy provides; not verified here"
+	s.Detail = "access is controlled by your proxy and network; otata does not verify it"
 	return s
 }
 

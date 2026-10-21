@@ -21,7 +21,7 @@ otata publish --platform android
 
 ## Requirements
 
-Your phone needs to reach the computer over HTTPS with a publicly trusted certificate. [Tailscale](docs/tailscale.md) does this by default and is free for personal use. [Your own HTTPS proxy](docs/manual-transports.md) works too.
+Your phone needs a way to reach your computer over HTTPS with a *publicly trusted certificate*. [Tailscale](https://tailscale.com) is the recommended solution because it provides private access by default and is free for personal use. For advanced users or those who can't use Tailscale for any reason, you can use otata with your own proxy and network.
 
 **iOS**
 
@@ -39,7 +39,7 @@ Your phone needs to reach the computer over HTTPS with a publicly trusted certif
 
 You can give your agent the link to this repo to install and set up otata, but you'll still need to do the Tailscale steps. These steps assume Tailscale and [getting started](docs/getting-started.md) has the full walkthrough which you should also read.
 
-Install Tailscale on your phone ([iPhone](https://tailscale.com/docs/install/ios), [Android](https://tailscale.com/docs/install/android)) and sign in. In the [admin console](https://login.tailscale.com/admin/dns) under DNS, turn on MagicDNS and HTTPS certificates.
+Install Tailscale on your phone ([iOS](https://tailscale.com/docs/install/ios), [Android](https://tailscale.com/docs/install/android)) and sign in. In the [admin console](https://login.tailscale.com/admin/dns) under DNS, turn on MagicDNS and HTTPS certificates.
 
 Then install otata:
 
@@ -85,14 +85,13 @@ Every command accepts `--json`, and failures carry [stable error codes](docs/cli
 
 **macOS and Linux only.** Windows is not supported yet, and WSL is untested.
 
-**Private transports only (for now).** A public transport needs an access guard first, and none exists yet.
+**Access through a custom proxy is your responsibility!** otata hosts builds on your machine, with private access through Tailscale by default. With a custom endpoint, you control who can retrieve builds. otata does not verify or enforce any access policy.
 
 ## Documentation
 
 - [Getting started](docs/getting-started.md)
 - [CLI reference](docs/cli-reference.md)
 - [FAQ](docs/FAQ.md)
-- [Serving over your own proxy](docs/manual-transports.md)
 - [Tailscale](docs/tailscale.md)
 - [otata via SSH](docs/otata-via-ssh.md)
 - [Contributing](CONTRIBUTING.md)

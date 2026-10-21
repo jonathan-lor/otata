@@ -4,10 +4,12 @@
 
 | Command | Does |
 | --- | --- |
-| `otata publish` | Build and publish the project in the current directory, or a prebuilt `--artifact` |
+| `otata publish --platform ios [--config Debug] [--scheme S] [--slug NAME] [--builder archive]` | Build and publish the project in the current directory for iOS |
+| `otata publish --platform android [--config Debug] [--module M] [--flavor F] [--slug NAME]` | Build and publish the project in the current directory for Android |
+| `otata publish --artifact PATH [--slug NAME]` | Publish an already-built payload instead |
 | `otata list` | What is published (`otata ls` works too) |
 | `otata status` | Everything in one call |
-| `otata doctor [--fix]` | Verify the server, transport, every URL and signing. `--fix` repairs first |
+| `otata doctor [--fix]` | Verify the server, transport and every URL, report a signing deadline; `--fix` repairs first |
 | `otata forget <slug>` | Drop one app and its payload |
 | `otata serve` | Run the file server in the foreground |
 | `otata start` / `stop` / `restart` | Server lifecycle |
@@ -17,7 +19,7 @@
 | `otata version` | Print the version (`--version` and `-V` work too) |
 | `otata help` | The usage summary |
 
-`otata <command> --help` prints a command's flags.
+`otata <command> --help` will print the flags for that command.
 
 ## publish
 
@@ -27,43 +29,65 @@ otata publish --platform android [--config Debug] [--module M] [--flavor F] [--s
 otata publish --artifact PATH [--slug NAME]
 ```
 
-`--platform` is required for a build, because a Mac builds for both and otata won't guess. With `--artifact`, the file's extension says which platform it is, and a `--platform` that disagrees is refused.
+`--platform` is always required.
+With `--artifact` the payload's extension specifies its platform, so the flag isn't needed there,
+and one that disagrees with the file will get refused.
 
-otata discovers the rest:
-
-- **Project**: on iOS, a `.xcworkspace`, else a `.xcodeproj`, in the current directory or `ios/`, `iosApp/` or `apps/ios/`. On Android, the Gradle root: the directory holding `settings.gradle(.kts)`, at the top or in `android/`.
-- **Scheme** (iOS): only schemes that archive an app count. otata picks the one named after the project, else a lone scheme, else it asks for `--scheme` and lists the candidates.
-- **Module and flavor** (Android): the module named with `--module`, else the lone application module, else `:app`. The flavor named with `--flavor`, else the lone one, else none when the module has none. Anything else asks and lists the candidates. otata asks Gradle itself through an init script, so it never parses build scripts, convention plugins or version catalogs.
-- **Signing**: the team automatic signing chose on iOS, or the signing certificate on Android, read off the built payload. `otata list` shows it.
-- **Slug**: the directory name, with `-android` appended for an Android build so a cross-platform project's two builds sit side by side. A slug another project owns is refused, not overwritten.
-
-A flag meant for the other platform, like `--scheme` on Android or `--module` on iOS, is refused rather than ignored. A project that always builds one way (`--config Debug`, or `--config Profile` for Flutter on iOS) can record its flags in its agent instructions, like AGENTS.md or CLAUDE.md.
+Discovery fills in the rest. On iOS: the workspace or project, a scheme that
+archives an app, and the signing team. On Android: the Gradle root, the
+application module and its product flavor, and the signing certificate. On
+both, the slug from the directory name, with `-android` appended for an
+Android build so a cross-platform project's two builds sit side by side.
+`--scheme`, `--module`, `--flavor` and `--slug` are for when it asks. Each
+platform selects its build in its own toolchain's terms. An inapplicable flag
+meant for the other platform is refused.
 
 | Flag | Does |
 | --- | --- |
-| `--platform` | `ios` or `android`. Required unless `--artifact` is given |
-| `--config` | Build configuration, `Release` by default. A publish that falls back to the default says so before building. On Android it names the build type, `Debug` for `debug`, and a release build type with no `signingConfig` is refused with `needs_setup` before the build |
-| `--scheme` | The Xcode scheme, when discovery finds several. iOS only |
-| `--module` | The Gradle module, as `:app`, when the project has several application modules and none is `:app`. Android only |
-| `--flavor` | The Gradle product flavor, when the module has several. With several flavor dimensions, the combination as Gradle names it, like `freeArm`. Android only |
+| `--platform` | What to build for: `ios` or `android`. Required for a build; `--artifact` reads it off the file |
+| `--config` | Build configuration. Defaults to `Release`, and a publish that falls back to it says so before the build starts. On Android it names the build type as Gradle spells it, `Debug` for `debug`, and a release build type with no signingConfig is refused before the build with `needs_setup`, since Android will not install the unsigned APK it would produce |
+| `--scheme` | The Xcode scheme to build, when discovery finds several candidates. iOS only |
+| `--module` | The Gradle module to build, as `:app`, when the project has several application modules and none is `:app`. Android only |
+| `--flavor` | The Gradle product flavor to build, when the module defines several; with several flavor dimensions, the combination as Gradle names it, `freeArm`. Android only |
 | `--slug` | Publish under this name instead of the directory's |
-| `--artifact` | Publish an already-built `.ipa` or `.apk` from any toolchain, skipping the build. Reading an `.ipa` needs plutil (macOS), and an `.apk` needs the SDK's build-tools (`ANDROID_HOME`) and a signature that verifies |
+| `--artifact` | Publish an already-built `.ipa` or `.apk` from any toolchain, skipping the build entirely. Reading it needs the platform's tools: plutil on macOS for an `.ipa`, the SDK's build-tools (`ANDROID_HOME`) for an `.apk`, which must also verify, since Android will not install one that does not |
 | `--builder` | `build` (the default, incremental) or `archive`. iOS only |
 
-`--builder archive` runs `xcodebuild archive` and an export instead of an incremental build. It rebuilds everything on every publish, so it's much slower, but the payload is smaller. The default build keeps the binary's symbol table, around 40% of a Swift-heavy app.
+Publishes build incrementally by default. `--builder archive` uses `xcodebuild
+archive` + export instead, which rebuilds everything every time and will be
+noticeably slower. It does however produce a smaller payload. See [gotchas](gotchas.md).
 
-An Android publish runs the project's own Gradle wrapper, `assemble` for the selected variant. A missing JDK 17+ or Android SDK is reported as `needs_setup` before Gradle runs. Build logs go to `~/.otata/build/<slug>/`, as `xcodebuild.log` or `gradle.log`.
+An Android publish runs the project's own Gradle wrapper: `assemble` for the
+selected variant, on its module, with the log at
+`~/.otata/build/<slug>/gradle.log`. It needs a JDK 17 or newer and the Android
+SDK, found through `ANDROID_HOME` or the project's `local.properties`, whose
+build-tools also read the APK afterwards. Anything missing is reported as
+`needs_setup` before Gradle runs. Flutter and React Native keep their Android
+project in `android/`, where discovery looks.
 
 ## transport use
 
 ```sh
-otata transport use tailscale [--hostname NAME]
-otata transport use manual --base-url URL [--keep-prefix]
+otata transport use <tailscale|manual> [--hostname NAME] [--base-url URL] [--keep-prefix]
 ```
 
-`tailscale` is the default: an embedded node that runs inside `otata serve` and serves at `https://<hostname>.<tailnet>.ts.net/`. `--hostname` names the device and defaults to `otata`. Selecting it only saves the choice, and the server enrolls and prepares HTTPS afterwards. See [Tailscale](tailscale.md).
+`tailscale` is the default, recommended, private transport. otata runs its own embedded Tailscale node
+inside `otata serve`, without needing a host Tailscale installation.
+`--hostname` applies only to Tailscale and defaults to `otata`.
+Tailscale always serves at `https://<node>.<tailnet>.ts.net/`.
+See [Tailscale](tailscale.md) for setup and upgrading older releases.
 
-`manual` serves through your own HTTPS proxy at `--base-url`, a plain `https://host/path`. Add `--keep-prefix` if the proxy forwards the base URL's path unchanged instead of stripping it. otata doesn't verify who can reach the proxy, so use it only for routes you consider private. See [Serving over your own proxy](manual-transports.md).
+`manual` is reachable by whatever your proxy serves, so you're responsible for enforcing privacy:
+
+```sh
+otata transport use tailscale
+otata transport use manual --base-url https://builds.example.com/otata
+```
+
+`--base-url` and `--keep-prefix` apply to `manual` only.
+`--keep-prefix` says your proxy forwards the base URL's path unchanged instead of stripping it.
+Manual URLs get validated at selection.
+Tailscale saves the selection first and the server enrolls and prepares HTTPS afterward.
 
 ## transport login
 
@@ -71,7 +95,16 @@ otata transport use manual --base-url URL [--keep-prefix]
 otata transport login
 ```
 
-Enrolls the running embedded node, or retries HTTPS preparation. It prints the login URL when enrollment is needed, or the next step when approval, DNS settings or the certificate are pending. Printing a URL doesn't mean enrollment is done, so check `otata status` after logging in. Running it again on an enrolled node keeps its identity. With `--json` it returns the same payload as `status --json`, under the command name `transport`.
+Enroll the running embedded Tailscale node or retry preparation. The output
+shows the enrollment URL and instructions when login is needed, confirms when
+otata is logged in and ready, or explains the next step when approval, DNS
+configuration, or HTTPS preparation is pending. Printing a login URL does not
+mean enrollment has completed. Run `otata status` after completing browser login
+to check readiness. Re-running login on an enrolled node retains its identity.
+
+`transport login --json` retains the full status payload and the `transport`
+command name. Like `status --json`, it reports `transport.state`,
+`transport.auth_url` when needed, and `transport.ready`.
 
 ## Environment
 
@@ -81,11 +114,17 @@ Enrolls the running embedded node, or retries HTTPS preparation. It prints the l
 | `OTATA_PORT` | `8787` | Loopback port the file server binds |
 | `NO_COLOR` | unset | Any value turns off ANSI color |
 
-`OTATA_PORT` overrides `config.json` for one invocation without changing it. Only `otata transport use` writes the config. `otata autostart on` embeds the current `OTATA_ROOT` and `OTATA_PORT` in the unit it installs.
+`OTATA_PORT` overrides the stored config for one invocation without persisting
+it. `otata transport use` writes config to disk. The removed `OTATA_PATH`
+environment variable and `serve_path` config field are ignored. Manual proxy
+paths come from `--base-url`, with `--keep-prefix` controlling prefix stripping.
 
 ## Output
 
-Text by default, in color when stdout is a terminal and `NO_COLOR` is unset. `--json`, accepted anywhere on the command line, prints one envelope on stdout instead:
+Human-readable text by default and color when stdout is a terminal and `NO_COLOR`
+is unset.
+
+`--json` is accepted anywhere on the command line for better agent parsing:
 
 ```json
 {
@@ -96,27 +135,30 @@ Text by default, in color when stdout is a terminal and `NO_COLOR` is unset. `--
 }
 ```
 
-On failure `ok` is `false` and `error` carries a stable `code`, a `message`, and often a `hint` and structured `details`. Build progress goes to stderr.
+On failure `ok` is `false` and `error` carries a stable `code`, a `message`, and
+often a `hint` and structured `details`. Build progress goes to stderr.
 
 ## Error codes
 
-The exit code is 0 on success, 2 when the command was called wrongly, 1 when it ran and failed, and 128 plus the signal number when a signal stopped it (130 for Ctrl-C, 143 for SIGTERM).
+The exit code is 0 on success, 2 when the command was called wrongly, 1 when
+it ran and failed, and 128 plus the signal number when a signal stopped it
+(130 for Ctrl-C, 143 for SIGTERM).
 
 | Code | Means | What to do |
 | --- | --- | --- |
 | `no_project` | Nothing buildable here | Check the directory, or pass `--artifact` |
-| `ambiguous_scheme` | Several candidates for a choice discovery could not make: a scheme, an application module or a product flavor | Re-run with the flag in `details.flag`, choosing from `details.candidates` |
-| `needs_setup` | A prerequisite of the project's toolchain is missing | Run `details.command` in `details.dir` when there is one, otherwise follow the hint |
+| `ambiguous_scheme` | Several candidates for a choice discovery could not make: a scheme, an application module or a product flavor | Re-run with the flag in `details.flag`; the candidates are in `details.candidates` |
+| `needs_setup` | A toolchain prerequisite or migration from the old host Tailscale integration is needed | Run `details.command` in `details.dir` when there is one; otherwise follow the hint |
 | `build_failed` | The toolchain returned non-zero | Read the log path in `details` |
-| `signing_failed` | On iOS, the certificate, profile or device registration. On Android, an APK that is unsigned or does not verify | Needs a human with Apple portal access, or a signed APK: a debug build, or a release signingConfig |
-| `free_profile` | Signed by a free personal team, which iOS will not install over the air | Sign with a paid team. Nothing else fixes it |
-| `server_down` | Local server not running, or the port is held by something else | `otata autostart on` once, then `otata doctor --fix` and retry |
-| `transport_down` | Transport not ready: enrollment, approval, HTTPS preparation, or connectivity needs attention | Check `otata status` and `otata doctor`. Enroll with `transport login` |
+| `signing_failed` | Certificate, profile or device registration on iOS; an APK that is unsigned or does not verify on Android | Needs a human with Apple portal access, or a signed APK: a debug build, or a release signingConfig |
+| `free_profile` | Signed by a free personal team, which iOS will not install over the air | Sign with a paid team; nothing else fixes it |
+| `server_down` | Local server not running, or the port is held by something else | `otata autostart on` once; after that, `otata doctor --fix` and retry |
+| `transport_down` | Transport not ready: enrollment, approval, HTTPS preparation, or connectivity needs attention | Check `otata status` and `otata doctor`; use `transport login` for enrollment |
 | `no_transport` | Unknown transport in config, or `manual` has no base URL | Run the `otata transport use` command the hint names |
 | `slug_conflict` | Another project owns this name, or its record is unreadable | Pass `--slug`, or `otata forget` it |
-| `build_in_progress` | A live publish already holds this slug | Wait. `otata doctor --fix` clears a marker whose process is gone |
+| `build_in_progress` | A live publish already holds this slug | Wait; `otata doctor --fix` clears a marker whose process is gone |
 | `not_found` | No app published under that slug | Check `otata list` |
-| `unhealthy` | `doctor` found something wrong | Read `data.checks`. Each failing check says what to do, often `--fix` |
-| `interrupted` | A signal stopped the publish (Ctrl-C, a timeout, a dropped SSH session). The build was killed and its marker cleared | Retry when ready |
+| `unhealthy` | `doctor` found something wrong | Read `data.checks`; each failing one says what to do, often `--fix` |
+| `interrupted` | A signal stopped the publish (Ctrl-C, a timeout, a dropped SSH session); the build was killed and its marker cleared | Retry when ready |
 | `invalid_args` | The command was called wrongly | Fix the arguments |
-| `internal` | Anything unclassified | Read the message. It is not expected |
+| `internal` | Anything unclassified | Read the message; it is not expected |

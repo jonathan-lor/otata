@@ -1,6 +1,6 @@
 # Getting Started
 
-This guide sets up otata with Tailscale on a Mac or Linux machine, for iOS and Android. To serve through your own HTTPS proxy instead, see [manual transports](manual-transports.md).
+This guide sets up otata with Tailscale on a Mac or Linux machine, for iOS and Android. If you already operate an HTTPS endpoint, see [manual transport](cli-reference.md#manual-transport).
 
 ## 1. Tailscale on your phone
 

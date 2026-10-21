@@ -13,12 +13,12 @@ func TestManualStatus(t *testing.T) {
 		{"", "no base URL"},
 	} {
 		s := NewManual(tc.url, false).Status(0)
-		if s.Ready || !strings.Contains(s.Detail, tc.detail) {
+		if s.Ready || s.Visibility != Unknown || !strings.Contains(s.Detail, tc.detail) {
 			t.Fatalf("invalid manual URL: %+v", s)
 		}
 	}
 	m := NewManual("https://box.local/otata", false)
-	if s := m.Status(0); !s.Ready || s.Visibility != Private || m.Visibility() != Private {
+	if s := m.Status(0); !s.Ready || s.Visibility != Unknown || m.Visibility() != Unknown {
 		t.Fatalf("manual transport: %+v", s)
 	}
 }

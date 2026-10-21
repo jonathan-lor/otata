@@ -1,6 +1,7 @@
 package app
 
 import (
+	"encoding/json"
 	"os"
 	"strings"
 	"testing"
@@ -48,6 +49,27 @@ func TestUseTransportPersistsAndReindexes(t *testing.T) {
 	}
 	if !strings.Contains(string(index), "box.example.com") {
 		t.Error("the index was not regenerated against the new base URL")
+	}
+	// A usable manual endpoint has unknown visibility in both output formats.
+	status, err := a.Status()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !status.Transport.Ready || status.Transport.Visibility != "unknown" {
+		t.Fatalf("manual status = %+v", status.Transport)
+	}
+	var out strings.Builder
+	status.Human(&out)
+	if !strings.Contains(out.String(), "transport: manual (unknown) ready") ||
+		!strings.Contains(out.String(), status.Transport.Detail) {
+		t.Errorf("manual visibility missing from text status:\n%s", out.String())
+	}
+	encoded, err := json.Marshal(status)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(encoded), `"visibility":"unknown"`) {
+		t.Errorf("manual visibility missing from JSON status: %s", encoded)
 	}
 }
 

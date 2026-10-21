@@ -2,7 +2,7 @@
 
 ## How does the iOS install actually work?
 
-The install link is an `itms-services://` URL, Apple's way to install a signed app from a web-hosted manifest. The browser hands the manifest URL to iOS, which downloads the `.ipa` and installs it. Both must be served over HTTPS with a publicly trusted certificate, which the embedded Tailscale node gets for its tailnet hostname. A build signed by a different team can't replace the installed app, since iOS requires the same team for an upgrade, so delete the old copy first.
+The install link is an `itms-services://` URL, Apple's way to install a signed app from a web-hosted manifest. The browser hands the manifest URL to iOS, which downloads the `.ipa` and installs it. Both need to be served over HTTPS with a publicly trusted certificate, which the embedded Tailscale node gets for its tailnet hostname.
 
 ```
 phone (on the tailnet)
@@ -27,8 +27,8 @@ Flutter, React Native and Kotlin Multiplatform keep their Xcode project in `ios/
 
 | Framework | Needed before the first publish | Worth knowing |
 | --- | --- | --- |
-| Flutter | Nothing after `flutter create`. A fresh clone needs `flutter build ios --config-only` for iOS and `flutter pub get` for Android | Iterate on iOS with `--config Profile`, since a `Debug` build can't launch from the home screen. `flutter create` run without a terminal (by an agent, say) picks the first signing identity it finds, often your free personal team. Set the team with `flutter config --select-ios-signing-settings` or in Xcode |
-| React Native | `pod install` in `ios/`. For Android, `npm install` if there's no `node_modules` | Until `pod install` runs there is no `.xcworkspace`, and the `.xcodeproj` beside it can't link. An iOS `--config Debug` build embeds the Mac's LAN address for Metro. It runs anywhere, but only reloads on that network, and it's nearly three times the size |
+| Flutter | Nothing after `flutter create`. A fresh clone needs `flutter build ios --config-only` for iOS and `flutter pub get` for Android | Iterate on iOS with `--config Profile`, since a `Debug` build can't launch from the home screen |
+| React Native | `pod install` in `ios/`. For Android, `npm install` if there's no `node_modules` | Until `pod install` runs there is no `.xcworkspace`, and the `.xcodeproj` beside it can't link |
 | Kotlin Multiplatform | A JDK 17+, and a team in `iosApp/Configuration/Config.xcconfig` | The first build downloads the Kotlin/Native toolchain: twelve minutes here, four on a warm cache. The iOS side needs no Android SDK |
 
 ## How do I know the build I tap is the one just published?
@@ -54,7 +54,7 @@ $ otata doctor
 
 While the computer is awake and you're logged in. `otata autostart on` installs a launch agent on a Mac or a systemd user unit on Linux, which starts the server at login and restarts it if it crashes. Nothing starts before login. FileVault keeps a Mac's disk locked until someone types the password, and a Linux user's systemd waits for a login unless [lingering](getting-started.md#3-enroll-otata) is on.
 
-`otata stop` unloads the unit but leaves it installed. `otata start`, `otata publish` and `otata doctor --fix` bring it back. `brew upgrade` stops it too, because Homebrew runs the old cask's uninstall steps, and it returns at next login or with `otata start`. Without autostart, the only server is a foreground `otata serve`, which lives as long as its terminal.
+`otata stop` unloads the unit but leaves it installed. `otata start`, `otata publish` and `otata doctor --fix` bring it back. Without autostart, the only server is a foreground `otata serve`, which lives as long as its terminal.
 
 There's one unit per user, tied to the `OTATA_ROOT` and `OTATA_PORT` it was installed with. A shell with a different root sees autostart off, can't stop that unit, and is refused `autostart on`.
 
@@ -74,4 +74,4 @@ To leave a machine serving unattended, see [otata via SSH](otata-via-ssh.md).
 
 ## Why not TestFlight or Firebase App Distribution?
 
-otata is much faster than TestFlight (even Internal Testing!) and Firebase App Distribution. Those are distribution channels that archive, upload to Apple's or Google's servers, and process every build. The archive alone recompiles every target: on a real nine-target app it took ~100s, against ~4s for otata's default incremental build. YMMV, so benchmarking it yourself is encouraged!
+otata is much faster than TestFlight (even Internal Testing!) and Firebase App Distribution. Those are distribution channels that archive, upload to Apple's or Google's servers, and process every build. The archive alone recompiles every target. On a real nine-target app it took ~100s, against ~4s for otata's default incremental build. YMMV, so benchmarking it yourself is encouraged!

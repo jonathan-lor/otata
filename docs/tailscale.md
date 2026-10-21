@@ -1,6 +1,8 @@
 # Tailscale
 
-otata's `tailscale` transport is an embedded Tailscale node ([tsnet](https://tailscale.com/docs/features/tsnet)) that joins your tailnet as its own device, separate from any Tailscale installed on the machine. It serves at `https://<hostname>.<tailnet>.ts.net/`. Your phone needs to be on the tailnet, and the tailnet needs MagicDNS and HTTPS certificates turned on. [Getting started](getting-started.md) walks through the setup.
+otata's `tailscale` transport is an [embedded Tailscale node](https://tailscale.com/docs/features/tsnet)
+that joins your tailnet as its own device, so it can run separate from and without any Tailscale installation on your machine.
+It serves at `https://<hostname>.<tailnet>.ts.net/`. Your phone needs to be on the tailnet, and the tailnet needs MagicDNS and HTTPS certificates turned on. [Getting started](getting-started.md) has the full setup.
 
 ## The otata device
 
@@ -9,8 +11,6 @@ otata's `tailscale` transport is an embedded Tailscale node ([tsnet](https://tai
 - Its credentials live in `OTATA_ROOT/state/tsnet/`, outside the served tree, and survive restarts and transport switches. Deleting that directory means enrolling again. Don't copy it to another install that runs at the same time.
 - For unattended enrollment, give the serving process `TS_AUTHKEY` in its environment.
 - Changing the transport or the hostname restarts a managed server, or stops a foreground `otata serve` so you can start it again.
-
-To serve through your own HTTPS proxy instead, see [manual transports](manual-transports.md).
 
 ## Upgrading
 

@@ -14,6 +14,8 @@ const (
 	Private Visibility = "private"
 	// Public: reachable by anyone holding the URL.
 	Public Visibility = "public"
+	// Unknown: access is controlled externally and is not verified by otata.
+	Unknown Visibility = "unknown"
 )
 
 type Status struct {

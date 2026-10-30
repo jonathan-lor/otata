@@ -77,8 +77,8 @@ svg { display: block; flex: none; }
 }
 .icon-placeholder { display: grid; place-items: center; color: var(--dim); }
 .app-identity { min-width: 0; }
-.title-line { display: flex; align-items: center; gap: 0.45rem; }
-.title-line .platform-icon { color: var(--dim); }
+.title-line { display: flex; align-items: baseline; gap: 0.45rem; }
+.title-line .platform { flex: none; color: var(--dim); font-size: 0.8rem; }
 .head h1, .head h2 { min-width: 0; margin: 0; font-size: 1.125rem; font-weight: 600; line-height: 1.25; overflow-wrap: anywhere; }
 .sub { color: var(--dim); font-size: 0.8rem; margin-top: 0.125rem; overflow-wrap: anywhere; }
 a.head { text-decoration: none; border-radius: 5px; }

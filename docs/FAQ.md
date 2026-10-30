@@ -17,9 +17,9 @@ The app's page links the `.apk` itself. The browser downloads it, and tapping th
 
 Android identifies an app by its package name and signing certificate. A build signed with the same certificate replaces the installed one, and one signed with any other is refused until you uninstall the old copy. Each machine generates its own debug keystore, so debug builds from two computers can't replace each other unless you copy `~/.android/debug.keystore` between them. otata verifies an APK's signature before serving it, since an unsigned one would fail on every tap.
 
-## Is using `itms-services://` against Apple's rules?
+## Which devices can install an iOS build?
 
-No. Apple documents the manifest install in its [Platform Deployment guide](https://support.apple.com/guide/deployment/depce7cefc4d/web), and Xcode writes the same manifest for its `release-testing` and `debugging` exports. The [Developer Program License Agreement](https://developer.apple.com/support/terms/apple-developer-program-license-agreement/) limits who may receive a signed build (§7.3): your registered devices, up to 100 per device type per membership year, for testing. otata serves builds signed by your account to your registered devices, which is exactly that. The "employees only" rule belongs to the separate Enterprise Program, which otata doesn't use.
+Only those its provisioning profile allows. For the builds that come out of otata, those are the devices registered to your team. The install link uses the same manifest Xcode writes for its `release-testing` and `debugging` exports, and Apple documents it in their [Platform Deployment guide](https://support.apple.com/guide/deployment/depce7cefc4d/web).
 
 ## What does a cross-platform project need before its first publish?
 

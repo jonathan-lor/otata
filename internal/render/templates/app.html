@@ -14,7 +14,7 @@
       <div class="head">
         {{if .HasIcon}}<img class="icon" src="{{.IconURL}}" alt="">{{else}}{{template "app-placeholder"}}{{end}}
         <div class="app-identity">
-          <div class="title-line"><h1>{{.Title}}</h1>{{template "platform-icon" .Platform}}</div>
+          <div class="title-line"><h1>{{.Title}}</h1>{{template "platform-label" .Platform}}</div>
           <div class="sub">v{{.Version}} &middot; Build {{.Build}} &middot; {{.Config}}</div>
         </div>
       </div>

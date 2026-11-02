@@ -72,6 +72,6 @@ To leave a machine serving unattended, see [otata via SSH](otata-via-ssh.md).
 | `config.json` | The port, the selected transport, the Tailscale hostname and the manual proxy settings |
 | `server.log` | The background server's own log and its access log |
 
-## Why not TestFlight or Firebase App Distribution?
+## Why not TestFlight?
 
-otata is much faster than TestFlight (even Internal Testing!) and Firebase App Distribution. Those are distribution channels that archive, upload to Apple's or Google's servers, and process every build. The archive alone recompiles every target. On a real nine-target app it took ~100s, against ~4s for otata's default incremental build. YMMV, so benchmarking it yourself is encouraged!
+otata designed for rapid iteration with agents and is much faster than TestFlight (even Internal Testing!). TestFlight is a distribution channel that archives, uploads to Apple's servers, and processes every build. The archive alone recompiles every target. On a real nine-target app it took ~100s, against ~4s for otata's default incremental build. YMMV, so benchmarking it yourself is encouraged!

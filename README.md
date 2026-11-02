@@ -95,3 +95,9 @@ Every command accepts `--json`, and failures carry [stable error codes](docs/cli
 - [Tailscale](docs/tailscale.md)
 - [otata via SSH](docs/otata-via-ssh.md)
 - [Contributing](CONTRIBUTING.md)
+
+---
+
+<p align="center">
+  <sub>otata is an independent project and is not affiliated with, endorsed by, or sponsored by Apple Inc., Google LLC, or Tailscale Inc. Apple, iOS, Xcode, and TestFlight are trademarks of Apple Inc., registered in the U.S. and other countries. Android is a trademark of Google LLC. Tailscale is a trademark of Tailscale Inc.</sub>
+</p>

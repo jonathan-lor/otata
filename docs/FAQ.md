@@ -75,3 +75,7 @@ To leave a machine serving unattended, see [otata via SSH](otata-via-ssh.md).
 ## Why not TestFlight?
 
 otata designed for rapid iteration with agents and is much faster than TestFlight (even Internal Testing!). TestFlight is a distribution channel that archives, uploads to Apple's servers, and processes every build. The archive alone recompiles every target. On a real nine-target app it took ~100s, against ~4s for otata's default incremental build. YMMV, so benchmarking it yourself is encouraged!
+
+## Why not devicectl?
+
+`xcrun devicectl` installs a build straight onto your phone, just like running from Xcode. *It only works over USB or the local network, and doesn't work over cellular.* otata works wherever you are, even on a cellular connection. devicectl does have one upside in that it works with a free Apple account.
